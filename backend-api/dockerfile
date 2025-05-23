@@ -1,0 +1,12 @@
+FROM node:18-slim
+WORKDIR /usr/src/app
+
+# Copy only package files first for better caching
+COPY package*.json ./
+RUN npm install
+
+# Copy rest of files
+COPY . .
+
+EXPOSE 3000
+CMD ["npm", "start"]
