@@ -182,7 +182,6 @@ CREATE TABLE IncidentsMx (
     EarliestRptDate DATE
 );
 
-
 CREATE TABLE Tickets (
     ticketId SERIAL PRIMARY KEY,
     incidentId INTEGER REFERENCES IncidentsMx(incidentId),
