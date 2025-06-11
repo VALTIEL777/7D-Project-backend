@@ -35,7 +35,8 @@ CREATE TABLE Quadrants (
     updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     deletedAt TIMESTAMP,
     createdBy INTEGER REFERENCES Users(UserId),
-    updatedBy INTEGER REFERENCES Users(UserId)
+    updatedBy INTEGER REFERENCES Users(UserId),
+    supervisorId INTEGER REFERENCES People(employeeId)
 );
 
 CREATE TABLE wayfinding(
@@ -207,7 +208,7 @@ CREATE TABLE Diggers (
 ------------------------------------------------------------
 -- Human Resources module
 
-CREATE TABLE Employees (
+CREATE TABLE People (
     employeeId SERIAL PRIMARY KEY,
     UserId INTEGER REFERENCES Users(UserId),
     firstname VARCHAR(45),
@@ -234,7 +235,7 @@ CREATE TABLE Skills (
 );
 
 CREATE TABLE EmployeeSkills (
-    employeeId INTEGER REFERENCES Employees(employeeId),
+    employeeId INTEGER REFERENCES People(employeeId),
     skillId INTEGER REFERENCES Skills(skillId),
     PRIMARY KEY (employeeId, skillId),
     proficiencyLevel INTEGER CHECK (proficiencyLevel >= 1 AND proficiencyLevel <= 5),
@@ -260,7 +261,7 @@ CREATE TABLE Crews (
 
 CREATE TABLE CrewEmployees (
     crewId INTEGER REFERENCES Crews(crewId),
-    employeeId INTEGER REFERENCES Employees(employeeId),
+    employeeId INTEGER REFERENCES People(employeeId),
     crewLeader BOOLEAN,
     PRIMARY KEY (crewId, employeeId),
     createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -272,18 +273,6 @@ CREATE TABLE CrewEmployees (
 ------------------------------------------------------------
 -- Quadrants module
 -- Relación Cuadrante Supervisor
-CREATE TABLE QuadrantSupervisor (
-    employeeId INTEGER REFERENCES Employees(employeeId),
-    quadrantId INTEGER REFERENCES Quadrants(quadrantId),
-    PRIMARY KEY (employeeId, quadrantId),
-    supervisor BOOLEAN,
-    revisor BOOLEAN,
-    createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    deletedAt TIMESTAMP,
-    createdBy INTEGER REFERENCES Users(UserId),
-    updatedBy INTEGER REFERENCES Users(UserId)
-);
 
 CREATE TABLE Addresses (
     addressId SERIAL PRIMARY KEY,
@@ -418,6 +407,7 @@ CREATE TABLE Equipment(
     owner VARCHAR(255),
     type VARCHAR(255), --vehivle,tool,machine
     hourlyRate DECIMAL,
+    hoursLent DECIMAL,
     observation TEXT,
     createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -426,17 +416,6 @@ CREATE TABLE Equipment(
     updatedBy INTEGER REFERENCES Users(UserId)
 );
 
-CREATE TABLE EquipmentLog (
-    equipmentId INTEGER REFERENCES Equipment(equipmentId),
-    crewId INTEGER REFERENCES Crews(crewId),
-    comment TEXT,
-    PRIMARY KEY (equipmentId, crewId),
-    createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    deletedAt TIMESTAMP,
-    createdBy INTEGER REFERENCES Users(UserId),
-    updatedBy INTEGER REFERENCES Users(UserId)
-);
 
 
 
@@ -550,7 +529,7 @@ FOR EACH ROW
 EXECUTE FUNCTION set_updated_at_timestamp();
 
 CREATE TRIGGER set_updated_at_employees
-BEFORE UPDATE ON Employees
+BEFORE UPDATE ON People
 FOR EACH ROW
 EXECUTE FUNCTION set_updated_at_timestamp();
 
