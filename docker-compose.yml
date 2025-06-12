@@ -66,6 +66,7 @@ services:
 
   compass:
     image: christba/7d-compass
+    pull_policy: always
     ports:
       - "3005:80"
     networks:
