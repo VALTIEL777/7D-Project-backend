@@ -14,7 +14,7 @@ const options = {
         description: 'Development server',
       },
       {
-        url: 'https://7d-compass.christba.com/api/',
+        url: 'https://7d-compass.christba.com/api',
         description: 'Live server',
       }
     ],
