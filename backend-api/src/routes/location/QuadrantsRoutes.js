@@ -72,7 +72,7 @@ const router = express.Router();
  *     responses:
  *       201:
  *         description: The quadrant was successfully created.
- *         content: *
+ *         content:
  *           application/json:
  *             schema:
  *               type: object

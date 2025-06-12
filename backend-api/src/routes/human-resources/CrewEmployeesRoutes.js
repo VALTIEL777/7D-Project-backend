@@ -135,10 +135,9 @@ router.get('/:crewId/:peopleId', CrewEmployeesController.getCrewEmployeesById);
  *                     example: 1
  *                   employeeId:
  *                     type: integer
- *                     example: 1
  *                   crewLeader:
  *                     type: boolean
- *                     example: true
+ *                   example: true
  *       500:
  *         description: Server error
  */

@@ -1,6 +1,7 @@
 services:
   app:
     image: christba/7d-project-backend:latest
+    pull_policy: always
     ports:
       - "3000:3000"
     environment:

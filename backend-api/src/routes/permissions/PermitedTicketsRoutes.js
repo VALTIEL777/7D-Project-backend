@@ -110,7 +110,7 @@ router.get('/:permitId/:ticketId', PermitedTicketsController.getPermitedTicketsB
  *     summary: Retrieve a list of all permitted ticket associations
  *     tags: [Permitted Tickets]
  *     responses:
- *       200:S
+ *       200:
  *         description: A list of permitted ticket associations.
  *         content:
  *           application/json:

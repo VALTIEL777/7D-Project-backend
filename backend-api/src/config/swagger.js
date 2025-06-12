@@ -13,18 +13,21 @@ const options = {
         url: 'http://localhost:3000',
         description: 'Development server',
       },
+      {
+        url: 'https://7d-compass.christba.com/',
+        description: 'Live server',
+      }
     ],
   },
   apis: [
-    './routes/users/*.js',
-    './routes/human-resources/*.js',
-    './routes/location/*.js',
-    './routes/material-equipment/*.js',
-    './routes/payments/*.js',
-    './routes/permissions/*.js',
-    './routes/route/*.js',
-    './routes/ticket-logic/*.js',
-    // Add more paths for other route files as needed
+    './src/routes/users/*.js',
+    './src/routes/human-resources/*.js',
+    './src/routes/location/*.js',
+    './src/routes/material-equipment/*.js',
+    './src/routes/payments/*.js',
+    './src/routes/permissions/*.js',
+    './src/routes/route/*.js',
+    './src/routes/ticket-logic/*.js',
   ],
 };
 
