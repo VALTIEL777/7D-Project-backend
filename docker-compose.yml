@@ -3,7 +3,7 @@ services:
     image: christba/7d-project-backend:latest
     pull_policy: always
     ports:
-      - "3000:3000"
+      - "3004:3000"
     environment:
       - NODE_ENV=development
       - DB_HOST=postgres
@@ -35,7 +35,7 @@ services:
       - ./scripts/contract-units.sql:/docker-entrypoint-initdb.d/contract-units.sql
       - ./scripts/mock_data.sql:/docker-entrypoint-initdb.d/mock_data.sql
     ports:
-      - "5432:5432"
+      - "5434:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 10s
@@ -67,7 +67,7 @@ services:
   compass:
     image: christba/7d-compass
     ports:
-      - "80:80"
+      - "3005:80"
     networks:
       - app-network
 
