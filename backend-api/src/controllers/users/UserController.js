@@ -1,4 +1,4 @@
-const User = require('../../models/User');
+const User = require('../../models/human-resources/User');
 
 const UserController = {
   async createUser(req, res) {

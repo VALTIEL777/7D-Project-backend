@@ -1,6 +1,6 @@
 services:
   app:
-    build: ./backend-api
+    image: christba/7d-project-backend:latest
     ports:
       - "3000:3000"
     environment:
@@ -13,9 +13,6 @@ services:
       - MINIO_ENDPOINT=minio:9000
       - MINIO_ACCESS_KEY=minioadmin
       - MINIO_SECRET_KEY=miniosecretkey
-    volumes:
-      - ./backend-api:/usr/src/app
-      - /usr/src/app/node_modules
     depends_on:
       postgres:
         condition: service_healthy
@@ -61,6 +58,11 @@ services:
       interval: 30s
       timeout: 20s
       retries: 3
+    networks:
+      - app-network
+
+  compass:
+    image: christba/7d-compass
     networks:
       - app-network
 

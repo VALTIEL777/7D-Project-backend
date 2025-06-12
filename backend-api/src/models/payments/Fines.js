@@ -1,4 +1,4 @@
-const db = require('../config/db');
+const db = require('../../config/db');
 
 class Fines {
   static async create(ticketId, fineNumber, fineDate, paymentDate, amount, status, fineURL, createdBy, updatedBy) {

@@ -1,4 +1,4 @@
-const db = require('../config/db');
+const db = require('../../config/db');
 
 class Addresses {
   static async create(addressNumber, addressCardinal, addressStreet, addressSuffix, createdBy, updatedBy) {

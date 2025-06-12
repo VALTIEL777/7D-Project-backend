@@ -1,4 +1,5 @@
-const db = require('../config/db');
+// This is an added comment to ensure Docker rebuilds and picks up changes.
+const db = require('../../config/db.js');
 
 class User {
   static async create(username, password) {

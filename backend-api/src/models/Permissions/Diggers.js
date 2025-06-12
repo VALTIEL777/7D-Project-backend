@@ -1,4 +1,4 @@
-const db = require('../config/db');
+const db = require('../../config/db');
 
 class Diggers {
   static async create(permitId, diggerNumber, status, startDate, expireDate, watchnProtect, createdBy, updatedBy) {

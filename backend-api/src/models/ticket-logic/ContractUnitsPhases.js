@@ -1,4 +1,4 @@
-const db = require('../config/db');
+const db = require('../../config/db');
 
 class ContractUnitsPhases {
   static async create(contractUnitId, necessaryPhaseId, createdBy, updatedBy) {

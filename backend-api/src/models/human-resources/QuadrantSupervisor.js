@@ -1,4 +1,4 @@
-const db = require('../config/db');
+const db = require('../../config/db');
 
 class QuadrantSupervisor {
   static async create(employeeId, quadrantId, supervisor, revisor, createdBy, updatedBy) {

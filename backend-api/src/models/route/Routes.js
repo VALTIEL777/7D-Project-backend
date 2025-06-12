@@ -1,4 +1,4 @@
-const db = require('../config/db');
+const db = require('../../config/db');
 
 class Routes {
   static async create(routeCode, type, startDate, endDate, createdBy, updatedBy) {

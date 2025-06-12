@@ -1,4 +1,4 @@
-const db = require('../config/db');
+const db = require('../../config/db');
 
 class IncidentsMx {
   static async create(name, earliestRptDate, createdBy, updatedBy) {

@@ -1,6 +1,8 @@
 // index.js
 const express = require('express');
-const db = require('./config/db');
+const db = require('./config/db.js');
+const swaggerUi = require('swagger-ui-express');
+const specs = require('./config/swagger');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -38,6 +40,8 @@ const necessaryPhasesRoutes = require('./routes/ticket-logic/NecessaryPhasesRout
 const ticketsRoutes = require('./routes/ticket-logic/TicketsRoutes');
 
 app.use(express.json()); // Add this to parse JSON body
+
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs));
 
 app.get('/api/health', (req, res) => {
   res.status(200).json({ status: 'OK' });
