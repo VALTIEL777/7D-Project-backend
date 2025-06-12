@@ -6,8 +6,9 @@ services:
       - "3004:3000"
     environment:
       - NODE_ENV=development
+      - PORT=3000
       - DB_HOST=postgres
-      - DB_PORT=5432
+      - DB_PORT=5434
       - DB_USER=appuser
       - DB_PASSWORD=mysecretpassword
       - DB_NAME=my_app_db
