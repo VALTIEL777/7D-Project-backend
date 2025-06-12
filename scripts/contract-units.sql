@@ -495,16 +495,16 @@ VALUES ('XXXXXXXX', 'MOBILIZATION FEE – Base to Grade', 'EA',
 'Not for unit prices not captured during award.',
 'One-time charge per project location for base to grade work.');
 
--- 72. MOBILIZATION FEE – General Hard
+-- 72. MOBILIZATION FEE – General Hard - Fixed quote
 INSERT INTO ContractUnits (itemCode, name, unit, description, workNotIncluded, PaymentClause) 
 VALUES ('XXXXXXXX', 'MOBILIZATION FEE – General Hard', 'EA', 
 'Fixed fee for minimum quantities to mobilize crews, supplies, and equipment for general hard restoration.',
 'Not for unit prices not captured during award.',
-'One-time charge for multiple openings greater than 150' apart for hard restoration.');
+'One-time charge for multiple openings greater than 150'' apart for hard restoration.');
 
--- 73. MOBILIZATION FEE – General Soft
+-- 73. MOBILIZATION FEE – General Soft - Fixed quote
 INSERT INTO ContractUnits (itemCode, name, unit, description, workNotIncluded, PaymentClause) 
 VALUES ('XXXXXXXX', 'MOBILIZATION FEE – General Soft', 'EA', 
 'Fixed fee for minimum quantities to mobilize crews, supplies, and equipment for general soft restoration.',
 'Not for unit prices not captured during award.',
-'One-time charge for multiple openings greater than 150' apart for soft restoration.');
+'One-time charge for multiple openings greater than 150'' apart for soft restoration.');
