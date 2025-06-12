@@ -32,6 +32,8 @@ services:
     volumes:
       - kc_pgdata:/var/lib/postgresql/data
       - ./scripts/7D_DB.sql:/docker-entrypoint-initdb.d/7D_DB.sql
+      - ./scripts/contract-units.sql:/docker-entrypoint-initdb.d/contract-units.sql
+      - ./scripts/mock_data.sql:/docker-entrypoint-initdb.d/mock_data.sql
     ports:
       - "5432:5432"
     healthcheck:
