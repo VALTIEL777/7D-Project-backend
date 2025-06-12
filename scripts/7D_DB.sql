@@ -6,6 +6,20 @@ CREATE TABLE Users (
     updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     deletedAt TIMESTAMP
 );
+CREATE TABLE People (
+    employeeId SERIAL PRIMARY KEY,
+    UserId INTEGER REFERENCES Users(UserId),
+    firstname VARCHAR(45),
+    lastname VARCHAR(45),
+    role VARCHAR(128),
+    phone VARCHAR(10),
+    email VARCHAR(128),
+    createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    deletedAt TIMESTAMP,
+    createdBy INTEGER REFERENCES Users(UserId),
+    updatedBy INTEGER REFERENCES Users(UserId)
+);
 
 -- Payments module
 CREATE TABLE Payments (
@@ -208,20 +222,7 @@ CREATE TABLE Diggers (
 ------------------------------------------------------------
 -- Human Resources module
 
-CREATE TABLE People (
-    employeeId SERIAL PRIMARY KEY,
-    UserId INTEGER REFERENCES Users(UserId),
-    firstname VARCHAR(45),
-    lastname VARCHAR(45),
-    role VARCHAR(128),
-    phone VARCHAR(10),
-    email VARCHAR(128),
-    createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    deletedAt TIMESTAMP,
-    createdBy INTEGER REFERENCES Users(UserId),
-    updatedBy INTEGER REFERENCES Users(UserId)
-);
+
 
 CREATE TABLE Skills (
     skillId SERIAL PRIMARY KEY,
@@ -553,10 +554,6 @@ BEFORE UPDATE ON CrewEmployees
 FOR EACH ROW
 EXECUTE FUNCTION set_updated_at_timestamp();
 
-CREATE TRIGGER set_updated_at_quadrantsupervisor
-BEFORE UPDATE ON QuadrantSupervisor
-FOR EACH ROW
-EXECUTE FUNCTION set_updated_at_timestamp();
 
 CREATE TRIGGER set_updated_at_addresses
 BEFORE UPDATE ON Addresses
@@ -608,10 +605,6 @@ BEFORE UPDATE ON Equipment
 FOR EACH ROW
 EXECUTE FUNCTION set_updated_at_timestamp();
 
-CREATE TRIGGER set_updated_at_equipmentlog
-BEFORE UPDATE ON EquipmentLog
-FOR EACH ROW
-EXECUTE FUNCTION set_updated_at_timestamp();
 
 CREATE TRIGGER set_updated_at_usedinventory
 BEFORE UPDATE ON usedInventory
