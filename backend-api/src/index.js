@@ -9,10 +9,12 @@ const PORT = process.env.PORT || 3000;
 
 // CORS configuration
 app.use(cors({
-  origin: true, // Allow all origins
+  origin: '*', // Allow all origins explicitly
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+  exposedHeaders: ['Content-Range', 'X-Content-Range'],
   credentials: true,
+  maxAge: 86400, // 24 hours
   preflightContinue: false,
   optionsSuccessStatus: 204
 }));
