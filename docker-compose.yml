@@ -66,7 +66,7 @@ services:
     restart: unless-stopped
 
   compass:
-    image: christba/7d-compass
+    image: christba/7d-compass:latest
     pull_policy: always
     ports:
       - "3005:80"
@@ -81,5 +81,3 @@ networks:
 volumes:
   kc_pgdata:
   minio-data:
-  ldap-data:
-  ldap-config:
