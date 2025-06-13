@@ -8,29 +8,28 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // CORS configuration
-const corsOptions = {
-  origin: '*', // In production, replace with your actual domain
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true
-};
+app.use(cors({
+  origin: true, // Allow all origins
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
+  credentials: true,
+  preflightContinue: false,
+  optionsSuccessStatus: 204
+}));
 
-app.use(cors(corsOptions));
 app.use(express.json());
 
-// Swagger UI setup with CORS headers
-app.use('/api-docs', (req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  next();
-}, swaggerUi.serve, swaggerUi.setup(specs, {
+// Swagger UI setup
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs, {
   swaggerOptions: {
     persistAuthorization: true,
     docExpansion: 'none',
     filter: true,
-    showCommonExtensions: true
-  }
+    showCommonExtensions: true,
+    tryItOutEnabled: true
+  },
+  customCss: '.swagger-ui .topbar { display: none }',
+  customSiteTitle: "7D Compass API Documentation"
 }));
 
 // Import routes
