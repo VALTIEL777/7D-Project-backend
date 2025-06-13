@@ -1,14 +1,14 @@
 services:
-  app:
-    image: christba/7d-project-backend:latest
+  api:
+    image: christba/7d-backend:latest
     pull_policy: always
     ports:
-      - "3004:3000"
+      - "3000:3000"
     environment:
-      - NODE_ENV=development
+      - NODE_ENV=production
       - PORT=3000
       - DB_HOST=postgres
-      - DB_PORT=5434
+      - DB_PORT=5432
       - DB_USER=appuser
       - DB_PASSWORD=mysecretpassword
       - DB_NAME=my_app_db
@@ -22,29 +22,28 @@ services:
         condition: service_healthy
     networks:
       - app-network
+    restart: unless-stopped
 
   postgres:
-    image: postgres:15-alpine
+    image: christba/7d-database:latest
+    pull_policy: always
+    ports:
+      - "5432:5432"
+    volumes:
+      - kc_pgdata:/var/lib/postgresql/data
     environment:
       - POSTGRES_USER=appuser
       - POSTGRES_PASSWORD=mysecretpassword
       - POSTGRES_DB=my_app_db
-      - POSTGRES_HOST_AUTH_METHOD=trust
-    volumes:
-      - kc_pgdata:/var/lib/postgresql/data
-      - ./scripts/7D_DB.sql:/docker-entrypoint-initdb.d/7D_DB.sql
-      - ./scripts/contract-units.sql:/docker-entrypoint-initdb.d/contract-units.sql
-      - ./scripts/mock_data.sql:/docker-entrypoint-initdb.d/mock_data.sql
-    ports:
-      - "5434:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      test: ["CMD-SHELL", "pg_isready -U appuser -d my_app_db"]
       interval: 10s
       timeout: 10s
       retries: 10
       start_period: 30s
     networks:
       - app-network
+    restart: unless-stopped
 
   minio:
     image: minio/minio:latest
@@ -64,6 +63,7 @@ services:
       retries: 3
     networks:
       - app-network
+    restart: unless-stopped
 
   compass:
     image: christba/7d-compass
@@ -72,13 +72,13 @@ services:
       - "3005:80"
     networks:
       - app-network
+    restart: unless-stopped
 
 networks:
   app-network:
     driver: bridge
 
 volumes:
-  pgdata:
   kc_pgdata:
   minio-data:
   ldap-data:

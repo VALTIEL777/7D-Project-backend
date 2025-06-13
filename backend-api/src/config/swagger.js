@@ -10,7 +10,7 @@ const options = {
     },
     servers: [
       {
-        url: 'http://localhost:3004/api',
+        url: 'http://localhost:3000/api',
         description: 'Development server',
       },
       {
@@ -18,6 +18,18 @@ const options = {
         description: 'Live server',
       }
     ],
+    components: {
+      securitySchemes: {
+        bearerAuth: {
+          type: 'http',
+          scheme: 'bearer',
+          bearerFormat: 'JWT'
+        }
+      }
+    },
+    security: [{
+      bearerAuth: []
+    }]
   },
   apis: [
     './src/routes/users/*.js',

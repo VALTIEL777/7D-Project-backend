@@ -1,10 +1,37 @@
 // index.js
 const express = require('express');
+const cors = require('cors');
 const db = require('./config/db.js');
 const swaggerUi = require('swagger-ui-express');
 const specs = require('./config/swagger');
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// CORS configuration
+const corsOptions = {
+  origin: '*', // In production, replace with your actual domain
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
+};
+
+app.use(cors(corsOptions));
+app.use(express.json());
+
+// Swagger UI setup with CORS headers
+app.use('/api-docs', (req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  next();
+}, swaggerUi.serve, swaggerUi.setup(specs, {
+  swaggerOptions: {
+    persistAuthorization: true,
+    docExpansion: 'none',
+    filter: true,
+    showCommonExtensions: true
+  }
+}));
 
 // Import routes
 const userRoutes = require('./routes/users/UserRoutes');
@@ -38,10 +65,6 @@ const contractUnitsPhasesRoutes = require('./routes/ticket-logic/ContractUnitsPh
 const incidentsMxRoutes = require('./routes/ticket-logic/IncidentsMxRoutes');
 const necessaryPhasesRoutes = require('./routes/ticket-logic/NecessaryPhasesRoutes');
 const ticketsRoutes = require('./routes/ticket-logic/TicketsRoutes');
-
-app.use(express.json()); // Add this to parse JSON body
-
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs));
 
 app.get('/api/health', (req, res) => {
   res.status(200).json({ status: 'OK' });

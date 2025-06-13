@@ -1,0 +1,20 @@
+# Use the official PostgreSQL image as base
+FROM postgres:15-alpine
+
+# Set environment variables
+ENV POSTGRES_DB=my_app_db
+ENV POSTGRES_USER=appuser
+ENV POSTGRES_PASSWORD=mysecretpassword
+
+# Copy initialization scripts
+COPY 7D_DB.sql /docker-entrypoint-initdb.d/01_schema.sql
+COPY contract-units.sql /docker-entrypoint-initdb.d/02_contract_units.sql
+COPY mock_data.sql /docker-entrypoint-initdb.d/03_mock_data.sql
+
+# Set proper permissions for initialization scripts
+RUN chmod 755 /docker-entrypoint-initdb.d/*.sql
+
+# The official PostgreSQL image already handles user permissions
+# No need to create custom users or modify permissions
+
+
