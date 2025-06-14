@@ -8,9 +8,8 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 const allowedOrigins = [
-  'https://7d-compass-api.christba.com',
-  'https://7d-compass.christba.com',
-  'http://localhost:4200' // add dev frontend if needed
+  'https://7d-compass-api.christba.com',  // for Swagger
+  'https://7d-compass.christba.com'       // for your frontend
 ];
 
 app.use(cors({
@@ -21,10 +20,10 @@ app.use(cors({
       callback(new Error('Not allowed by CORS'));
     }
   },
-  credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
   exposedHeaders: ['Content-Range', 'X-Content-Range'],
+  credentials: true,
   maxAge: 86400,
   preflightContinue: false,
   optionsSuccessStatus: 204

@@ -6,7 +6,10 @@ ENV POSTGRES_DB=my_app_db
 ENV POSTGRES_USER=appuser
 ENV POSTGRES_PASSWORD=mysecretpassword
 
-# Copy initialization scripts
+# Create directory for initialization scripts
+RUN mkdir -p /docker-entrypoint-initdb.d
+
+# Copy initialization scripts from the scripts directory
 COPY 7D_DB.sql /docker-entrypoint-initdb.d/01_schema.sql
 COPY contract-units.sql /docker-entrypoint-initdb.d/02_contract_units.sql
 COPY mock_data.sql /docker-entrypoint-initdb.d/03_mock_data.sql
