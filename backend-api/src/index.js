@@ -7,17 +7,29 @@ const specs = require('./config/swagger');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// CORS configuration
+const allowedOrigins = [
+  'https://7d-compass-api.christba.com',
+  'https://7d-compass.christba.com',
+  'http://localhost:4200' // add dev frontend if needed
+];
+
 app.use(cors({
-  origin: '*', // Allow all origins explicitly
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
   exposedHeaders: ['Content-Range', 'X-Content-Range'],
-  credentials: true,
-  maxAge: 86400, // 24 hours
+  maxAge: 86400,
   preflightContinue: false,
   optionsSuccessStatus: 204
 }));
+
 
 app.use(express.json());
 
