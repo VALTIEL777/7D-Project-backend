@@ -77,6 +77,7 @@ const contractUnitsPhasesRoutes = require('./routes/ticket-logic/ContractUnitsPh
 const incidentsMxRoutes = require('./routes/ticket-logic/IncidentsMxRoutes');
 const necessaryPhasesRoutes = require('./routes/ticket-logic/NecessaryPhasesRoutes');
 const ticketsRoutes = require('./routes/ticket-logic/TicketsRoutes');
+const rtrRoutes = require('./routes/RTR/rtrRoutes');
 
 app.get('/api/health', (req, res) => {
   res.status(200).json({ status: 'OK' });
@@ -125,6 +126,7 @@ app.use('/api/contractunitsphases', contractUnitsPhasesRoutes);
 app.use('/api/incidentsmx', incidentsMxRoutes);
 app.use('/api/necessaryphases', necessaryPhasesRoutes);
 app.use('/api/tickets', ticketsRoutes);
+app.use('/api/rtr', rtrRoutes);
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server listening on port ${PORT}`);
