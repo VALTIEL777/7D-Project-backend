@@ -41,6 +41,7 @@ CREATE TABLE Quadrants (
     quadrantId SERIAL PRIMARY KEY,
     name VARCHAR(64),
     shop VARCHAR(64),
+    zone VARCHAR(64),
     minLatitude VARCHAR(64),
     maxLatitude VARCHAR(64),
     minLongitude VARCHAR(64),
@@ -55,12 +56,12 @@ CREATE TABLE Quadrants (
 
 CREATE TABLE wayfinding(
     wayfindingId SERIAL PRIMARY KEY,
-    fromStreet VARCHAR(64),
-    Tostreet VARCHAR(64),
     location VARCHAR(64),
+    fromAddressNumber VARCHAR(64),
     fromAddressCardinal CHAR(1),
     fromAddressStreet VARCHAR(64),
     fromAddressSuffix VARCHAR(64),
+    toAddressNumber CHAR(1),
     toAddressCardinal CHAR(1),
     toAddressStreet VARCHAR(64),
     toAddressSuffix VARCHAR(64),
