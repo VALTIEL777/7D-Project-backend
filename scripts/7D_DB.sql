@@ -1,7 +1,7 @@
 CREATE TABLE Users (
     UserId SERIAL PRIMARY KEY,
     username VARCHAR(128),
-    password VARCHAR(32),
+    password TEXT,
     createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     deletedAt TIMESTAMP
@@ -13,7 +13,7 @@ CREATE TABLE People (
     lastname VARCHAR(45),
     role VARCHAR(128),
     phone VARCHAR(10),
-    email VARCHAR(128),
+    email VARCHAR(128) UNIQUE,
     createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     deletedAt TIMESTAMP,
@@ -188,7 +188,7 @@ CREATE TABLE Fines (
 CREATE TABLE Permits (
     PermitId SERIAL PRIMARY KEY,
     permitNumber VARCHAR(128),
-    status BOOLEAN,
+    status VARCHAR(128),
     startDate DATE,
     expireDate DATE,
     createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -213,7 +213,7 @@ CREATE TABLE Diggers (
     diggerId SERIAL PRIMARY KEY,
     permitId INTEGER REFERENCES Permits(PermitId),
     diggerNumber VARCHAR(128),
-    status BOOLEAN,
+    status VARCHAR(128),
     startDate DATE,
     expireDate DATE,
     watchnProtect BOOLEAN,
@@ -360,7 +360,6 @@ CREATE TABLE TicketStatus(
 CREATE TABLE photoEvidence(
     photoId SERIAL PRIMARY KEY,
     ticketStatusId INTEGER,
-    ticketId INTEGER,
     name VARCHAR(64),
     latitude DOUBLE PRECISION,
     longitude DOUBLE PRECISION,
@@ -369,7 +368,7 @@ CREATE TABLE photoEvidence(
     comment TEXT,
     photoURL TEXT,
     address VARCHAR(255),
-    FOREIGN KEY (ticketStatusId, ticketId) REFERENCES TicketStatus(taskStatusId, ticketId),
+    FOREIGN KEY (ticketStatusId) REFERENCES TicketStatus(taskStatusId),
     createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     deletedAt TIMESTAMP,
