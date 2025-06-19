@@ -1,5 +1,7 @@
 const express = require('express');
 const PhotoEvidenceController = require('../../controllers/route/PhotoEvidenceController');
+const multer = require('multer');
+const upload = multer({ storage: multer.memoryStorage() });
 
 const router = express.Router();
 
@@ -14,98 +16,55 @@ const router = express.Router();
  * @swagger
  * /photoevidence:
  *   post:
- *     summary: Create a new photo evidence record
+ *     summary: Upload a photo evidence image (png, jpg, jpeg) and save its URL in MinIO
  *     tags: [Photo Evidence]
  *     requestBody:
  *       required: true
  *       content:
- *         application/json:
+ *         multipart/form-data:
  *           schema:
  *             type: object
- *             required:
- *               - ticketStatusId
- *               - ticketId
- *               - name
- *               - latitude
- *               - longitude
- *               - photo
- *               - date
- *               - comment
- *               - photoURL
- *               - address
- *               - createdBy
- *               - updatedBy
  *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *                 description: The image file to upload (png, jpg, jpeg)
  *               ticketStatusId:
  *                 type: integer
- *                 description: The ID of the associated ticket status.
- *                 example: 1
  *               ticketId:
  *                 type: integer
- *                 description: The ID of the associated ticket.
- *                 example: 1
  *               name:
  *                 type: string
- *                 description: The name or title of the photo evidence.
- *                 example: Site Photo 1
  *               latitude:
  *                 type: number
- *                 format: float
- *                 description: Latitude of where the photo was taken.
- *                 example: 34.052235
  *               longitude:
  *                 type: number
- *                 format: float
- *                 description: Longitude of where the photo was taken.
- *                 example: -118.243683
  *               photo:
  *                 type: string
- *                 description: Base64 encoded string of the photo or path to the photo file.
- *                 example: base64stringofphoto
  *               date:
  *                 type: string
  *                 format: date-time
- *                 description: The date and time the photo was taken.
- *                 example: 2023-01-01T10:00:00Z
  *               comment:
  *                 type: string
- *                 description: Any comments or observations about the photo.
- *                 example: Photo of the site before work began.
- *               photoURL:
- *                 type: string
- *                 description: URL to the hosted photo.
- *                 example: http://example.com/photo1.jpg
- *               address:
- *                 type: string
- *                 description: The address related to the photo.
- *                 example: 123 Main St, Anytown
  *               createdBy:
  *                 type: integer
- *                 description: The ID of the user who created this entry.
- *                 example: 1
  *               updatedBy:
  *                 type: integer
- *                 description: The ID of the user who last updated this entry.
- *                 example: 1
  *     responses:
  *       201:
- *         description: The photo evidence record was successfully created.
+ *         description: Photo evidence created and image saved to MinIO
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
- *                 photoId:
- *                   type: integer
- *                   description: The auto-generated ID of the photo evidence.
- *                   example: 1
- *                 name:
+ *                 photoURL:
  *                   type: string
- *                   example: Site Photo 1
+ *                   description: The MinIO URL where the image is saved
  *       500:
- *         description: Server error
+ *         description: Error creating PhotoEvidence
  */
-router.post('/', PhotoEvidenceController.createPhotoEvidence);
+router.post('/', upload.single('file'), PhotoEvidenceController.createPhotoEvidence);
 
 /**
  * @swagger
@@ -184,10 +143,14 @@ router.get('/', PhotoEvidenceController.getAllPhotoEvidence);
  *     requestBody:
  *       required: true
  *       content:
- *         application/json:
+ *         multipart/form-data:
  *           schema:
  *             type: object
  *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *                 description: The image file to upload (png, jpg, jpeg)
  *               ticketStatusId:
  *                 type: integer
  *                 description: The updated ID of the associated ticket status.
@@ -227,10 +190,6 @@ router.get('/', PhotoEvidenceController.getAllPhotoEvidence);
  *                 type: string
  *                 description: Updated URL to the hosted photo.
  *                 example: http://example.com/photo2.jpg
- *               address:
- *                 type: string
- *                 description: The updated address.
- *                 example: 456 Oak Ave, Anytown
  *               updatedBy:
  *                 type: integer
  *                 description: The ID of the user who last updated this entry.
@@ -254,7 +213,7 @@ router.get('/', PhotoEvidenceController.getAllPhotoEvidence);
  *       500:
  *         description: Server error
  */
-router.put('/:photoId', PhotoEvidenceController.updatePhotoEvidence);
+router.put('/:photoId', upload.single('file'), PhotoEvidenceController.updatePhotoEvidence);
 
 /**
  * @swagger

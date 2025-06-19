@@ -40,6 +40,7 @@ const options = {
     './src/routes/permissions/*.js',
     './src/routes/route/*.js',
     './src/routes/ticket-logic/*.js',
+    './src/routes/RTR/*.js', 
   ],
 };
 
