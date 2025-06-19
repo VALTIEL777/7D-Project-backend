@@ -1,4 +1,7 @@
 const XLSX = require("xlsx");
+const RTR = require("../../models/RTR/rtr").RTR;
+const minioClient = require('../../config/minio');
+const path = require('path');
 
 const importantColumns = [
   "RESTN_WO_NUM",
@@ -156,10 +159,35 @@ function parseRangeAddress(address) {
   };
 }
 
-exports.uploadExcel = (req, res) => {
+exports.uploadExcel = async (req, res) => {
   try {
+    // 1. Save file to MinIO
+    const bucket = 'uploads'; // or your bucket name
+    const folder = 'rtr';
+    const originalName = req.file.originalname || 'rtr-upload.xlsx';
+    const timestamp = Date.now();
+    const objectName = `${folder}/${timestamp}-${originalName}`;
+
+    // Ensure bucket exists
+    const bucketExists = await minioClient.bucketExists(bucket).catch(() => false);
+    if (!bucketExists) {
+      await minioClient.makeBucket(bucket);
+    }
+
+    await minioClient.putObject(bucket, objectName, req.file.buffer);
+
+    // 2. Construct the file URL
+    const fileUrl = `http://${process.env.MINIO_ENDPOINT?.split(':')[0] || 'localhost'}:9000/${bucket}/${objectName}`;
+
+    // 3. Save metadata to RTRs table
+    await RTR.saveRTRFile(originalName, fileUrl);
+
+    // 4. Continue with Excel processing as before
     const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
     const results = [];
+    const saveToDatabase = req.query.save === 'true'; // Optional query parameter
+    const createdBy = req.body.createdBy || 1; // Default user ID
+    const updatedBy = req.body.updatedBy || 1; // Default user ID
 
     for (const sheetName of workbook.SheetNames) {
       const sheet = workbook.Sheets[sheetName];
@@ -271,11 +299,26 @@ exports.uploadExcel = (req, res) => {
         dataRows.push(entry);
       }
 
+      // Save to database if requested
+      let databaseResults = null;
+      if (saveToDatabase && dataRows.length > 0) {
+        try {
+          databaseResults = await RTR.processRTRData(dataRows, createdBy, updatedBy);
+        } catch (dbError) {
+          console.error("Database save error:", dbError);
+          databaseResults = {
+            error: "Failed to save to database",
+            details: dbError.message
+          };
+        }
+      }
+
       results.push({
         sheet: sheetName,
         headerRowUsed: headerRowIndex + 1,
         count: dataRows.length,
         data: dataRows,
+        databaseResults: databaseResults
       });
     }
 
@@ -283,9 +326,46 @@ exports.uploadExcel = (req, res) => {
       success: true,
       sheetCount: results.length,
       results,
+      savedToDatabase: saveToDatabase
     });
   } catch (err) {
     console.error("❌ Excel processing failed:", err);
     return res.status(500).send("Failed to process file");
+  }
+};
+
+exports.listRTRExcels = async (req, res) => {
+  try {
+    const result = await RTR.getAllRTRs();
+    res.status(200).json({ success: true, rtrs: result });
+  } catch (err) {
+    console.error('Failed to list RTR Excels:', err);
+    res.status(500).json({ success: false, error: 'Failed to list RTR Excels' });
+  }
+};
+
+exports.downloadRTRExcel = async (req, res) => {
+  try {
+    const rtrId = req.params.rtrId;
+    const rtr = await RTR.getRTRById(rtrId);
+    if (!rtr) {
+      return res.status(404).json({ success: false, error: 'RTR not found' });
+    }
+    // Extract bucket and object key from URL
+    const url = new URL(rtr.url);
+    const bucket = url.pathname.split('/')[1];
+    const objectKey = url.pathname.split('/').slice(2).join('/');
+    // Get file from MinIO
+    minioClient.getObject(bucket, objectKey, (err, dataStream) => {
+      if (err) {
+        console.error('MinIO getObject error:', err);
+        return res.status(500).json({ success: false, error: 'Failed to download file from MinIO' });
+      }
+      res.setHeader('Content-Disposition', `attachment; filename="${rtr.name}"`);
+      dataStream.pipe(res);
+    });
+  } catch (err) {
+    console.error('Failed to download RTR Excel:', err);
+    res.status(500).json({ success: false, error: 'Failed to download RTR Excel' });
   }
 };
