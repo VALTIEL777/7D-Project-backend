@@ -1,7 +1,9 @@
 services:
   api:
-    image: christba/7d-backend:latest
-    pull_policy: always
+    image: 7d-backend:latest
+    build:
+      context: ./backend-api
+      dockerfile: dockerfile
     ports:
       - "3000:3000"
     environment:
@@ -25,12 +27,12 @@ services:
     restart: unless-stopped
 
   postgres:
-    image: christba/7d-database:latest
-    pull_policy: always
+    image: postgres:14-alpine
     ports:
       - "5432:5432"
     volumes:
       - kc_pgdata:/var/lib/postgresql/data
+      - ./scripts:/docker-entrypoint-initdb.d
     environment:
       - POSTGRES_USER=appuser
       - POSTGRES_PASSWORD=mysecretpassword
@@ -67,7 +69,6 @@ services:
 
   compass:
     image: christba/7d-compass:latest
-    pull_policy: always
     ports:
       - "3005:80"
     networks:

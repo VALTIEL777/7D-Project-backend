@@ -1,7 +1,7 @@
 CREATE TABLE Users (
     UserId SERIAL PRIMARY KEY,
-    username VARCHAR(128),
-    password VARCHAR(32),
+    username VARCHAR(128) UNIQUE,
+    password TEXT,
     createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     deletedAt TIMESTAMP
@@ -13,7 +13,7 @@ CREATE TABLE People (
     lastname VARCHAR(45),
     role VARCHAR(128),
     phone VARCHAR(10),
-    email VARCHAR(128),
+    email VARCHAR(128) UNIQUE,
     createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     deletedAt TIMESTAMP,
@@ -24,7 +24,7 @@ CREATE TABLE People (
 -- Payments module
 CREATE TABLE Payments (
     checkId SERIAL PRIMARY KEY,
-    paymentNumber VARCHAR(128),
+    paymentNumber VARCHAR(128) UNIQUE,
     datePaid DATE,
     amountPaid DECIMAL,
     status VARCHAR(128),
@@ -41,6 +41,7 @@ CREATE TABLE Quadrants (
     quadrantId SERIAL PRIMARY KEY,
     name VARCHAR(64),
     shop VARCHAR(64),
+    zone VARCHAR(64),
     minLatitude VARCHAR(64),
     maxLatitude VARCHAR(64),
     minLongitude VARCHAR(64),
@@ -55,12 +56,15 @@ CREATE TABLE Quadrants (
 
 CREATE TABLE wayfinding(
     wayfindingId SERIAL PRIMARY KEY,
-    streetFrom VARCHAR(64),
-    streetTo VARCHAR(64),
     location VARCHAR(64),
-    addressCardinal CHAR(1),
-    addressStreet VARCHAR(64),
-    addressSuffix VARCHAR(64),
+    fromAddressNumber VARCHAR(64),
+    fromAddressCardinal VARCHAR(64),
+    fromAddressStreet VARCHAR(64),
+    fromAddressSuffix VARCHAR(64),
+    toAddressNumber VARCHAR(64),
+    toAddressCardinal VARCHAR(64),
+    toAddressStreet VARCHAR(64),
+    toAddressSuffix VARCHAR(64),
 	width DOUBLE PRECISION,
     length DOUBLE PRECISION,
     surfaceTotal DOUBLE PRECISION,
@@ -86,7 +90,7 @@ CREATE TABLE ContractUnits (
     contractUnitId SERIAL PRIMARY KEY,
     neededMobilization INTEGER REFERENCES ContractUnits (contractUnitId) ,
     neededContractUnit INTEGER REFERENCES ContractUnits (contractUnitId) ,
-    itemCode VARCHAR(255),
+    itemCode VARCHAR(255) UNIQUE,
     name VARCHAR(128),
     unit VARCHAR(64),
     description TEXT,
@@ -134,11 +138,12 @@ CREATE TABLE Tickets (
     wayfindingId INTEGER REFERENCES wayfinding(wayfindingId),
     paymentId INTEGER REFERENCES Payments(checkId),
     mobilizationId INTEGER REFERENCES Tickets(ticketId),
-    ticketCode VARCHAR(64),
-    quantity INTEGER,
+    ticketCode VARCHAR(64) UNIQUE,
+    quantity INTEGER DEFAULT 1,
     daysOutstanding INTEGER,
     comment7d VARCHAR(255),
-    PeopleGasComment VARCHAR(255),
+    PartnerComment VARCHAR(255),
+    PartnerSupervisorComment VARCHAR(255),
     contractNumber VARCHAR(128),
     amountToPay DECIMAL,
     ticketType VARCHAR(64), -- mobilization, regular
@@ -184,7 +189,7 @@ CREATE TABLE Fines (
 CREATE TABLE Permits (
     PermitId SERIAL PRIMARY KEY,
     permitNumber VARCHAR(128),
-    status BOOLEAN,
+    status VARCHAR(128),
     startDate DATE,
     expireDate DATE,
     createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -209,7 +214,7 @@ CREATE TABLE Diggers (
     diggerId SERIAL PRIMARY KEY,
     permitId INTEGER REFERENCES Permits(PermitId),
     diggerNumber VARCHAR(128),
-    status BOOLEAN,
+    status VARCHAR(128),
     startDate DATE,
     expireDate DATE,
     watchnProtect BOOLEAN,
@@ -278,7 +283,7 @@ CREATE TABLE CrewEmployees (
 CREATE TABLE Addresses (
     addressId SERIAL PRIMARY KEY,
     addressNumber VARCHAR(64),
-    addressCardinal CHAR(1),
+    addressCardinal VARCHAR(64),
     addressStreet VARCHAR(64),
     addressSuffix VARCHAR(64),
     createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -356,7 +361,7 @@ CREATE TABLE TicketStatus(
 CREATE TABLE photoEvidence(
     photoId SERIAL PRIMARY KEY,
     ticketStatusId INTEGER,
-    ticketId INTEGER,
+    ticketId INTEGER,  -- Add this column to match the composite key
     name VARCHAR(64),
     latitude DOUBLE PRECISION,
     longitude DOUBLE PRECISION,
@@ -364,7 +369,6 @@ CREATE TABLE photoEvidence(
     date TIMESTAMP,
     comment TEXT,
     photoURL TEXT,
-    address VARCHAR(255),
     FOREIGN KEY (ticketStatusId, ticketId) REFERENCES TicketStatus(taskStatusId, ticketId),
     createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -448,6 +452,15 @@ CREATE TABLE usedEquipment(
     deletedAt TIMESTAMP,
     createdBy INTEGER REFERENCES Users(UserId),
     updatedBy INTEGER REFERENCES Users(UserId)
+);
+
+CREATE TABLE RTRs (
+    rtrId SERIAL PRIMARY KEY,
+    name VARCHAR(255), -- original file name
+    url TEXT,          -- MinIO/S3 URL or object key
+    createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    deletedAt TIMESTAMP
 );
 
 CREATE OR REPLACE FUNCTION set_updated_at_timestamp()
@@ -617,3 +630,6 @@ FOR EACH ROW
 EXECUTE FUNCTION set_updated_at_timestamp();
 
 
+INSERT INTO Users (UserId, username, password)
+VALUES (1, 'testuser', 'securepassword123')
+ON CONFLICT (UserId) DO NOTHING;

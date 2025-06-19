@@ -7,17 +7,28 @@ const specs = require('./config/swagger');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// CORS configuration
+const allowedOrigins = [
+  'https://7d-compass-api.christba.com',  // for Swagger
+  'https://7d-compass.christba.com'       // for your frontend
+];
+
 app.use(cors({
-  origin: '*', // Allow all origins explicitly
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
   exposedHeaders: ['Content-Range', 'X-Content-Range'],
   credentials: true,
-  maxAge: 86400, // 24 hours
+  maxAge: 86400,
   preflightContinue: false,
   optionsSuccessStatus: 204
 }));
+
 
 app.use(express.json());
 
@@ -66,6 +77,7 @@ const contractUnitsPhasesRoutes = require('./routes/ticket-logic/ContractUnitsPh
 const incidentsMxRoutes = require('./routes/ticket-logic/IncidentsMxRoutes');
 const necessaryPhasesRoutes = require('./routes/ticket-logic/NecessaryPhasesRoutes');
 const ticketsRoutes = require('./routes/ticket-logic/TicketsRoutes');
+const rtrRoutes = require('./routes/RTR/rtrRoutes');
 
 app.get('/api/health', (req, res) => {
   res.status(200).json({ status: 'OK' });
@@ -114,6 +126,7 @@ app.use('/api/contractunitsphases', contractUnitsPhasesRoutes);
 app.use('/api/incidentsmx', incidentsMxRoutes);
 app.use('/api/necessaryphases', necessaryPhasesRoutes);
 app.use('/api/tickets', ticketsRoutes);
+app.use('/api/rtr', rtrRoutes);
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server listening on port ${PORT}`);

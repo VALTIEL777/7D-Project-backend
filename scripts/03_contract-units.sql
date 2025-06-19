@@ -490,21 +490,21 @@ VALUES ('69012169', 'MOBILIZATION FEE – PAVING', 'EA',
 
 -- 71. MOBILIZATION FEE – Base to Grade
 INSERT INTO ContractUnits (itemCode, name, unit, description, workNotIncluded, PaymentClause) 
-VALUES ('XXXXXXXX', 'MOBILIZATION FEE – Base to Grade', 'EA', 
+VALUES ('XXXXXXX1', 'MOBILIZATION FEE – Base to Grade', 'EA', 
 'Fixed fee for minimum quantities to mobilize crews, supplies, and equipment for base to grade work.',
 'Not for unit prices not captured during award.',
 'One-time charge per project location for base to grade work.');
 
 -- 72. MOBILIZATION FEE – General Hard - Fixed quote
 INSERT INTO ContractUnits (itemCode, name, unit, description, workNotIncluded, PaymentClause) 
-VALUES ('XXXXXXXX', 'MOBILIZATION FEE – General Hard', 'EA', 
+VALUES ('XXXXXXX2', 'MOBILIZATION FEE – General Hard', 'EA', 
 'Fixed fee for minimum quantities to mobilize crews, supplies, and equipment for general hard restoration.',
 'Not for unit prices not captured during award.',
 'One-time charge for multiple openings greater than 150'' apart for hard restoration.');
 
 -- 73. MOBILIZATION FEE – General Soft - Fixed quote
 INSERT INTO ContractUnits (itemCode, name, unit, description, workNotIncluded, PaymentClause) 
-VALUES ('XXXXXXXX', 'MOBILIZATION FEE – General Soft', 'EA', 
+VALUES ('XXXXXXX3', 'MOBILIZATION FEE – General Soft', 'EA', 
 'Fixed fee for minimum quantities to mobilize crews, supplies, and equipment for general soft restoration.',
 'Not for unit prices not captured during award.',
 'One-time charge for multiple openings greater than 150'' apart for soft restoration.');
