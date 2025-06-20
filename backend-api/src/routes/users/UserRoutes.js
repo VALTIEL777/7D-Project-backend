@@ -1,3 +1,4 @@
+const { authMiddleware, checkRole } = require('../../middlewares/authMiddleware');
 const express = require('express');
 const UserController = require('../../controllers/users/UserController');
 
