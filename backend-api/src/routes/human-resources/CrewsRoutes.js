@@ -2,13 +2,59 @@ const express = require('express');
 const CrewsController = require('../../controllers/human-resources/CrewsController');
 
 const router = express.Router();
-
 /**
  * @swagger
  * tags:
  *   name: Crews
  *   description: Crew management and retrieval
  */
+
+/**
+ * @swagger
+ * /crews/employees:
+ *   get:
+ *     summary: Get all crews with their employees
+ *     tags: [Crews]
+ *     responses:
+ *       200:
+ *         description: List of crews and their employees
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   crewId:
+ *                     type: integer
+ *                     example: 1
+ *                   type:
+ *                     type: string
+ *                     example: Maintenance
+ *                   workedHours:
+ *                     type: number
+ *                     format: float
+ *                     example: 120.0
+ *                   employees:
+ *                     type: array
+ *                     items:
+ *                       type: object
+ *                       properties:
+ *                         employeeId:
+ *                           type: integer
+ *                           example: 101
+ *                         fullName:
+ *                           type: string
+ *                           example: John Doe
+ *                         crewLeader:
+ *                           type: boolean
+ *                           example: true
+ *       500:
+ *         description: Server error
+ */
+router.get('/employees', CrewsController.getfindAllWithEmployees);
+
+
 
 /**
  * @swagger

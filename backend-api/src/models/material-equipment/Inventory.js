@@ -15,9 +15,18 @@ class Inventory {
   }
 
   static async findAll() {
-    const res = await db.query('SELECT * FROM Inventory;');
-    return res.rows;
-  }
+  const query = `
+    SELECT 
+      i.*, 
+      s.name AS supplierName
+    FROM Inventory i
+    JOIN Suppliers s ON i.supplierId = s.supplierId;
+  `;
+
+  const res = await db.query(query);
+  return res.rows;
+}
+
 
   static async update(inventoryId, supplierId, name, costPerUnit, unit, updatedBy) {
     const res = await db.query(
