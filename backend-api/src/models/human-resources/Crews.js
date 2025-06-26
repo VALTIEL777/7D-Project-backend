@@ -31,6 +31,33 @@ class Crews {
     const res = await db.query('UPDATE Crews SET deletedAt = CURRENT_TIMESTAMP WHERE crewId = $1 AND deletedAt IS NULL RETURNING *;', [crewId]);
     return res.rows[0];
   }
+
+
+static async findAllWithEmployees() {
+  const res = await db.query(`
+    SELECT
+      c.crewId,
+      c.type,
+      c.workedHours,
+      -- Construimos un arreglo JSON con los empleados y sus nombres completos por cada crew
+      json_agg(
+        json_build_object(
+          'employeeId', ce.employeeId,
+          'fullName', CONCAT(p.firstname, ' ', p.lastname),
+          'crewLeader', ce.crewLeader
+        )
+      ) AS employees
+    FROM Crews c
+    LEFT JOIN CrewEmployees ce ON c.crewId = ce.crewId AND ce.deletedAt IS NULL
+    LEFT JOIN People p ON ce.employeeId = p.employeeId AND p.deletedAt IS NULL
+    WHERE c.deletedAt IS NULL
+    GROUP BY c.crewId, c.type, c.workedHours
+  `);
+
+  return res.rows;
+}
+
+
 }
 
 module.exports = Crews; 

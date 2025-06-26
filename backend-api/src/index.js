@@ -1,4 +1,5 @@
 // index.js
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const db = require('./config/db.js');
@@ -63,6 +64,7 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs, {
 }));
 
 // Import routes
+const authRoutes = require('./routes/auth/authRoutes');
 const userRoutes = require('./routes/users/UserRoutes');
 const crewRoutes = require('./routes/human-resources/CrewsRoutes');
 const crewEmployeesRoutes = require('./routes/human-resources/CrewEmployeesRoutes');
@@ -113,6 +115,7 @@ app.get('/api/test-db', async (req, res) => {
 });
 
 // Use routes
+app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/crews', crewRoutes);
 app.use('/api/crewemployees', crewEmployeesRoutes);

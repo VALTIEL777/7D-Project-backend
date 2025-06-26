@@ -27,14 +27,15 @@ const PeopleController = {
   },
 
   async getAllPeople(req, res) {
-    try {
-      const allPeople = await People.findAll();
-      res.status(200).json(allPeople);
-    } catch (error) {
-      console.error('Error fetching all people:', error);
-      res.status(500).json({ message: 'Error fetching people', error: error.message });
-    }
-  },
+  try {
+    const allPeople = await People.findAll();
+    res.status(200).json(allPeople);
+  } catch (error) {
+    console.error('Error fetching all people:', error);
+    res.status(500).json({ message: 'Error fetching people!', error: error.message });
+  }
+}
+,
 
   async updatePeople(req, res) {
     try {

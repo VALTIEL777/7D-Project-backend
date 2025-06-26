@@ -1,10 +1,10 @@
 const db = require('../../config/db');
 
 class People {
-  static async create(UserId, firstname, lastname, role, phone, email, createdBy, updatedBy) {
+  static async create(userid, firstname, lastname, role, phone, email, createdBy, updatedBy) {
     const res = await db.query(
-      'INSERT INTO People(UserId, firstname, lastname, role, phone, email, createdBy, updatedBy) VALUES($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *;',
-      [UserId, firstname, lastname, role, phone, email, createdBy, updatedBy]
+      'INSERT INTO People(userid, firstname, lastname, role, phone, email, createdBy, updatedBy) VALUES($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *;',
+      [userid, firstname, lastname, role, phone, email, createdBy, updatedBy]
     );
     return res.rows[0];
   }

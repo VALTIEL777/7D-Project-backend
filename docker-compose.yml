@@ -1,14 +1,15 @@
 services:
   api:
-    image: 7d-backend:latest
     build:
       context: ./backend-api
       dockerfile: dockerfile
     ports:
       - "3000:3000"
+    volumes:
+      - ./backend-api:/usr/src/app
+      - /usr/src/app/node_modules
     environment:
-      - NODE_ENV=production
-      - PORT=3000
+      - NODE_ENV=development
       - DB_HOST=postgres
       - DB_PORT=5432
       - DB_USER=appuser
@@ -27,7 +28,9 @@ services:
     restart: unless-stopped
 
   postgres:
-    image: postgres:14-alpine
+    build:
+      context: ./scripts
+      dockerfile: dockerfile
     ports:
       - "5432:5432"
     volumes:

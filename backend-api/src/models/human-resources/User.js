@@ -32,6 +32,12 @@ class User {
     const res = await db.query('UPDATE Users SET deletedAt = CURRENT_TIMESTAMP WHERE UserId = $1 AND deletedAt IS NULL RETURNING *;', [userId]);
     return res.rows[0];
   }
+
+   static async findByUsername(username) {
+    const res = await db.query('SELECT * FROM Users WHERE username = $1;', [username]);
+    return res.rows[0]; // Devuelve null si no existe
+  }
 }
+
 
 module.exports = User; 
