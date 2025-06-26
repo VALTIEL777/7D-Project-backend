@@ -10,25 +10,25 @@ class Quadrants {
   }
 
   static async findById(quadrantId) {
-    const res = await db.query('SELECT * FROM Quadrants WHERE quadrantId = $1;', [quadrantId]);
+    const res = await db.query('SELECT * FROM Quadrants WHERE quadrantId = $1 AND deletedAt IS NULL;', [quadrantId]);
     return res.rows[0];
   }
 
   static async findAll() {
-    const res = await db.query('SELECT * FROM Quadrants;');
+    const res = await db.query('SELECT * FROM Quadrants WHERE deletedAt IS NULL;');
     return res.rows;
   }
 
   static async update(quadrantId, name, shop, minLatitude, maxLatitude, minLongitude, maxLongitude, updatedBy, supervisorId) {
     const res = await db.query(
-      'UPDATE Quadrants SET name = $1, shop = $2, minLatitude = $3, maxLatitude = $4, minLongitude = $5, maxLongitude = $6, updatedAt = CURRENT_TIMESTAMP, updatedBy = $7, supervisorId = $8 WHERE quadrantId = $9 RETURNING *;',
+      'UPDATE Quadrants SET name = $1, shop = $2, minLatitude = $3, maxLatitude = $4, minLongitude = $5, maxLongitude = $6, updatedAt = CURRENT_TIMESTAMP, updatedBy = $7, supervisorId = $8 WHERE quadrantId = $9 AND deletedAt IS NULL RETURNING *;',
       [name, shop, minLatitude, maxLatitude, minLongitude, maxLongitude, updatedBy, supervisorId, quadrantId]
     );
     return res.rows[0];
   }
 
   static async delete(quadrantId) {
-    const res = await db.query('UPDATE Quadrants SET deletedAt = CURRENT_TIMESTAMP WHERE quadrantId = $1 RETURNING *;', [quadrantId]);
+    const res = await db.query('UPDATE Quadrants SET deletedAt = CURRENT_TIMESTAMP WHERE quadrantId = $1 AND deletedAt IS NULL RETURNING *;', [quadrantId]);
     return res.rows[0];
   }
 }

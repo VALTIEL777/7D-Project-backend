@@ -70,41 +70,11 @@ services:
   compass:
     image: christba/7d-compass:latest
     ports:
-      - "3005:80"
+      - "3005:3005"  # This is now correct!
     networks:
       - app-network
     restart: unless-stopped
 
-  graphhopper:
-    image: graphhopper/graphhopper:latest
-    container_name: graphhopper
-    ports:
-      - "8989:8989"
-    volumes:
-      - ./graphhopper-vroom/data:/data
-    environment:
-      - JAVA_OPTS=-Xmx4g
-    command: >
-      -Dgraphhopper.datareader.file=/data/us-midwest-latest.osm.pbf
-      -Dgraphhopper.graph.location=/data/graph-cache
-      -Dgraphhopper.prepare.ch.weightings=no
-      -Dgraphhopper.profile=car
-    networks:
-      - app-network
-    restart: unless-stopped
-
-  vroom:
-    image: vroomvrp/vroom:latest
-    container_name: vroom
-    # NOTE: Port 3000 is already used by 'api'. Change if both need to run simultaneously.
-    ports:
-      - "3001:3000" # Changed host port to 3001 to avoid conflict
-    volumes:
-      - ./graphhopper-vroom/config/vroom_config.json:/vroom/config.json:ro
-    command: vroom -c /vroom/config.json
-    networks:
-      - app-network
-    restart: unless-stopped
 
 networks:
   app-network:

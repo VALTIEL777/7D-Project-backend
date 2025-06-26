@@ -64,6 +64,16 @@ const AddressesController = {
       res.status(500).json({ message: 'Error deleting address', error: error.message });
     }
   },
+
+  async getAddressesForTicketsWithNullComment7d(req, res) {
+    try {
+      const addresses = await Addresses.findAddressesForTicketsWithNullComment7d();
+      res.status(200).json(addresses);
+    } catch (error) {
+      console.error('Error fetching addresses for tickets with null comment7d:', error);
+      res.status(500).json({ message: 'Error fetching addresses', error: error.message });
+    }
+  },
 };
 
 module.exports = AddressesController; 

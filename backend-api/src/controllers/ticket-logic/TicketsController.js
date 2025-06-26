@@ -64,6 +64,50 @@ const TicketsController = {
       res.status(500).json({ message: 'Error deleting Ticket', error: error.message });
     }
   },
+
+  // Get tickets expiring in 7 days
+  async getTicketsExpiringIn7Days(req, res) {
+    try {
+      const tickets = await Tickets.findExpiringInDays(7);
+      res.status(200).json(tickets);
+    } catch (error) {
+      console.error('Error fetching tickets expiring in 7 days:', error);
+      res.status(500).json({ message: 'Error fetching tickets', error: error.message });
+    }
+  },
+
+  // Get tickets expiring in 15 days
+  async getTicketsExpiringIn15Days(req, res) {
+    try {
+      const tickets = await Tickets.findExpiringInDays(15);
+      res.status(200).json(tickets);
+    } catch (error) {
+      console.error('Error fetching tickets expiring in 15 days:', error);
+      res.status(500).json({ message: 'Error fetching tickets', error: error.message });
+    }
+  },
+
+  // Get tickets expiring in more than 15 days
+  async getTicketsExpiringAfter15Days(req, res) {
+    try {
+      const tickets = await Tickets.findExpiringAfterDays(15);
+      res.status(200).json(tickets);
+    } catch (error) {
+      console.error('Error fetching tickets expiring after 15 days:', error);
+      res.status(500).json({ message: 'Error fetching tickets', error: error.message });
+    }
+  },
+
+  // Get expired tickets
+  async getExpiredTickets(req, res) {
+    try {
+      const tickets = await Tickets.findExpired();
+      res.status(200).json(tickets);
+    } catch (error) {
+      console.error('Error fetching expired tickets:', error);
+      res.status(500).json({ message: 'Error fetching tickets', error: error.message });
+    }
+  },
 };
 
 module.exports = TicketsController; 

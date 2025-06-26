@@ -7,7 +7,7 @@ const router = express.Router();
  * @swagger
  * tags:
  *   name: Tickets
- *   description: Managing construction tickets
+ *   description: Managing tickets for construction work
  */
 
 /**
@@ -23,104 +23,61 @@ const router = express.Router();
  *           schema:
  *             type: object
  *             required:
- *               - incidentId
- *               - cuadranteId
- *               - contractUnitId
- *               - wayfindingId
- *               - paymentId
- *               - mobilizationId
  *               - ticketCode
- *               - quantity
- *               - daysOutstanding
- *               - comment7d
- *               - PeopleGasComment
- *               - contractNumber
- *               - amountToPay
- *               - ticketType
  *               - createdBy
  *               - updatedBy
  *             properties:
  *               incidentId:
  *                 type: integer
- *                 description: The ID of the associated incident.
- *                 example: 1
+ *                 description: The ID of the incident
  *               cuadranteId:
  *                 type: integer
- *                 description: The ID of the associated quadrant.
- *                 example: 1
+ *                 description: The ID of the quadrant
  *               contractUnitId:
  *                 type: integer
- *                 description: The ID of the associated contract unit.
- *                 example: 1
+ *                 description: The ID of the contract unit
  *               wayfindingId:
  *                 type: integer
- *                 description: The ID of the associated wayfinding.
- *                 example: 1
+ *                 description: The ID of the wayfinding
  *               paymentId:
  *                 type: integer
- *                 description: The ID of the associated payment.
- *                 example: 1
+ *                 description: The ID of the payment
  *               mobilizationId:
  *                 type: integer
- *                 description: The ID of the associated mobilization.
- *                 example: 1
+ *                 description: The ID of the mobilization
  *               ticketCode:
  *                 type: string
- *                 description: The unique code for the ticket.
- *                 example: 'TKT001'
+ *                 description: The unique ticket code
  *               quantity:
- *                 type: number
- *                 format: float
- *                 description: The quantity associated with the ticket.
- *                 example: 10.5
+ *                 type: integer
+ *                 description: The quantity
  *               daysOutstanding:
  *                 type: integer
- *                 description: Number of days the ticket is outstanding.
- *                 example: 5
+ *                 description: The number of days outstanding
  *               comment7d:
  *                 type: string
- *                 description: Comments from 7D.
- *                 example: Needs urgent attention.
+ *                 description: The 7D comment
  *               PeopleGasComment:
  *                 type: string
- *                 description: Comments from People Gas.
- *                 example: Approved for trenching.
+ *                 description: The people gas comment
  *               contractNumber:
  *                 type: string
- *                 description: The contract number associated with the ticket.
- *                 example: 'CONTR001'
+ *                 description: The contract number
  *               amountToPay:
  *                 type: number
- *                 format: float
- *                 description: The amount to be paid for this ticket.
- *                 example: 1500.00
+ *                 description: The amount to pay
  *               ticketType:
  *                 type: string
- *                 description: The type of ticket (e.g., 'Repair', 'Installation').
- *                 example: Repair
+ *                 description: The type of ticket
  *               createdBy:
  *                 type: integer
- *                 description: The ID of the user who created this entry.
- *                 example: 1
+ *                 description: The ID of the user who created this ticket
  *               updatedBy:
  *                 type: integer
- *                 description: The ID of the user who last updated this entry.
- *                 example: 1
+ *                 description: The ID of the user who last updated this ticket
  *     responses:
  *       201:
- *         description: The ticket was successfully created.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 ticketId:
- *                   type: integer
- *                   description: The auto-generated ID of the ticket.
- *                   example: 1
- *                 ticketCode:
- *                   type: string
- *                   example: 'TKT001'
+ *         description: The ticket was successfully created
  *       500:
  *         description: Server error
  */
@@ -138,21 +95,10 @@ router.post('/', TicketsController.createTicket);
  *         schema:
  *           type: integer
  *         required: true
- *         description: The ID of the ticket.
+ *         description: The ID of the ticket
  *     responses:
  *       200:
- *         description: Ticket found.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 ticketId:
- *                   type: integer
- *                   example: 1
- *                 ticketCode:
- *                   type: string
- *                   example: 'TKT001'
+ *         description: Ticket found
  *       404:
  *         description: Ticket not found
  *       500:
@@ -168,20 +114,7 @@ router.get('/:ticketId', TicketsController.getTicketById);
  *     tags: [Tickets]
  *     responses:
  *       200:
- *         description: A list of tickets.
- *         content:
- *           application/json:
- *             schema:
- *               type: array
- *               items:
- *                 type: object
- *                 properties:
- *                   ticketId:
- *                     type: integer
- *                     example: 1
- *                   ticketCode:
- *                     type: string
- *                     example: 'TKT001'
+ *         description: A list of tickets
  *       500:
  *         description: Server error
  */
@@ -199,7 +132,7 @@ router.get('/', TicketsController.getAllTickets);
  *         schema:
  *           type: integer
  *         required: true
- *         description: The ID of the ticket.
+ *         description: The ID of the ticket
  *     requestBody:
  *       required: true
  *       content:
@@ -209,80 +142,37 @@ router.get('/', TicketsController.getAllTickets);
  *             properties:
  *               incidentId:
  *                 type: integer
- *                 description: The updated ID of the associated incident.
- *                 example: 2
  *               cuadranteId:
  *                 type: integer
- *                 description: The updated ID of the associated quadrant.
- *                 example: 2
  *               contractUnitId:
  *                 type: integer
- *                 description: The updated ID of the associated contract unit.
- *                 example: 2
  *               wayfindingId:
  *                 type: integer
- *                 description: The updated ID of the associated wayfinding.
- *                 example: 2
  *               paymentId:
  *                 type: integer
- *                 description: The updated ID of the associated payment.
- *                 example: 2
  *               mobilizationId:
  *                 type: integer
- *                 description: The updated ID of the associated mobilization.
- *                 example: 2
  *               ticketCode:
  *                 type: string
- *                 description: The updated unique code for the ticket.
- *                 example: 'TKT002'
  *               quantity:
- *                 type: number
- *                 format: float
- *                 description: The updated quantity.
- *                 example: 12.0
+ *                 type: integer
  *               daysOutstanding:
  *                 type: integer
- *                 description: Updated number of days outstanding.
- *                 example: 7
  *               comment7d:
  *                 type: string
- *                 description: Updated comments from 7D.
- *                 example: On hold for material.
  *               PeopleGasComment:
  *                 type: string
- *                 description: Updated comments from People Gas.
- *                 example: Reroute gas line.
  *               contractNumber:
  *                 type: string
- *                 description: The updated contract number.
- *                 example: 'CONTR002'
  *               amountToPay:
  *                 type: number
- *                 format: float
- *                 description: The updated amount to be paid.
- *                 example: 1650.00
  *               ticketType:
  *                 type: string
- *                 description: The updated type of ticket.
- *                 example: Installation
  *               updatedBy:
  *                 type: integer
- *                 description: The ID of the user who last updated this entry.
- *                 example: 2
  *     responses:
  *       200:
- *         description: The ticket was successfully updated.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 ticketId:
- *                   type: integer
- *                   example: 1
- *                 ticketCode:
- *                   type: string
- *                   example: 'TKT002'
+ *         description: The ticket was successfully updated
  *       404:
  *         description: Ticket not found
  *       500:
@@ -302,23 +192,185 @@ router.put('/:ticketId', TicketsController.updateTicket);
  *         schema:
  *           type: integer
  *         required: true
- *         description: The ID of the ticket.
+ *         description: The ID of the ticket
  *     responses:
  *       200:
- *         description: The ticket was successfully deleted.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 message:
- *                   type: string
- *                   example: Ticket deleted successfully
+ *         description: The ticket was successfully deleted
  *       404:
  *         description: Ticket not found
  *       500:
  *         description: Server error
  */
 router.delete('/:ticketId', TicketsController.deleteTicket);
+
+/**
+ * @swagger
+ * /tickets/expiring/7days:
+ *   get:
+ *     summary: Get tickets expiring in 7 days
+ *     tags: [Tickets]
+ *     description: Retrieve all tickets that have permits expiring within 7 days, including ticket numbers, addresses, and expiration dates
+ *     responses:
+ *       200:
+ *         description: A list of tickets expiring in 7 days
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   ticketId:
+ *                     type: integer
+ *                   ticketCode:
+ *                     type: string
+ *                   contractNumber:
+ *                     type: string
+ *                   amountToPay:
+ *                     type: number
+ *                   ticketType:
+ *                     type: string
+ *                   daysOutstanding:
+ *                     type: integer
+ *                   comment7d:
+ *                     type: string
+ *                   expireDate:
+ *                     type: string
+ *                     format: date
+ *                   days_until_expiry:
+ *                     type: integer
+ *                   addresses:
+ *                     type: string
+ *       500:
+ *         description: Server error
+ */
+router.get('/expiring/7days', TicketsController.getTicketsExpiringIn7Days);
+
+/**
+ * @swagger
+ * /tickets/expiring/15days:
+ *   get:
+ *     summary: Get tickets expiring in 15 days
+ *     tags: [Tickets]
+ *     description: Retrieve all tickets that have permits expiring within 15 days, including ticket numbers, addresses, and expiration dates
+ *     responses:
+ *       200:
+ *         description: A list of tickets expiring in 15 days
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   ticketId:
+ *                     type: integer
+ *                   ticketCode:
+ *                     type: string
+ *                   contractNumber:
+ *                     type: string
+ *                   amountToPay:
+ *                     type: number
+ *                   ticketType:
+ *                     type: string
+ *                   daysOutstanding:
+ *                     type: integer
+ *                   comment7d:
+ *                     type: string
+ *                   expireDate:
+ *                     type: string
+ *                     format: date
+ *                   days_until_expiry:
+ *                     type: integer
+ *                   addresses:
+ *                     type: string
+ *       500:
+ *         description: Server error
+ */
+router.get('/expiring/15days', TicketsController.getTicketsExpiringIn15Days);
+
+/**
+ * @swagger
+ * /tickets/expiring/after15days:
+ *   get:
+ *     summary: Get tickets expiring after 15 days
+ *     tags: [Tickets]
+ *     description: Retrieve all tickets that have permits expiring after 15 days, including ticket numbers, addresses, and expiration dates
+ *     responses:
+ *       200:
+ *         description: A list of tickets expiring after 15 days
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   ticketId:
+ *                     type: integer
+ *                   ticketCode:
+ *                     type: string
+ *                   contractNumber:
+ *                     type: string
+ *                   amountToPay:
+ *                     type: number
+ *                   ticketType:
+ *                     type: string
+ *                   daysOutstanding:
+ *                     type: integer
+ *                   comment7d:
+ *                     type: string
+ *                   expireDate:
+ *                     type: string
+ *                     format: date
+ *                   days_until_expiry:
+ *                     type: integer
+ *                   addresses:
+ *                     type: string
+ *       500:
+ *         description: Server error
+ */
+router.get('/expiring/after15days', TicketsController.getTicketsExpiringAfter15Days);
+
+/**
+ * @swagger
+ * /tickets/expired:
+ *   get:
+ *     summary: Get expired tickets
+ *     tags: [Tickets]
+ *     description: Retrieve all tickets that are not completed (do not have "TK - COMPLETED" status), including ticket numbers, addresses, and task status names
+ *     responses:
+ *       200:
+ *         description: A list of expired tickets
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   ticketId:
+ *                     type: integer
+ *                   ticketCode:
+ *                     type: string
+ *                   contractNumber:
+ *                     type: string
+ *                   amountToPay:
+ *                     type: number
+ *                   ticketType:
+ *                     type: string
+ *                   daysOutstanding:
+ *                     type: integer
+ *                   comment7d:
+ *                     type: string
+ *                   addresses:
+ *                     type: string
+ *                   taskStatusNames:
+ *                     type: string
+ *                     description: Comma-separated list of task status names for this ticket
+ *       500:
+ *         description: Server error
+ */
+router.get('/expired', TicketsController.getExpiredTickets);
 
 module.exports = router; 

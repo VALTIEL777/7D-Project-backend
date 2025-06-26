@@ -227,4 +227,24 @@ router.put('/:addressId', AddressesController.updateAddress);
  */
 router.delete('/:addressId', AddressesController.deleteAddress);
 
+/**
+ * @swagger
+ * /addresses/tickets-without-comment7d:
+ *   get:
+ *     summary: Get addresses linked to tickets where comment7d is null
+ *     tags: [Addresses]
+ *     responses:
+ *       200:
+ *         description: A list of addresses for tickets with null comment7d.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *       500:
+ *         description: Server error
+ */
+router.get('/tickets-without-comment7d', AddressesController.getAddressesForTicketsWithNullComment7d);
+
 module.exports = router; 

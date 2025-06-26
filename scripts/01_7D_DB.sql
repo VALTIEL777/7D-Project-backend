@@ -13,7 +13,7 @@ CREATE TABLE People (
     lastname VARCHAR(45),
     role VARCHAR(128),
     phone VARCHAR(10),
-    email VARCHAR(128) UNIQUE,
+    email VARCHAR(255),
     createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     deletedAt TIMESTAMP,
@@ -51,7 +51,8 @@ CREATE TABLE Quadrants (
     deletedAt TIMESTAMP,
     createdBy INTEGER REFERENCES Users(UserId),
     updatedBy INTEGER REFERENCES Users(UserId),
-    supervisorId INTEGER REFERENCES People(employeeId)
+    supervisorId INTEGER REFERENCES People(employeeId),
+    zoneManagerId INTEGER REFERENCES People(employeeId)
 );
 
 CREATE TABLE wayfinding(
@@ -65,9 +66,9 @@ CREATE TABLE wayfinding(
     toAddressCardinal VARCHAR(64),
     toAddressStreet VARCHAR(64),
     toAddressSuffix VARCHAR(64),
-	width DOUBLE PRECISION,
-    length DOUBLE PRECISION,
-    surfaceTotal DOUBLE PRECISION,
+	width NUMERIC(10, 2),
+    length NUMERIC(10, 2),
+    surfaceTotal NUMERIC(10, 2),
     createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     deletedAt TIMESTAMP,
@@ -96,7 +97,7 @@ CREATE TABLE ContractUnits (
     description TEXT,
     workNotIncluded TEXT,
     CDOTStandardImg TEXT,
-    CostPerUnit DOUBLE PRECISION,
+    CostPerUnit NUMERIC(10, 2),
     zone VARCHAR(64),
     PaymentClause TEXT,
     createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -363,8 +364,8 @@ CREATE TABLE photoEvidence(
     ticketStatusId INTEGER,
     ticketId INTEGER,  -- Add this column to match the composite key
     name VARCHAR(64),
-    latitude DOUBLE PRECISION,
-    longitude DOUBLE PRECISION,
+    latitude NUMERIC(10, 2),
+    longitude NUMERIC(10, 2),
     photo VARCHAR(255),
     date TIMESTAMP,
     comment TEXT,
@@ -633,3 +634,29 @@ EXECUTE FUNCTION set_updated_at_timestamp();
 INSERT INTO Users (UserId, username, password)
 VALUES (1, 'testuser', 'securepassword123')
 ON CONFLICT (UserId) DO NOTHING;
+
+-- Supervisors
+INSERT INTO People (UserId, firstname, lastname, role, phone, email) VALUES
+(NULL, 'Renee', 'Mercado', 'Supervisor', '7737946851', 'renee.mercado@peoplesgasdelivery.com'),
+(NULL, 'Aaron', 'Collins', 'Supervisor', '7733957426', 'aaron.collins@peoplesgasdelivery.com'),
+(NULL, 'Robert', 'Ozys', 'Supervisor', '3122732664', 'robert.ozys@peoplesgasdelivery.com');
+
+-- Zone Managers (1-4)
+INSERT INTO People (UserId, firstname, lastname, role, phone, email) VALUES
+(NULL, 'Barbara', 'Powell', 'Zone 1 Manager', '8723622282', 'Anthony.Gross@wecenergygroup.com'),
+(NULL, 'Mario', 'Ortiz', 'Zone 2 Manager', '3123660935', 'Mario.Ortiz@peoplesgasdelivery.com'),
+(NULL, 'Bryan', 'Guzman', 'Zone 3 Manager', '3123302832', 'Daniel.Cervantes@peoplesgasdelivery.com'),
+(NULL, 'Matthew', 'Puljic', 'Zone 4 Manager', '3123661938', 'Matthew.Puljic@peoplesgasdelivery.com');
+
+-- Regional Managers (North/Central/South)
+INSERT INTO People (UserId, firstname, lastname, role, phone, email) VALUES
+(NULL, 'Dominick', 'Puckett', 'Regional Manager', '3123514903', 'dominick.puckett@peoplesgasdelivery.com'),
+(NULL, 'James', 'Davis', 'Regional Manager', '7733975593', 'dominick.hernandez@peoplesgasdelivery.com'),
+(NULL, 'Anthony', 'Gross', 'Regional Manager', '3122135259', 'lucero.martinez@peoplesgasdelivery.com'),
+(NULL, 'Giovanni', 'Delgado', 'Regional Manager', '3127991520', NULL);
+
+-- Quadrant Zone Managers (NW/NE/SW/SE)
+INSERT INTO People (UserId, firstname, lastname, role, phone, email) VALUES
+(NULL, 'Jonathan', 'Salgado', 'Quadrant Manager (NE)', '3123668217', 'jonathan.salgado@peoplesgasdelivery.com'),
+(NULL, 'Carl', 'Hughes', 'Quadrant Manager (SW)', '3122082480', 'carl.hughes@peoplesgasdelivery.com'),
+(NULL, 'Pablo', 'Jimenez', 'Quadrant Manager (SE)', '3123661882', 'pablo.jimenez@peoplesgasdelivery.com');

@@ -10,25 +10,25 @@ class NecessaryPhases {
   }
 
   static async findById(necessaryPhaseId) {
-    const res = await db.query('SELECT * FROM NecessaryPhases WHERE necessaryPhaseId = $1;', [necessaryPhaseId]);
+    const res = await db.query('SELECT * FROM NecessaryPhases WHERE necessaryPhaseId = $1 AND deletedAt IS NULL;', [necessaryPhaseId]);
     return res.rows[0];
   }
 
   static async findAll() {
-    const res = await db.query('SELECT * FROM NecessaryPhases;');
+    const res = await db.query('SELECT * FROM NecessaryPhases WHERE deletedAt IS NULL;');
     return res.rows;
   }
 
   static async update(necessaryPhaseId, name, description, updatedBy) {
     const res = await db.query(
-      'UPDATE NecessaryPhases SET name = $1, description = $2, updatedAt = CURRENT_TIMESTAMP, updatedBy = $3 WHERE necessaryPhaseId = $4 RETURNING *;',
+      'UPDATE NecessaryPhases SET name = $1, description = $2, updatedAt = CURRENT_TIMESTAMP, updatedBy = $3 WHERE necessaryPhaseId = $4 AND deletedAt IS NULL RETURNING *;',
       [name, description, updatedBy, necessaryPhaseId]
     );
     return res.rows[0];
   }
 
   static async delete(necessaryPhaseId) {
-    const res = await db.query('UPDATE NecessaryPhases SET deletedAt = CURRENT_TIMESTAMP WHERE necessaryPhaseId = $1 RETURNING *;', [necessaryPhaseId]);
+    const res = await db.query('UPDATE NecessaryPhases SET deletedAt = CURRENT_TIMESTAMP WHERE necessaryPhaseId = $1 AND deletedAt IS NULL RETURNING *;', [necessaryPhaseId]);
     return res.rows[0];
   }
 }
