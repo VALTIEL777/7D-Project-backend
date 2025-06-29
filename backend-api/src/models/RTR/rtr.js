@@ -33,14 +33,62 @@ class RTR {
   }
 
   static async findQuadrantByName(name) {
+    if (!name) return null;
+    
+    // First try to find the exact quadrant name
     const res = await db.query('SELECT quadrantId FROM Quadrants WHERE name = $1 AND deletedAt IS NULL;', [name]);
-    return res.rows[0]?.quadrantid;
+    if (res.rows[0]) {
+      return res.rows[0].quadrantid;
+    }
+    
+    // If exact match not found, try fuzzy matching on the number part
+    // Extract number from name (e.g., "PGL-072" -> "072")
+    const numberMatch = name.match(/(\d+)/);
+    if (numberMatch) {
+      const number = numberMatch[1];
+      const normalizedNumber = parseInt(number, 10).toString(); // Remove leading zeros
+      console.log(`Exact match not found for "${name}", searching for quadrants containing number "${normalizedNumber}"...`);
+      
+      // Search for quadrants that contain this number (with and without leading zeros)
+      const fuzzyRes = await db.query(
+        `SELECT quadrantId, name FROM Quadrants 
+         WHERE (name LIKE $1 OR name LIKE $2 OR name LIKE $3) 
+         AND deletedAt IS NULL 
+         ORDER BY name LIMIT 1;`, 
+        [`%${number}%`, `%${normalizedNumber}%`, `%PGL-${normalizedNumber}%`]
+      );
+      
+      if (fuzzyRes.rows[0]) {
+        console.log(`Found matching quadrant: "${fuzzyRes.rows[0].name}" for input "${name}"`);
+        return fuzzyRes.rows[0].quadrantid;
+      }
+      
+      // If still not found, try more flexible matching
+      // Look for any quadrant that contains the number part
+      const flexibleRes = await db.query(
+        `SELECT quadrantId, name FROM Quadrants 
+         WHERE name ~ $1 
+         AND deletedAt IS NULL 
+         ORDER BY name LIMIT 1;`,
+        [`PGL-?${normalizedNumber}\\b|PGL-${number}\\b`]
+      );
+      
+      if (flexibleRes.rows[0]) {
+        console.log(`Found flexible matching quadrant: "${flexibleRes.rows[0].name}" for input "${name}"`);
+        return flexibleRes.rows[0].quadrantid;
+  }
+    }
+    
+    console.log(`No matching quadrant found for "${name}"`);
+    return null;
   }
 
-  static async createTicket(incidentId, quadrantId, wayfindingId, partnerComment, comment7d, ticketCode, partnerSupervisorComment, ticketType, createdBy, updatedBy) {
+  static async createTicket(incidentId, quadrantId, contractUnitId, wayfindingId, partnerComment, comment7d, ticketCode, partnerSupervisorComment, ticketType, amountToPay, quantity, createdBy, updatedBy) {
+    console.log(`Creating ticket with amountToPay: ${amountToPay} (type: ${typeof amountToPay}) and quantity: ${quantity}`);
+    
     const res = await db.query(
-      'INSERT INTO Tickets(incidentId, cuadranteId, wayfindingId, PartnerComment, comment7d, ticketCode, PartnerSupervisorComment, ticketType, createdBy, updatedBy) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING ticketId;',
-      [incidentId, quadrantId, wayfindingId, partnerComment, comment7d, ticketCode, partnerSupervisorComment, ticketType, createdBy, updatedBy]
+      'INSERT INTO Tickets(incidentId, cuadranteId, contractUnitId, wayfindingId, PartnerComment, comment7d, ticketCode, PartnerSupervisorComment, ticketType, amounttopay, quantity, createdBy, updatedBy) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING ticketId;',
+      [incidentId, quadrantId, contractUnitId, wayfindingId, partnerComment, comment7d, ticketCode, partnerSupervisorComment, ticketType, amountToPay, quantity, createdBy, updatedBy]
     );
     return res.rows[0].ticketid;
   }
@@ -90,20 +138,67 @@ class RTR {
     return res.rows[0];
   }
 
+  static async findContractUnitByItemCode(itemCode) {
+    if (!itemCode) {
+      console.log(`findContractUnitByItemCode: itemCode is null/undefined`);
+      return null;
+    }
+    
+    console.log(`findContractUnitByItemCode: Searching for itemCode "${itemCode}"`);
+    
+    const res = await db.query(
+      'SELECT contractUnitId, CostPerUnit FROM ContractUnits WHERE itemCode = $1 AND deletedAt IS NULL;', 
+      [itemCode]
+    );
+    
+    console.log(`findContractUnitByItemCode: Query returned ${res.rows.length} rows`);
+    
+    if (res.rows[0]) {
+      console.log(`findContractUnitByItemCode: Found row:`, res.rows[0]);
+      console.log(`findContractUnitByItemCode: contractUnitId = ${res.rows[0].contractunitid}, CostPerUnit = ${res.rows[0].costperunit}`);
+      return {
+        contractUnitId: res.rows[0].contractunitid,
+        costPerUnit: res.rows[0].costperunit
+      };
+    }
+    
+    console.log(`findContractUnitByItemCode: No ContractUnit found with itemCode "${itemCode}"`);
+    
+    // Let's also check what ContractUnits exist in the database
+    const allContractUnits = await db.query('SELECT contractUnitId, itemCode, CostPerUnit FROM ContractUnits WHERE deletedAt IS NULL LIMIT 5;');
+    console.log(`findContractUnitByItemCode: Available ContractUnits:`, allContractUnits.rows);
+    
+    return null;
+  }
+
   static async processRTRData(data, createdBy, updatedBy) {
     const results = [];
     
+    console.log(`=== Starting RTR Data Processing ===`);
+    console.log(`Total rows to process: ${data.length}`);
+    console.log(`createdBy: ${createdBy}, updatedBy: ${updatedBy}`);
+    
     for (const row of data) {
       try {
+        console.log(`\n=== Processing Row ===`);
+        console.log(`Row data keys: ${Object.keys(row)}`);
+        console.log(`SAP_ITEM_NUM: ${row.SAP_ITEM_NUM}`);
+        console.log(`SQFT_QTY_RES: ${row.SQFT_QTY_RES} (type: ${typeof row.SQFT_QTY_RES})`);
+        console.log(`TASK_WO_NUM: ${row.TASK_WO_NUM}`);
+        console.log(`RESTN_WO_NUM: ${row.RESTN_WO_NUM}`);
+        
         // Step 1: Create Incident
+        console.log(`Step 1: Creating incident with RESTN_WO_NUM: ${row.RESTN_WO_NUM}`);
         const incidentId = await this.createIncident(
           row.RESTN_WO_NUM,
           row.Earliest_Rpt_Dt,
           createdBy,
           updatedBy
         );
+        console.log(`Step 1 - Created Incident ID: ${incidentId}`);
 
         // Step 2: Create Wayfinding
+        console.log(`Step 2: Creating wayfinding with LOCATION2_RES: ${row.LOCATION2_RES}`);
         const wayfindingId = await this.createWayfinding(
           row.LOCATION2_RES,
           row.fromAddressNumber,
@@ -119,25 +214,80 @@ class RTR {
           createdBy,
           updatedBy
         );
+        console.log(`Step 2 - Created Wayfinding ID: ${wayfindingId}`);
 
-        // Step 3: Find Quadrant
+        // Step 3: Find Quadrant (or create if doesn't exist)
+        console.log(`Step 3: Finding quadrant with SQ_MI: ${row.SQ_MI}`);
         const quadrantId = await this.findQuadrantByName(row.SQ_MI);
+        console.log(`Step 3 - Found Quadrant ID: ${quadrantId}`);
 
-        // Step 4: Create Ticket
+        // Step 4: Find ContractUnit by SAP_ITEM_NUM
+        console.log(`Step 4: Looking for ContractUnit with itemCode: "${row.SAP_ITEM_NUM}"`);
+        const contractUnitData = await this.findContractUnitByItemCode(row.SAP_ITEM_NUM);
+        const contractUnitId = contractUnitData ? contractUnitData.contractUnitId : null;
+        console.log(`Step 4 - ContractUnit result:`, contractUnitData);
+        
+        // Step 5: Calculate amountToPay
+        console.log(`Step 5: Calculating amountToPay`);
+        let amountToPay = null;
+        let quantity = row.SQFT_QTY_RES || 1; // Get quantity from SQFT_QTY_RES
+        
+        // If quantity is 0, null, or undefined, use 1 instead
+        if (!quantity || quantity === 0) {
+          quantity = 1;
+        }
+        
+        console.log(`Step 5 - Raw SQFT_QTY_RES: ${row.SQFT_QTY_RES} (type: ${typeof row.SQFT_QTY_RES})`);
+        console.log(`Step 5 - Final quantity: ${quantity} (type: ${typeof quantity})`);
+        console.log(`Step 5 - ContractUnit data:`, contractUnitData);
+        
+        if (contractUnitData && contractUnitData.costPerUnit && quantity) {
+          amountToPay = contractUnitData.costPerUnit * quantity;
+          console.log(`Step 5 - Calculated amountToPay: ${contractUnitData.costPerUnit} * ${quantity} = ${amountToPay}`);
+        } else {
+          console.log(`Step 5 - Could not calculate amountToPay:`);
+          console.log(`  - contractUnitData exists: ${!!contractUnitData}`);
+          console.log(`  - costPerUnit: ${contractUnitData?.costPerUnit}`);
+          console.log(`  - quantity: ${quantity}`);
+        }
+
+        // Step 6: Create Ticket
+        console.log(`Step 6: Creating ticket with TASK_WO_NUM: ${row.TASK_WO_NUM}`);
+        console.log(`Step 6: Ticket parameters:`, {
+          incidentId,
+          quadrantId,
+          contractUnitId,
+          wayfindingId,
+          partnerComment: row['PGL ComD:Wments'],
+          comment7d: row['Contractor Comments'],
+          ticketCode: row.TASK_WO_NUM,
+          partnerSupervisorComment: row.NOTES2_RES,
+          ticketType: row.ticketType,
+          amountToPay,
+          quantity,
+          createdBy,
+          updatedBy
+        });
+        
         const ticketId = await this.createTicket(
           incidentId,
           quadrantId,
+          contractUnitId, // Pass the found contractUnitId
           wayfindingId,
           row['PGL ComD:Wments'],
           row['Contractor Comments'],
           row.TASK_WO_NUM,
           row.NOTES2_RES,
           row.ticketType,
+          amountToPay, // Pass the calculated amountToPay
+          quantity, // Pass the calculated quantity
           createdBy,
           updatedBy
         );
+        console.log(`Step 6 - Created Ticket ID: ${ticketId}`);
 
-        // Step 5: Create Address
+        // Step 7: Create Address
+        console.log(`Step 7: Creating address with ADDRESS: ${row.ADDRESS}`);
         const addressId = await this.createAddress(
           row.addressNumber,
           row.addressCardinal,
@@ -146,8 +296,10 @@ class RTR {
           createdBy,
           updatedBy
         );
+        console.log(`Step 7 - Created Address ID: ${addressId}`);
 
-        // Step 6: Create TicketAddress
+        // Step 8: Create TicketAddress
+        console.log(`Step 8: Creating ticket address link`);
         await this.createTicketAddress(
           ticketId,
           addressId,
@@ -156,14 +308,10 @@ class RTR {
           createdBy,
           updatedBy
         );
+        console.log(`Step 8 - Created TicketAddress link`);
 
-        // Step 7: Find and link ContractUnit
-        const contractUnitId = await this.findContractUnitByName(row.SAP_ITEM_NUM);
-        if (contractUnitId) {
-          await this.updateTicketContractUnit(ticketId, contractUnitId, updatedBy);
-        }
-
-        // Step 8: Create Permit
+        // Step 9: Create Permit
+        console.log(`Step 9: Creating permit with AGENCY_NO: ${row.AGENCY_NO}`);
         const currentDate = new Date();
         const expireDate = new Date(row.EXP_DATE);
         const status = expireDate > currentDate ? 'ACTIVE' : 'EXPIRED';
@@ -176,11 +324,14 @@ class RTR {
           createdBy,
           updatedBy
         );
+        console.log(`Step 9 - Created Permit ID: ${permitId}`);
 
-        // Step 9: Create PermitedTicket
+        // Step 10: Create PermitedTicket
+        console.log(`Step 10: Creating permitted ticket link`);
         await this.createPermitedTicket(permitId, ticketId, createdBy, updatedBy);
+        console.log(`Step 10 - Created PermitedTicket link`);
 
-        results.push({
+        const result = {
           success: true,
           ticketId,
           incidentId,
@@ -188,17 +339,37 @@ class RTR {
           addressId,
           permitId,
           message: 'Record created successfully'
-        });
+        };
+        
+        console.log(`=== Row Processing Complete ===`);
+        console.log(`Final result:`, result);
+        
+        results.push(result);
 
       } catch (error) {
-        results.push({
+        console.error(`=== Error Processing Row ===`);
+        console.error(`Error details:`, error);
+        console.error(`Error message:`, error.message);
+        console.error(`Error stack:`, error.stack);
+        console.error(`Row data:`, row);
+        
+        const errorResult = {
           success: false,
           error: error.message,
-          data: row
-        });
+          data: row,
+          stack: error.stack
+        };
+        
+        console.error(`Error result:`, errorResult);
+        results.push(errorResult);
       }
     }
 
+    console.log(`=== RTR Data Processing Complete ===`);
+    console.log(`Total results: ${results.length}`);
+    console.log(`Successful: ${results.filter(r => r.success).length}`);
+    console.log(`Failed: ${results.filter(r => !r.success).length}`);
+    
     return results;
   }
 

@@ -22,41 +22,26 @@ INSERT INTO wayfinding (wayfindingId, location, fromAddressNumber, fromAddressCa
   (1, 'Loc1', '100', 'N', 'Main', 'St', '200', 'S', 'Elm', 'Ave', 10.5, 20.0, 210.0, 1, 1),
   (2, 'Loc2', '101', 'E', 'Oak', 'Blvd', '201', 'W', 'Pine', 'Rd', 12.0, 18.0, 216.0, 2, 2);
 
--- Mock data for NecessaryPhases
-INSERT INTO NecessaryPhases (necessaryPhaseId, name, description, createdBy, updatedBy) VALUES
-  (1, 'Phase 1', 'Initial phase', 1, 1),
-  (2, 'Phase 2', 'Secondary phase', 2, 2);
-
 
 -- Mock data for IncidentsMx
 INSERT INTO IncidentsMx (incidentId, name, earliestRptDate, createdBy, updatedBy) VALUES
   (1, 'Incident 1', '2024-01-10', 1, 1),
   (2, 'Incident 2', '2024-01-11', 2, 2);
 
--- Mock data for Tickets
-INSERT INTO Tickets (ticketId, incidentId, cuadranteId, contractUnitId, wayfindingId, paymentId, ticketCode, quantity, daysOutstanding, comment7d, contractNumber, amountToPay, ticketType, createdBy, updatedBy) VALUES
-  (1, 1, 1, 1, 1, 1, 'TCK001', 5, 2, NULL, 'CN001', 500.0, 'regular', 1, 1),
-  (2, 2, 2, 2, 2, 2, 'TCK002', 3, 1, 'Done', 'CN002', 300.0, 'mobilization', 2, 2);
 
 -- Mock data for Addresses
 INSERT INTO Addresses (addressId, addressNumber, addressCardinal, addressStreet, addressSuffix, createdBy, updatedBy) VALUES
   (1, '123', 'N', 'Main', 'St', 1, 1),
   (2, '456', 'S', 'Elm', 'Ave', 2, 2);
 
--- Mock data for TicketAddresses
-INSERT INTO TicketAddresses (ticketId, addressId, ispartner, is7d, createdBy, updatedBy) VALUES
-  (1, 1, true, false, 1, 1),
-  (2, 2, false, true, 2, 2);
+
 
 -- Mock data for Permits
 INSERT INTO Permits (PermitId, permitNumber, status, startDate, expireDate, createdBy, updatedBy) VALUES
   (1, 'PRM001', 'Active', '2024-01-01', '2024-12-31', 1, 1),
   (2, 'PRM002', 'Expired', '2023-01-01', '2023-12-31', 2, 2);
 
--- Mock data for PermitedTickets
-INSERT INTO PermitedTickets (permitId, ticketId, createdBy, updatedBy) VALUES
-  (1, 1, 1, 1),
-  (2, 2, 2, 2);
+
 
 -- Mock data for Diggers
 INSERT INTO Diggers (diggerId, permitId, diggerNumber, status, startDate, expireDate, watchnProtect, createdBy, updatedBy) VALUES
@@ -88,25 +73,8 @@ INSERT INTO Routes (routeId, routeCode, type, startDate, endDate, createdBy, upd
   (1, 'RTE001', 'concrete', '2024-01-01', '2024-01-10', 1, 1),
   (2, 'RTE002', 'asphalt', '2024-02-01', '2024-02-10', 2, 2);
 
--- Mock data for RouteTickets
-INSERT INTO RouteTickets (routeId, ticketId, queue, createdBy, updatedBy) VALUES
-  (1, 1, 1, 1, 1),
-  (2, 2, 2, 2, 2);
 
--- Mock data for TaskStatus
-INSERT INTO TaskStatus (taskStatusId, name, description, createdBy, updatedBy) VALUES
-  (1, 'Open', 'Ticket is open', 1, 1),
-  (2, 'Closed', 'Ticket is closed', 2, 2);
 
--- Mock data for TicketStatus
-INSERT INTO TicketStatus (taskStatusId, ticketId, crewId, startingDate, endingDate, observation, createdBy, updatedBy) VALUES
-  (1, 1, 1, '2024-01-01', '2024-01-05', 'Started', 1, 1),
-  (2, 2, 2, '2024-02-01', '2024-02-05', 'Completed', 2, 2);
-
--- Mock data for photoEvidence
-INSERT INTO photoEvidence (photoId, ticketStatusId, ticketId, name, latitude, longitude, photo, date, comment, photoURL, createdBy, updatedBy) VALUES
-  (1, 1, 1, 'Photo1', 41.0, -87.0, 'photo1.jpg', '2024-01-02', 'Initial', 'http://photo1.com', 1, 1),
-  (2, 2, 2, 'Photo2', 42.0, -86.0, 'photo2.jpg', '2024-02-02', 'Final', 'http://photo2.com', 2, 2);
 
 -- Mock data for Suppliers
 INSERT INTO Suppliers (supplierId, name, phone, email, address, createdBy, updatedBy) VALUES
@@ -139,16 +107,3 @@ INSERT INTO RTRs (rtrId, name, url, createdAt, updatedAt) VALUES
   (2, 'RTR File 2', 'http://rtr2.com', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP); 
 
 
-  INSERT INTO Invoices (invoiceId, ticketId, invoiceNumber, invoiceDateRequested, amountRequested, status, invoiceURL, createdBy, updatedBy) VALUES
-  (1, 1, 'INV001', '2024-01-05', 1200.00, 'Pending', 'http://invoice1.com', 1, 1),
-  (2, 2, 'INV002', '2024-01-06', 800.00, 'Paid', 'http://invoice2.com', 2, 2),
-  (3, 1, 'INV003', '2024-01-10', 600.00, 'Overdue', 'http://invoice3.com', 3, 3),
-  (4, 2, 'INV004', '2024-01-15', 400.00, 'Pending', 'http://invoice4.com', 1, 1);
-
--- Mock data for Fines
-INSERT INTO Fines (fineId, ticketId, fineNumber, fineDate, paymentDate, amount, status, fineURL, createdBy, updatedBy) VALUES
-  (1, 1, 'FINE001', '2024-01-05', '2024-01-10', 250.00, 'Paid', 'http://fine1.com', 1, 1),
-  (2, 1, 'FINE002', '2024-01-08', NULL, 150.00, 'Outstanding', 'http://fine2.com', 2, 2),
-  (3, 2, 'FINE003', '2024-01-12', '2024-01-15', 300.00, 'Paid', 'http://fine3.com', 3, 3),
-  (4, 2, 'FINE004', '2024-01-15', NULL, 200.00, 'Pending', 'http://fine4.com', 1, 1),
-  (5, 1, 'FINE005', '2024-01-20', NULL, 175.00, 'Overdue', 'http://fine5.com', 2, 2);

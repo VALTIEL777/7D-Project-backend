@@ -25,13 +25,13 @@ const router = express.Router();
  *             required:
  *               - name
  *               - shop
+ *               - zone
  *               - minLatitude
  *               - maxLatitude
  *               - minLongitude
  *               - maxLongitude
  *               - createdBy
  *               - updatedBy
- *               - supervisorId
  *             properties:
  *               name:
  *                 type: string
@@ -41,6 +41,10 @@ const router = express.Router();
  *                 type: string
  *                 description: The shop associated with the quadrant.
  *                 example: Shop A
+ *               zone:
+ *                 type: string
+ *                 description: The zone associated with the quadrant.
+ *                 example: Zone 1
  *               minLatitude:
  *                 type: string
  *                 description: Minimum latitude for the quadrant.
@@ -69,6 +73,10 @@ const router = express.Router();
  *                 type: integer
  *                 description: The ID of the supervisor for this quadrant.
  *                 example: 2
+ *               zoneManagerId:
+ *                 type: integer
+ *                 description: The ID of the zone manager for this quadrant.
+ *                 example: 4
  *     responses:
  *       201:
  *         description: The quadrant was successfully created.
@@ -88,6 +96,80 @@ const router = express.Router();
  *         description: Server error
  */
 router.post('/', QuadrantsController.createQuadrant);
+
+/**
+ * @swagger
+ * /quadrants/supervisor/{supervisorId}:
+ *   get:
+ *     summary: Get quadrants by supervisor ID
+ *     tags: [Quadrants]
+ *     parameters:
+ *       - in: path
+ *         name: supervisorId
+ *         schema:
+ *           type: integer
+ *         required: true
+ *         description: The ID of the supervisor.
+ *     responses:
+ *       200:
+ *         description: A list of quadrants managed by the supervisor.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   quadrantId:
+ *                     type: integer
+ *                     example: 1
+ *                   name:
+ *                     type: string
+ *                     example: Northwest
+ *                   supervisorId:
+ *                     type: integer
+ *                     example: 2
+ *       500:
+ *         description: Server error
+ */
+router.get('/supervisor/:supervisorId', QuadrantsController.getQuadrantsBySupervisor);
+
+/**
+ * @swagger
+ * /quadrants/zone-manager/{zoneManagerId}:
+ *   get:
+ *     summary: Get quadrants by zone manager ID
+ *     tags: [Quadrants]
+ *     parameters:
+ *       - in: path
+ *         name: zoneManagerId
+ *         schema:
+ *           type: integer
+ *         required: true
+ *         description: The ID of the zone manager.
+ *     responses:
+ *       200:
+ *         description: A list of quadrants managed by the zone manager.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   quadrantId:
+ *                     type: integer
+ *                     example: 1
+ *                   name:
+ *                     type: string
+ *                     example: Northwest
+ *                   zoneManagerId:
+ *                     type: integer
+ *                     example: 4
+ *       500:
+ *         description: Server error
+ */
+router.get('/zone-manager/:zoneManagerId', QuadrantsController.getQuadrantsByZoneManager);
 
 /**
  * @swagger
@@ -178,6 +260,10 @@ router.get('/', QuadrantsController.getAllQuadrants);
  *                 type: string
  *                 description: The updated shop associated with the quadrant.
  *                 example: Shop D
+ *               zone:
+ *                 type: string
+ *                 description: The updated zone associated with the quadrant.
+ *                 example: Zone 2
  *               minLatitude:
  *                 type: string
  *                 description: Updated minimum latitude for the quadrant.
@@ -201,7 +287,11 @@ router.get('/', QuadrantsController.getAllQuadrants);
  *               supervisorId:
  *                 type: integer
  *                 description: The updated ID of the supervisor for this quadrant.
- *                 example: 4
+ *                 example: 3
+ *               zoneManagerId:
+ *                 type: integer
+ *                 description: The updated ID of the zone manager for this quadrant.
+ *                 example: 5
  *     responses:
  *       200:
  *         description: The quadrant was successfully updated.
@@ -247,6 +337,9 @@ router.put('/:quadrantId', QuadrantsController.updateQuadrant);
  *                 message:
  *                   type: string
  *                   example: Quadrant deleted successfully
+ *                 deletedQuadrant:
+ *                   type: object
+ *                   description: The deleted quadrant data
  *       404:
  *         description: Quadrant not found
  *       500:

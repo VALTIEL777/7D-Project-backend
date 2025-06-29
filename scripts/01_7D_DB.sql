@@ -76,16 +76,7 @@ CREATE TABLE wayfinding(
     updatedBy INTEGER REFERENCES Users(UserId)
 );
 
-CREATE TABLE NecessaryPhases (
-    necessaryPhaseId SERIAL PRIMARY KEY,
-    name VARCHAR(64),
-    description TEXT,
-    createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    deletedAt TIMESTAMP,
-    createdBy INTEGER REFERENCES Users(UserId),
-    updatedBy INTEGER REFERENCES Users(UserId)
-);
+
 
 CREATE TABLE ContractUnits (
     contractUnitId SERIAL PRIMARY KEY,
@@ -107,16 +98,6 @@ CREATE TABLE ContractUnits (
     updatedBy INTEGER REFERENCES Users(UserId)
 );
 
-CREATE TABLE ContractUnitsPhases (
-    contractUnitId INTEGER REFERENCES ContractUnits (contractUnitId),
-    necessaryPhaseId INTEGER REFERENCES NecessaryPhases (necessaryPhaseId),
-    PRIMARY KEY (contractUnitId, necessaryPhaseId),
-    createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    deletedAt TIMESTAMP,
-    createdBy INTEGER REFERENCES Users(UserId),
-    updatedBy INTEGER REFERENCES Users(UserId)
-);
 
 CREATE TABLE IncidentsMx (
     incidentId SERIAL PRIMARY KEY,
@@ -377,6 +358,17 @@ CREATE TABLE photoEvidence(
     createdBy INTEGER REFERENCES Users(UserId),
     updatedBy INTEGER REFERENCES Users(UserId)
 );
+
+CREATE TABLE ContractUnitsPhases (
+    contractUnitId INTEGER REFERENCES ContractUnits (contractUnitId),
+    taskStatusId INTEGER REFERENCES TaskStatus ( taskStatusId),
+    PRIMARY KEY (contractUnitId,  taskStatusId),
+    createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    deletedAt TIMESTAMP,
+    createdBy INTEGER REFERENCES Users(UserId),
+    updatedBy INTEGER REFERENCES Users(UserId)
+);
 ----------------------------------------------------------------
 --Material & Equipment module
 
@@ -488,10 +480,6 @@ BEFORE UPDATE ON wayfinding
 FOR EACH ROW
 EXECUTE FUNCTION set_updated_at_timestamp();
 
-CREATE TRIGGER set_updated_at_necessaryphases
-BEFORE UPDATE ON NecessaryPhases
-FOR EACH ROW
-EXECUTE FUNCTION set_updated_at_timestamp();
 
 CREATE TRIGGER set_updated_at_contractunits
 BEFORE UPDATE ON ContractUnits
@@ -660,3 +648,19 @@ INSERT INTO People (UserId, firstname, lastname, role, phone, email) VALUES
 (NULL, 'Jonathan', 'Salgado', 'Quadrant Manager (NE)', '3123668217', 'jonathan.salgado@peoplesgasdelivery.com'),
 (NULL, 'Carl', 'Hughes', 'Quadrant Manager (SW)', '3122082480', 'carl.hughes@peoplesgasdelivery.com'),
 (NULL, 'Pablo', 'Jimenez', 'Quadrant Manager (SE)', '3123661882', 'pablo.jimenez@peoplesgasdelivery.com');
+
+INSERT INTO TaskStatus (name, description)
+VALUES 
+    ('Sawcut', 'Cutting the damaged pavement section with a saw'),
+    ('Framing', 'Creating forms or frames for the new concrete pour'),
+    ('Pour', 'Pouring new concrete into the prepared area'),
+    ('Clean', 'Cleaning the work area and removing debris'),
+    ('Dirt', 'Preparing and compacting the base dirt layer'),
+    ('Grind', 'Grinding down uneven surfaces for smooth transitions'),
+    ('Stripping', 'Removing old pavement or surface materials'),
+    ('Spotting', 'Marking and identifying areas that need repair');
+
+
+
+
+
