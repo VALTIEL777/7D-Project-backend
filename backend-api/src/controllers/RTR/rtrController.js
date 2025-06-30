@@ -1,7 +1,7 @@
 const XLSX = require("xlsx");
 const RTR = require("../../models/RTR/rtr").RTR;
 const NotificationService = require("../../services/NotificationService");
-const minioClient = require('../../config/minio');
+const { getMinioClient, generatePublicPresignedUrl } = require('../../config/minio');
 const path = require('path');
 const Tickets = require("../../models/ticket-logic/Tickets");
 
@@ -174,9 +174,9 @@ exports.uploadExcel = async (req, res) => {
     const objectName = `${folder}/${timestamp}-${sanitizedName}`;
 
     // Ensure bucket exists
-    const bucketExists = await minioClient.bucketExists(bucket).catch(() => false);
+    const bucketExists = await getMinioClient().bucketExists(bucket).catch(() => false);
     if (!bucketExists) {
-      await minioClient.makeBucket(bucket);
+      await getMinioClient().makeBucket(bucket);
       
       // Set bucket policy to allow public read access
       const policy = {
@@ -191,11 +191,11 @@ exports.uploadExcel = async (req, res) => {
         ]
       };
       
-      await minioClient.setBucketPolicy(bucket, JSON.stringify(policy));
+      await getMinioClient().setBucketPolicy(bucket, JSON.stringify(policy));
       console.log(`Set public read policy for bucket: ${bucket}`);
     }
 
-    await minioClient.putObject(bucket, objectName, req.file.buffer);
+    await getMinioClient().putObject(bucket, objectName, req.file.buffer);
 
     // 2. Store the object key instead of constructing a URL
     // This makes file retrieval more reliable
@@ -438,25 +438,19 @@ exports.listRTRExcels = async (req, res) => {
 
 exports.listRTRFiles = async (req, res) => {
   try {
-    console.log('🔍 Starting listRTRFiles...');
     const bucket = 'uploads';
     const uploadedFolder = 'rtr/uploaded';
     const generatedFolder = 'rtr/generated';
     
-    console.log(`📦 Checking bucket: ${bucket}`);
     // Check if bucket exists first, create it if it doesn't
-    const bucketExists = await minioClient.bucketExists(bucket).catch((err) => {
-      console.error(`❌ Error checking bucket existence:`, err);
+    const bucketExists = await getMinioClient().bucketExists(bucket).catch((err) => {
+      console.error(`Error checking bucket existence:`, err);
       return false;
     });
     
-    console.log(`📦 Bucket exists: ${bucketExists}`);
-    
     if (!bucketExists) {
       try {
-        console.log(`📦 Creating bucket: ${bucket}`);
-        await minioClient.makeBucket(bucket);
-        console.log(`✅ Created MinIO bucket: ${bucket}`);
+        await getMinioClient().makeBucket(bucket);
         
         // Set bucket policy to allow public read access
         const policy = {
@@ -471,10 +465,9 @@ exports.listRTRFiles = async (req, res) => {
           ]
         };
         
-        await minioClient.setBucketPolicy(bucket, JSON.stringify(policy));
-        console.log(`✅ Set public read policy for bucket: ${bucket}`);
+        await getMinioClient().setBucketPolicy(bucket, JSON.stringify(policy));
       } catch (makeBucketError) {
-        console.error(`❌ Failed to create bucket ${bucket}:`, makeBucketError);
+        console.error(`Failed to create bucket ${bucket}:`, makeBucketError);
         // If we can't create the bucket, return empty lists
         return res.status(200).json({ 
           success: true, 
@@ -490,130 +483,60 @@ exports.listRTRFiles = async (req, res) => {
       }
     }
     
-    // List uploaded files
-    console.log(`📁 Listing uploaded files in: ${uploadedFolder}`);
-    const uploadedFiles = [];
-    let uploadedStream;
-    try {
-      uploadedStream = minioClient.listObjects(bucket, uploadedFolder, true);
-    } catch (streamError) {
-      console.error('❌ Failed to create uploaded files stream:', streamError);
-      uploadedStream = null;
-    }
-    
-    if (uploadedStream) {
-      uploadedStream.on('data', async (obj) => {
-        console.log(`📄 Found uploaded file: ${obj.name}`);
+    // Helper function to list files from a folder
+    const listFilesFromFolder = async (folderPath) => {
+      const files = [];
+      return new Promise((resolve, reject) => {
         try {
-          // Generate presigned URL for download (valid for 1 hour)
-          const presignedUrl = await minioClient.presignedGetObject(bucket, obj.name, 3600);
-          console.log(`🔗 Generated presigned URL for: ${obj.name}`);
+          const stream = getMinioClient().listObjects(bucket, folderPath, true);
           
-          uploadedFiles.push({
-            name: obj.name.replace(uploadedFolder + '/', ''),
-            size: obj.size,
-            lastModified: obj.lastModified,
-            type: 'uploaded',
-            url: presignedUrl,
-            objectKey: obj.name
-          });
-        } catch (urlError) {
-          console.error(`❌ Failed to generate presigned URL for ${obj.name}:`, urlError);
-          uploadedFiles.push({
-            name: obj.name.replace(uploadedFolder + '/', ''),
-            size: obj.size,
-            lastModified: obj.lastModified,
-            type: 'uploaded',
-            url: null,
-            objectKey: obj.name,
-            error: 'Failed to generate download URL'
-          });
-        }
-      });
-    }
-    
-    // List generated files
-    console.log(`📁 Listing generated files in: ${generatedFolder}`);
-    const generatedFiles = [];
-    let generatedStream;
-    try {
-      generatedStream = minioClient.listObjects(bucket, generatedFolder, true);
-    } catch (streamError) {
-      console.error('❌ Failed to create generated files stream:', streamError);
-      generatedStream = null;
-    }
-    
-    if (generatedStream) {
-      generatedStream.on('data', async (obj) => {
-        console.log(`📄 Found generated file: ${obj.name}`);
-        try {
-          // Generate presigned URL for download (valid for 1 hour)
-          const presignedUrl = await minioClient.presignedGetObject(bucket, obj.name, 3600);
-          console.log(`🔗 Generated presigned URL for: ${obj.name}`);
-          
-          generatedFiles.push({
-            name: obj.name.replace(generatedFolder + '/', ''),
-            size: obj.size,
-            lastModified: obj.lastModified,
-            type: 'generated',
-            url: presignedUrl,
-            objectKey: obj.name
-          });
-        } catch (urlError) {
-          console.error(`❌ Failed to generate presigned URL for ${obj.name}:`, urlError);
-          generatedFiles.push({
-            name: obj.name.replace(generatedFolder + '/', ''),
-            size: obj.size,
-            lastModified: obj.lastModified,
-            type: 'generated',
-            url: null,
-            objectKey: obj.name,
-            error: 'Failed to generate download URL'
-          });
-        }
-      });
-    }
-    
-    // Wait for both streams to complete (if they exist)
-    if (uploadedStream || generatedStream) {
-      console.log('⏳ Waiting for file listing to complete...');
-      await new Promise((resolve, reject) => {
-        let completedStreams = 0;
-        const totalStreams = (uploadedStream ? 1 : 0) + (generatedStream ? 1 : 0);
-        
-        const checkComplete = () => {
-          completedStreams++;
-          console.log(`📊 Stream completed: ${completedStreams}/${totalStreams}`);
-          if (completedStreams >= totalStreams) {
-            resolve();
+          stream.on('data', async (obj) => {
+            try {
+              // Generate presigned URL for download (valid for 1 hour) with public hostname
+              const presignedUrl = await generatePublicPresignedUrl(bucket, obj.name, 3600, req);
+              
+              files.push({
+                name: obj.name.replace(folderPath + '/', ''),
+          size: obj.size,
+          lastModified: obj.lastModified,
+                type: folderPath === uploadedFolder ? 'uploaded' : 'generated',
+                url: presignedUrl,
+                objectKey: obj.name
+              });
+            } catch (urlError) {
+              console.error(`Failed to generate presigned URL for ${obj.name}:`, urlError);
+              files.push({
+                name: obj.name.replace(folderPath + '/', ''),
+          size: obj.size,
+          lastModified: obj.lastModified,
+                type: folderPath === uploadedFolder ? 'uploaded' : 'generated',
+                url: null,
+                objectKey: obj.name,
+                error: 'Failed to generate download URL'
+              });
           }
-        };
+          });
         
-        if (uploadedStream) {
-          uploadedStream.on('end', () => {
-            console.log('✅ Uploaded files stream completed');
-            checkComplete();
+          stream.on('end', () => {
+            resolve(files);
           });
-          uploadedStream.on('error', (err) => {
-            console.error('❌ Uploaded files stream error:', err);
-            checkComplete();
+          
+          stream.on('error', (err) => {
+            console.error(`Stream error for ${folderPath}:`, err);
+            reject(err);
           });
-        }
-        
-        if (generatedStream) {
-          generatedStream.on('end', () => {
-            console.log('✅ Generated files stream completed');
-            checkComplete();
-          });
-          generatedStream.on('error', (err) => {
-            console.error('❌ Generated files stream error:', err);
-            checkComplete();
-          });
+        } catch (streamError) {
+          console.error(`Failed to create stream for ${folderPath}:`, streamError);
+          resolve([]);
         }
       });
-    }
+    };
     
-    console.log(`📊 Final results - Uploaded: ${uploadedFiles.length}, Generated: ${generatedFiles.length}`);
+    // List both uploaded and generated files concurrently
+    const [uploadedFiles, generatedFiles] = await Promise.all([
+      listFilesFromFolder(uploadedFolder),
+      listFilesFromFolder(generatedFolder)
+    ]);
     
     res.status(200).json({ 
       success: true, 
@@ -629,7 +552,7 @@ exports.listRTRFiles = async (req, res) => {
       }
     });
   } catch (err) {
-    console.error('❌ Failed to list RTR files:', err);
+    console.error('Failed to list RTR files:', err);
     res.status(500).json({ 
       success: false, 
       error: 'Failed to list RTR files',
@@ -671,9 +594,9 @@ exports.downloadRTRExcel = async (req, res) => {
     let bucket, objectKey;
     
     try {
-      const url = new URL(rtr.url);
+    const url = new URL(rtr.url);
       bucket = url.pathname.split('/')[1];
-      // Decode the URL-encoded object key
+    // Decode the URL-encoded object key
       objectKey = decodeURIComponent(url.pathname.split('/').slice(2).join('/'));
     } catch (urlError) {
       console.error('Failed to parse URL:', rtr.url, urlError);
@@ -686,7 +609,7 @@ exports.downloadRTRExcel = async (req, res) => {
     console.log(`Original URL: ${rtr.url}`);
     
     // Get file from MinIO
-    minioClient.getObject(bucket, objectKey, (err, dataStream) => {
+    getMinioClient().getObject(bucket, objectKey, (err, dataStream) => {
       if (err) {
         console.error('MinIO getObject error:', err);
         
@@ -736,31 +659,47 @@ exports.downloadFileByKey = async (req, res) => {
       });
     }
     
-    console.log(`Direct download - Bucket: ${bucket}, Key: ${objectKey}`);
+    // Decode the object key if it's URL-encoded
+    const decodedObjectKey = decodeURIComponent(objectKey);
+    
+    console.log(`Direct download - Bucket: ${bucket}, Key: ${decodedObjectKey}`);
+    console.log(`Original encoded key: ${objectKey}`);
     
     // Get file from MinIO
-    minioClient.getObject(bucket, objectKey, (err, dataStream) => {
+    getMinioClient().getObject(bucket, decodedObjectKey, (err, dataStream) => {
       if (err) {
         console.error('MinIO getObject error:', err);
+        console.error('Error code:', err.code);
+        console.error('Error message:', err.message);
         
         // Check if it's a "not found" error
         if (err.code === 'NoSuchKey') {
           return res.status(404).json({ 
             success: false, 
             error: 'File not found in storage',
-            details: `File ${objectKey} not found in bucket ${bucket}`
+            details: `File ${decodedObjectKey} not found in bucket ${bucket}`,
+            debug: {
+              bucket: bucket,
+              objectKey: decodedObjectKey,
+              originalEncodedKey: objectKey
+            }
           });
         }
         
         return res.status(500).json({ 
           success: false, 
           error: 'Failed to download file from MinIO',
-          details: err.message
+          details: err.message,
+          debug: {
+            bucket: bucket,
+            objectKey: decodedObjectKey,
+            originalEncodedKey: objectKey
+          }
         });
       }
       
       // Extract filename from object key
-      const filename = objectKey.split('/').pop() || 'download.xlsx';
+      const filename = decodedObjectKey.split('/').pop() || 'download.xlsx';
       
       // Set headers for file download
       res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
@@ -859,13 +798,6 @@ exports.saveRTRDataWithDecisions = async (req, res) => {
     const createdBy = req.body.createdBy || 1;
     const updatedBy = req.body.updatedBy || 1;
 
-    console.log('💾 Save request received:', {
-      newTicketsCount: newTickets?.length || 0,
-      inconsistentTicketsCount: inconsistentTickets?.length || 0,
-      decisionsKeys: Object.keys(decisions || {}),
-      decisions: decisions
-    });
-
     const results = {
       newTicketsCreated: [],
       ticketsUpdated: [],
@@ -892,17 +824,8 @@ exports.saveRTRDataWithDecisions = async (req, res) => {
 
     // Process inconsistent tickets with user decisions
     if (inconsistentTickets && Array.isArray(inconsistentTickets)) {
-      console.log('🔄 Processing inconsistent tickets:', inconsistentTickets.length);
-      
       for (const ticketData of inconsistentTickets) {
         try {
-          console.log(`📋 Processing ticket ${ticketData.ticketId}:`, {
-            ticketCode: ticketData.ticketCode,
-            ticketId: ticketData.ticketId,
-            decisionsForTicket: decisions[ticketData.ticketId] || {},
-            inconsistencies: ticketData.inconsistencies?.length || 0
-          });
-
           const finalData = applyUserDecisions(ticketData.excelData, ticketData.databaseData, decisions[ticketData.ticketId] || {});
           const result = await updateTicketWithData(ticketData.ticketId, finalData, updatedBy);
           results.ticketsUpdated.push({
@@ -911,7 +834,7 @@ exports.saveRTRDataWithDecisions = async (req, res) => {
             result: result
           });
         } catch (error) {
-          console.error(`❌ Error processing ticket ${ticketData.ticketId}:`, error);
+          console.error(`Error processing ticket ${ticketData.ticketId}:`, error);
           results.errors.push({
             ticketId: ticketData.ticketId,
             ticketCode: ticketData.ticketCode,
@@ -921,19 +844,13 @@ exports.saveRTRDataWithDecisions = async (req, res) => {
       }
     }
 
-    console.log('✅ Save completed with results:', {
-      newTicketsCreated: results.newTicketsCreated.length,
-      ticketsUpdated: results.ticketsUpdated.length,
-      errors: results.errors.length
-    });
-
     return res.status(200).json({
       success: true,
       results: results
     });
 
   } catch (err) {
-    console.error("❌ RTR save with decisions failed:", err);
+    console.error("RTR save with decisions failed:", err);
     return res.status(500).json({
       success: false,
       error: 'Failed to save RTR data with decisions',
@@ -1011,16 +928,8 @@ function getFieldType(field) {
 function applyUserDecisions(excelData, databaseData, decisions) {
   const finalData = { ...databaseData };
   
-  console.log('🔧 Applying user decisions:', {
-    decisions,
-    excelData: Object.keys(excelData),
-    databaseData: Object.keys(databaseData)
-  });
-  
   // Apply decisions directly using the field names from inconsistencies
   for (const [field, choice] of Object.entries(decisions)) {
-    console.log(`Processing decision for field "${field}": ${choice}`);
-    
     if (choice === 'excel') {
       // Use the Excel value for this field
       if (excelData[field] !== undefined) {
@@ -1028,22 +937,20 @@ function applyUserDecisions(excelData, databaseData, decisions) {
         const dbField = getDatabaseFieldMapping(field);
         if (dbField) {
           finalData[dbField] = excelData[field];
-          console.log(`✅ Applied Excel value for ${field} -> ${dbField}: ${excelData[field]}`);
         } else {
-          console.warn(`⚠️ No database field mapping found for Excel field: ${field}`);
+          console.warn(`No database field mapping found for Excel field: ${field}`);
         }
       } else {
-        console.warn(`⚠️ Excel field "${field}" not found in excelData`);
+        console.warn(`Excel field "${field}" not found in excelData`);
       }
     } else if (choice === 'database') {
       // Keep the database value (already copied in finalData)
-      console.log(`✅ Keeping database value for field: ${field}`);
+      // No action needed
     } else {
-      console.warn(`⚠️ Unknown choice "${choice}" for field "${field}"`);
+      console.warn(`Unknown choice "${choice}" for field "${field}"`);
     }
   }
   
-  console.log('🔧 Final data after applying decisions:', finalData);
   return finalData;
 }
 
@@ -1067,15 +974,11 @@ function getDatabaseFieldMapping(excelField) {
 // Helper function to update ticket with final data
 async function updateTicketWithData(ticketId, finalData, updatedBy) {
   try {
-    console.log(`🔄 Updating ticket ${ticketId} with data:`, finalData);
-    
     // Get the current ticket to preserve unchanged fields
     const currentTicket = await Tickets.findById(ticketId);
     if (!currentTicket) {
       throw new Error(`Ticket with ID ${ticketId} not found`);
     }
-
-    console.log(`📋 Current ticket data:`, currentTicket);
 
     // Update only the fields that were changed by user decisions
     const updateData = {
@@ -1094,8 +997,6 @@ async function updateTicketWithData(ticketId, finalData, updatedBy) {
       amountToPay: finalData.amountToPay || currentTicket.amounttopay,
       ticketType: finalData.ticketType || currentTicket.tickettype
     };
-
-    console.log(`📝 Update data prepared:`, updateData);
 
     const updatedTicket = await Tickets.update(
       ticketId,
@@ -1116,16 +1017,14 @@ async function updateTicketWithData(ticketId, finalData, updatedBy) {
       updatedBy
     );
 
-    console.log(`✅ Ticket ${ticketId} updated successfully:`, updatedTicket);
-
-    return {
-      ticketId: ticketId,
-      updated: true,
+  return {
+    ticketId: ticketId,
+    updated: true,
       message: 'Ticket updated successfully',
       updatedTicket: updatedTicket
-    };
+  };
   } catch (error) {
-    console.error(`❌ Error updating ticket ${ticketId}:`, error);
+    console.error(`Error updating ticket ${ticketId}:`, error);
     throw error;
   }
 }
@@ -1139,12 +1038,12 @@ async function saveGeneratedFile(fileBuffer, fileName, rtrId) {
   const objectName = `${folder}/${rtrId}-${timestamp}-${sanitizedName}`;
 
   // Ensure bucket exists
-  const bucketExists = await minioClient.bucketExists(bucket).catch(() => false);
+  const bucketExists = await getMinioClient().bucketExists(bucket).catch(() => false);
   if (!bucketExists) {
-    await minioClient.makeBucket(bucket);
+    await getMinioClient().makeBucket(bucket);
   }
 
-  await minioClient.putObject(bucket, objectName, fileBuffer);
+  await getMinioClient().putObject(bucket, objectName, fileBuffer);
   
   // Return the object key instead of constructing a URL
   // This makes file retrieval more reliable
@@ -1539,12 +1438,6 @@ exports.saveStepperData = async (req, res) => {
       updatedBy 
     } = req.body;
 
-    console.log(`=== Starting saveStepperData ===`);
-    console.log(`newTickets count: ${newTickets?.length || 0}`);
-    console.log(`inconsistentTickets count: ${inconsistentTickets?.length || 0}`);
-    console.log(`missingInfoFilled count: ${missingInfoFilled?.length || 0}`);
-    console.log(`createdBy: ${createdBy}, updatedBy: ${updatedBy}`);
-
     const results = {
       newTicketsCreated: [],
       ticketsUpdated: [],
@@ -1565,7 +1458,6 @@ exports.saveStepperData = async (req, res) => {
     
     if (fileInfo && fileInfo.buffer) {
       try {
-        console.log(`Step 1: Saving original file to MinIO...`);
         const bucket = 'uploads';
         const folder = 'rtr/uploaded';
         const originalName = fileInfo.originalName || 'rtr-upload.xlsx';
@@ -1574,16 +1466,15 @@ exports.saveStepperData = async (req, res) => {
         const objectName = `${folder}/${timestamp}-${sanitizedName}`;
 
         // Ensure bucket exists
-        const bucketExists = await minioClient.bucketExists(bucket).catch(() => false);
+        const bucketExists = await getMinioClient().bucketExists(bucket).catch(() => false);
         if (!bucketExists) {
-          await minioClient.makeBucket(bucket);
+          await getMinioClient().makeBucket(bucket);
         }
 
         // Convert base64 buffer back to Buffer
         const fileBuffer = Buffer.from(fileInfo.buffer, 'base64');
-        console.log(`Step 1: File buffer size: ${fileBuffer.length} bytes`);
         
-        await minioClient.putObject(bucket, objectName, fileBuffer);
+        await getMinioClient().putObject(bucket, objectName, fileBuffer);
         
         // Store the object key instead of constructing a URL
         // This makes file retrieval more reliable
@@ -1591,11 +1482,8 @@ exports.saveStepperData = async (req, res) => {
 
         // Save metadata to RTRs table
         rtrRecord = await RTR.saveRTRFile(originalName, originalFileUrl);
-        
-        console.log(`Step 1: Saved original file to MinIO: ${originalFileUrl}`);
-        console.log(`Step 1: RTR record created with ID: ${rtrRecord?.rtrId}`);
       } catch (fileError) {
-        console.error("Step 1: Failed to save original file to MinIO:", fileError);
+        console.error("Failed to save original file to MinIO:", fileError);
         return res.status(500).json({
           success: false,
           error: 'Failed to save original file',
@@ -1606,26 +1494,19 @@ exports.saveStepperData = async (req, res) => {
 
     // Step 2: Process new tickets
     if (newTickets && Array.isArray(newTickets)) {
-      console.log(`Step 2: Processing ${newTickets.length} new tickets...`);
       for (let i = 0; i < newTickets.length; i++) {
         const ticketData = newTickets[i];
-        console.log(`Step 2: Processing new ticket ${i + 1}/${newTickets.length}: ${ticketData.ticketCode}`);
         
         try {
-          console.log(`Step 2: Calling RTR.processRTRData for ticket: ${ticketData.ticketCode}`);
-          console.log(`Step 2: Excel data:`, ticketData.excelData);
-          
           const result = await RTR.processRTRData([ticketData.excelData], createdBy || 1, updatedBy || 1);
-          console.log(`Step 2: RTR.processRTRData result:`, result);
           
           results.newTicketsCreated.push({
             ticketCode: ticketData.ticketCode,
             result: result
           });
           results.summary.created++;
-          console.log(`Step 2: Successfully processed ticket: ${ticketData.ticketCode}`);
         } catch (error) {
-          console.error(`Step 2: Error processing ticket ${ticketData.ticketCode}:`, error);
+          console.error(`Error processing ticket ${ticketData.ticketCode}:`, error);
           results.errors.push({
             ticketCode: ticketData.ticketCode,
             error: error.message
@@ -1638,17 +1519,13 @@ exports.saveStepperData = async (req, res) => {
 
     // Step 3: Process inconsistent tickets with user decisions
     if (inconsistentTickets && Array.isArray(inconsistentTickets)) {
-      console.log(`Step 3: Processing ${inconsistentTickets.length} inconsistent tickets...`);
       for (let i = 0; i < inconsistentTickets.length; i++) {
         const ticketData = inconsistentTickets[i];
-        console.log(`Step 3: Processing inconsistent ticket ${i + 1}/${inconsistentTickets.length}: ${ticketData.ticketCode}`);
         
         try {
           const finalData = applyUserDecisions(ticketData.excelData, ticketData.databaseData, decisions[ticketData.ticketId] || {});
-          console.log(`Step 3: Final data for ticket ${ticketData.ticketCode}:`, finalData);
           
           const result = await updateTicketWithData(ticketData.ticketId, finalData, updatedBy || 1);
-          console.log(`Step 3: Update result for ticket ${ticketData.ticketCode}:`, result);
           
           results.ticketsUpdated.push({
             ticketId: ticketData.ticketId,
@@ -1656,9 +1533,8 @@ exports.saveStepperData = async (req, res) => {
             result: result
           });
           results.summary.updated++;
-          console.log(`Step 3: Successfully updated ticket: ${ticketData.ticketCode}`);
         } catch (error) {
-          console.error(`Step 3: Error updating ticket ${ticketData.ticketCode}:`, error);
+          console.error(`Error updating ticket ${ticketData.ticketCode}:`, error);
           results.errors.push({
             ticketId: ticketData.ticketId,
             ticketCode: ticketData.ticketCode,
@@ -1672,26 +1548,19 @@ exports.saveStepperData = async (req, res) => {
 
     // Step 4: Process filled missing information
     if (missingInfoFilled && Array.isArray(missingInfoFilled)) {
-      console.log(`Step 4: Processing ${missingInfoFilled.length} filled missing info...`);
       for (let i = 0; i < missingInfoFilled.length; i++) {
         const filledInfo = missingInfoFilled[i];
-        console.log(`Step 4: Processing filled info ${i + 1}/${missingInfoFilled.length}: ${filledInfo.ticketCode}`);
         
         try {
-          console.log(`Step 4: Calling RTR.processRTRData for filled info: ${filledInfo.ticketCode}`);
-          console.log(`Step 4: Filled data:`, filledInfo.data);
-          
           const result = await RTR.processRTRData([filledInfo.data], createdBy || 1, updatedBy || 1);
-          console.log(`Step 4: RTR.processRTRData result:`, result);
           
           results.newTicketsCreated.push({
             ticketCode: filledInfo.ticketCode,
             result: result
           });
           results.summary.created++;
-          console.log(`Step 4: Successfully processed filled info: ${filledInfo.ticketCode}`);
         } catch (error) {
-          console.error(`Step 4: Error processing filled info ${filledInfo.ticketCode}:`, error);
+          console.error(`Error processing filled info ${filledInfo.ticketCode}:`, error);
           results.errors.push({
             ticketCode: filledInfo.ticketCode,
             error: error.message
@@ -1704,7 +1573,6 @@ exports.saveStepperData = async (req, res) => {
 
     // Step 5: Record skipped tickets
     if (skippedRows && Array.isArray(skippedRows)) {
-      console.log(`Step 5: Recording ${skippedRows.length} skipped tickets...`);
       results.skippedTickets = skippedRows.map(row => ({
         ticketCode: row.RESTN_WO_NUM || row.TASK_WO_NUM,
         reason: row.reason || 'User skipped'
@@ -1716,7 +1584,6 @@ exports.saveStepperData = async (req, res) => {
     let generatedFileUrl = null;
     if (rtrRecord && rtrRecord.rtrId) {
       try {
-        console.log(`Step 6: Generating processed Excel file...`);
         const allProcessedData = [
           ...(newTickets || []).map(t => ({ ...t.excelData, status: 'created' })),
           ...(inconsistentTickets || []).map(t => ({ ...t.excelData, status: 'updated' })),
@@ -1728,33 +1595,31 @@ exports.saveStepperData = async (req, res) => {
         const generatedFileName = `stepper-processed-${Date.now()}.xlsx`;
         const generatedFile = await saveGeneratedFile(processedExcelBuffer, generatedFileName, rtrRecord.rtrId);
         generatedFileUrl = generatedFile.fileUrl;
-        
-        console.log(`Step 6: Generated processed Excel file: ${generatedFileUrl}`);
       } catch (genError) {
-        console.error("Step 6: Failed to generate processed Excel file:", genError);
+        console.error("Failed to generate processed Excel file:", genError);
       }
     }
 
-    console.log(`=== Final Results Summary ===`);
-    console.log(`Total processed: ${results.summary.total}`);
-    console.log(`Created: ${results.summary.created}`);
-    console.log(`Updated: ${results.summary.updated}`);
-    console.log(`Skipped: ${results.summary.skipped}`);
-    console.log(`Failed: ${results.summary.failed}`);
-    console.log(`Errors: ${results.errors.length}`);
-
     return res.status(200).json({
       success: true,
+      message: 'All data saved successfully',
+      data: {
       rtrId: rtrRecord?.rtrId,
-      rtrName: rtrRecord?.name,
-      originalFileUrl: originalFileUrl,
-      results: results,
-      generatedFileUrl: generatedFileUrl,
-      message: `Processing completed. ${results.summary.created} created, ${results.summary.updated} updated, ${results.summary.skipped} skipped, ${results.summary.failed} failed.`
+        originalFileName: fileInfo?.originalName,
+        generatedFileName: generatedFileUrl ? generatedFileUrl.split('/').pop() : null,
+        objectKey: generatedFileUrl,
+        downloadUrl: generatedFileUrl ? await generatePublicPresignedUrl('uploads', generatedFileUrl, 3600, req) : null,
+        summary: {
+          newTicketsCreated: results.summary.created,
+          ticketsUpdated: results.summary.updated,
+          missingInfoFilled: results.summary.created - (newTickets?.length || 0),
+          skippedRows: results.summary.skipped
+        }
+      }
     });
 
   } catch (err) {
-    console.error("❌ Stepper save failed:", err);
+    console.error("RTR stepper save failed:", err);
     return res.status(500).json({
       success: false,
       error: 'Failed to save stepper data',
@@ -1953,3 +1818,162 @@ function validateTicketData(data) {
 
   return validation;
 }
+
+exports.updateTicketsWithDatabaseValues = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'No file uploaded' 
+      });
+    }
+
+    // 1. Parse the uploaded Excel file using existing parseExcelData function
+    const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
+    
+    if (!workbook.SheetNames.includes('Seven-D')) {
+      return res.status(400).json({
+        success: false,
+        error: 'Sheet "Seven-D" not found in the Excel file',
+        availableSheets: workbook.SheetNames
+      });
+    }
+
+    const sheetName = 'Seven-D';
+    const sheet = workbook.Sheets[sheetName];
+    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+    if (rows.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Sheet "Seven-D" is empty'
+      });
+    }
+
+    // Use existing parseExcelData function to get structured data
+    const parsedData = await parseExcelData(rows, sheetName);
+    
+    if (!parsedData.success) {
+      return res.status(400).json(parsedData);
+    }
+
+    // 2. Process each row and update database values
+    const updatedData = [];
+    const updateResults = [];
+    
+    for (let i = 0; i < parsedData.data.length; i++) {
+      const row = parsedData.data[i];
+      const taskWoNum = row.TASK_WO_NUM;
+      
+      if (!taskWoNum) {
+        updatedData.push(row);
+        continue;
+      }
+      
+      try {
+        // Find ticket in database by TASK_WO_NUM
+        const ticket = await Tickets.findByTicketCode(taskWoNum);
+        
+        if (ticket) {
+          // Update the Contractor Comments field with database comment7d value
+          const updatedRow = { ...row };
+          updatedRow['Contractor Comments'] = ticket.comment7d || '';
+          
+          updatedData.push(updatedRow);
+          
+          updateResults.push({
+            row: i + 1,
+            taskWoNum: taskWoNum,
+            status: 'updated',
+            oldValue: row['Contractor Comments'] || '',
+            newValue: ticket.comment7d || '',
+            ticketId: ticket.ticketid
+          });
+        } else {
+          updatedData.push(row); // Keep original row
+          
+          updateResults.push({
+            row: i + 1,
+            taskWoNum: taskWoNum,
+            status: 'not_found',
+            message: 'Ticket not found in database'
+          });
+        }
+      } catch (error) {
+        console.error(`Error processing row ${i + 1}:`, error);
+        updatedData.push(row); // Keep original row on error
+        
+        updateResults.push({
+          row: i + 1,
+          taskWoNum: taskWoNum,
+          status: 'error',
+          error: error.message
+        });
+      }
+    }
+
+    // 3. Create new workbook with updated data
+    const newWorkbook = XLSX.utils.book_new();
+    
+    // Convert updated data back to worksheet format
+    const updatedWorksheet = XLSX.utils.json_to_sheet(updatedData);
+    XLSX.utils.book_append_sheet(newWorkbook, updatedWorksheet, sheetName);
+
+    // 4. Generate new Excel file buffer
+    const newExcelBuffer = XLSX.write(newWorkbook, { type: 'buffer', bookType: 'xlsx' });
+
+    // 5. Generate file name with "_updated" and date
+    const originalName = req.file.originalname || 'rtr-update.xlsx';
+    const baseName = originalName.replace('.xlsx', '').replace('.xls', '');
+    const currentDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+    const generatedFileName = `${baseName}_updated_${currentDate}.xlsx`;
+
+    // 6. Save to MinIO in rtr/generated folder
+    const bucket = 'uploads';
+    const folder = 'rtr/generated';
+    const timestamp = Date.now();
+    const sanitizedName = generatedFileName.replace(/[^a-zA-Z0-9.-]/g, '_');
+    const objectName = `${folder}/${timestamp}-${sanitizedName}`;
+
+    // Ensure bucket exists
+    const bucketExists = await getMinioClient().bucketExists(bucket).catch(() => false);
+    if (!bucketExists) {
+      await getMinioClient().makeBucket(bucket);
+    }
+
+    await getMinioClient().putObject(bucket, objectName, newExcelBuffer);
+
+    // 7. Generate presigned URL for download
+    const presignedUrl = await generatePublicPresignedUrl(bucket, objectName, 3600, req);
+
+    // 8. Save RTR record to database
+    const rtrRecord = await RTR.saveRTRFile(generatedFileName, objectName);
+
+    res.status(200).json({
+      success: true,
+      message: 'Excel file updated with database values successfully',
+      data: {
+        rtrId: rtrRecord.rtrId,
+        originalFileName: originalName,
+        generatedFileName: generatedFileName,
+        objectKey: objectName,
+        downloadUrl: presignedUrl,
+        updateResults: updateResults,
+        summary: {
+          totalRows: parsedData.data.length,
+          updatedRows: updateResults.filter(r => r.status === 'updated').length,
+          notFoundRows: updateResults.filter(r => r.status === 'not_found').length,
+          errorRows: updateResults.filter(r => r.status === 'error').length
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Error in updateTicketsWithDatabaseValues:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update Excel file with database values',
+      error: error.message
+    });
+  }
+};

@@ -9,13 +9,35 @@ services:
       - ./backend-api:/usr/src/app
       - /usr/src/app/node_modules
     environment:
-      - NODE_ENV=development
-      - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_USER=appuser
-      - DB_PASSWORD=mysecretpassword
-      - DB_NAME=my_app_db
-      - MINIO_ENDPOINT=minio:9000
+      # ================================================================================
+      # ENVIRONMENT VARIABLES - DEPLOYMENT GUIDE
+      # ================================================================================
+      # 
+      # LOCAL DEVELOPMENT (current settings):
+      # - MINIO_ENDPOINT=minio (internal Docker hostname)
+      # - MINIO_PUBLIC_HOST=localhost (accessible from your PC browser)
+      #
+      # SERVER DEPLOYMENT - Change these variables in .env file:
+      # - MINIO_ENDPOINT=minio (keep this - internal Docker hostname stays the same)
+      # - MINIO_PUBLIC_HOST=your-server-domain.com (or server IP address)
+      # - MINIO_PORT=9000 (change if you use a different port on server)
+      # - MINIO_ACCESS_KEY=your-secure-access-key (change from default)
+      # - MINIO_SECRET_KEY=your-secure-secret-key (change from default)
+      #
+      # Example for server deployment in .env file:
+      # - MINIO_PUBLIC_HOST=api.yourcompany.com
+      # - MINIO_ACCESS_KEY=your-production-access-key
+      # - MINIO_SECRET_KEY=your-production-secret-key
+      #
+      # ================================================================================
+      - NODE_ENV=${NODE_ENV}
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=${DB_NAME}
+      - MINIO_ENDPOINT=minio
+      - MINIO_PORT=9000
       - MINIO_ACCESS_KEY=minioadmin
       - MINIO_SECRET_KEY=miniosecretkey
       - MINIO_PUBLIC_HOST=localhost
@@ -38,11 +60,11 @@ services:
       - kc_pgdata:/var/lib/postgresql/data
       - ./scripts:/docker-entrypoint-initdb.d
     environment:
-      - POSTGRES_USER=appuser
-      - POSTGRES_PASSWORD=mysecretpassword
-      - POSTGRES_DB=my_app_db
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_DB=${DB_NAME}
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U appuser -d my_app_db"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
       interval: 10s
       timeout: 10s
       retries: 10
@@ -55,9 +77,29 @@ services:
     image: minio/minio:latest
     command: server /data --console-address ":9001"
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "9000:9000"  # MinIO API port
+      - "9001:9001"  # MinIO Console port
     environment:
+      # ================================================================================
+      # MINIO ENVIRONMENT VARIABLES - DEPLOYMENT GUIDE
+      # ================================================================================
+      # 
+      # LOCAL DEVELOPMENT (current settings):
+      # - MINIO_ROOT_USER=minioadmin (default admin user)
+      # - MINIO_ROOT_PASSWORD=miniosecretkey (default password)
+      #
+      # SERVER DEPLOYMENT - Change these variables in .env file:
+      # - MINIO_ROOT_USER=your-secure-admin-user (change from default)
+      # - MINIO_ROOT_PASSWORD=your-secure-admin-password (change from default)
+      #
+      # IMPORTANT: These must match the MINIO_ACCESS_KEY and MINIO_SECRET_KEY
+      # in the API service environment variables above!
+      #
+      # Example for server deployment in .env file:
+      # - MINIO_ROOT_USER=your-production-admin
+      # - MINIO_ROOT_PASSWORD=your-secure-production-password
+      #
+      # ================================================================================
       - MINIO_ROOT_USER=minioadmin
       - MINIO_ROOT_PASSWORD=miniosecretkey
     volumes:
