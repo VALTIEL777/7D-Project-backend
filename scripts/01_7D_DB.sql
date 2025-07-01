@@ -268,6 +268,9 @@ CREATE TABLE Addresses (
     addressCardinal VARCHAR(64),
     addressStreet VARCHAR(64),
     addressSuffix VARCHAR(64),
+    latitude NUMERIC(10, 2),
+    longitude NUMERIC(10, 2),
+    placeid VARCHAR(255),
     createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     deletedAt TIMESTAMP,
@@ -294,6 +297,11 @@ CREATE TABLE Routes (
     type VARCHAR(64), -- concrete, asphalt
     startDate DATE,
     endDate DATE,
+    encodedPolyline TEXT,
+    totalDistance NUMERIC(10, 2),
+    totalDuration NUMERIC(10, 2),
+    optimizedOrder JSONB,
+    optimizationMetadata JSONB,
     createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     deletedAt TIMESTAMP,
@@ -305,6 +313,7 @@ Create Table RouteTickets(
     routeId INTEGER REFERENCES Routes(routeId),
     ticketId INTEGER REFERENCES Tickets(ticketId),
     PRIMARY KEY (routeId, ticketId),
+    address VARCHAR(255),
     queue INTEGER,
     createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -619,6 +628,47 @@ FOR EACH ROW
 EXECUTE FUNCTION set_updated_at_timestamp();
 
 
+
+--indexes
+-- Permits table
+CREATE INDEX idx_permits_expire_date ON Permits(expireDate) WHERE deletedAt IS NULL;
+CREATE INDEX idx_permits_deleted_status ON Permits(deletedAt, status);
+
+-- Tickets table
+CREATE INDEX idx_tickets_comment7d ON Tickets(comment7d) WHERE deletedAt IS NULL;
+CREATE INDEX idx_tickets_deleted ON Tickets(deletedAt) WHERE deletedAt IS NULL;
+CREATE INDEX idx_tickets_ticket_code ON Tickets(ticketCode) WHERE deletedAt IS NULL;
+
+-- PermitedTickets junction table
+CREATE INDEX idx_permitedtickets_permitid ON PermitedTickets(permitId) WHERE deletedAt IS NULL;
+CREATE INDEX idx_permitedtickets_ticketid ON PermitedTickets(ticketId) WHERE deletedAt IS NULL;
+CREATE INDEX idx_permitedtickets_deleted ON PermitedTickets(deletedAt) WHERE deletedAt IS NULL;
+
+-- TicketAddresses table
+CREATE INDEX idx_ticketaddresses_ticketid ON TicketAddresses(ticketId) WHERE deletedAt IS NULL;
+CREATE INDEX idx_ticketaddresses_addressid ON TicketAddresses(addressId) WHERE deletedAt IS NULL;
+
+-- Addresses table
+CREATE INDEX idx_addresses_deleted ON Addresses(deletedAt) WHERE deletedAt IS NULL;
+CREATE INDEX idx_addresses_full ON Addresses(addressNumber, addressCardinal, addressStreet, addressSuffix) WHERE deletedAt IS NULL;
+
+-- TicketStatus table
+CREATE INDEX idx_ticketstatus_ticketid ON TicketStatus(ticketId) WHERE deletedAt IS NULL;
+CREATE INDEX idx_ticketstatus_taskstatusid ON TicketStatus(taskStatusId) WHERE deletedAt IS NULL;
+
+-- TaskStatus table
+CREATE INDEX idx_taskstatus_name ON TaskStatus(name) WHERE deletedAt IS NULL;
+
+CREATE INDEX idx_tickets_comment7d_specific ON Tickets(comment7d) 
+WHERE deletedAt IS NULL AND (comment7d IS NULL OR comment7d = '' OR comment7d = 'TK - NEEDS PERMIT EXTENSION');
+
+CREATE INDEX idx_tickets_with_null_comment7d ON Tickets(ticketId) 
+WHERE comment7d IS NULL AND deletedAt IS NULL;
+
+CREATE INDEX idx_address_ticket_join ON TicketAddresses(addressId, ticketId) 
+WHERE deletedAt IS NULL;
+
+
 INSERT INTO Users (UserId, username, password)
 VALUES (1, 'testuser', 'securepassword123')
 ON CONFLICT (UserId) DO NOTHING;
@@ -658,8 +708,11 @@ VALUES
     ('Dirt', 'Preparing and compacting the base dirt layer'),
     ('Grind', 'Grinding down uneven surfaces for smooth transitions'),
     ('Stripping', 'Removing old pavement or surface materials'),
-    ('Spotting', 'Marking and identifying areas that need repair');
-
+    ('Spotting', 'Marking and identifying areas that need repair'),
+    ('Crack Seal', 'Sealing cracks in asphalt to prevent water penetration and pavement degradation'),
+    ('Install Signs', 'Installing road or traffic control signs at designated locations'),
+    ('Steel Plate Pick Up', 'Removing previously installed steel plates from the roadway'),
+    ('Asphalt', 'Laying down or repairing asphalt pavement surfaces');
 
 
 

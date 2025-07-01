@@ -74,3 +74,4 @@ CREATE TRIGGER set_updated_at_usernotifications
 BEFORE UPDATE ON UserNotifications
 FOR EACH ROW
 EXECUTE FUNCTION set_updated_at_timestamp(); 
+

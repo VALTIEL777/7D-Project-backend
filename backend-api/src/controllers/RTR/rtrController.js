@@ -168,10 +168,38 @@ exports.uploadExcel = async (req, res) => {
     const bucket = 'uploads'; // or your bucket name
     const folder = 'rtr/uploaded'; // Changed to uploaded folder
     const originalName = req.file.originalname || 'rtr-upload.xlsx';
-    const timestamp = Date.now();
-    // Sanitize the filename to avoid URL encoding issues
-    const sanitizedName = originalName.replace(/[^a-zA-Z0-9.-]/g, '_');
-    const objectName = `${folder}/${timestamp}-${sanitizedName}`;
+    
+    // Function to generate unique filename
+    const generateUniqueFilename = async (baseName) => {
+      let counter = 0;
+      let finalName = baseName;
+      
+      while (true) {
+        const objectName = `${folder}/${finalName}`;
+        try {
+          // Check if file exists
+          await getMinioClient().statObject(bucket, objectName);
+          // File exists, try with counter
+          counter++;
+          const nameWithoutExt = baseName.replace(/\.[^/.]+$/, ''); // Remove extension
+          const ext = baseName.split('.').pop(); // Get extension
+          finalName = `${nameWithoutExt}_${counter}.${ext}`;
+        } catch (err) {
+          if (err.code === 'NotFound') {
+            // File doesn't exist, we can use this name
+            return finalName;
+          }
+          throw err;
+        }
+      }
+    };
+    
+    // Generate unique filename
+    const uniqueFilename = await generateUniqueFilename(originalName);
+    const objectName = `${folder}/${uniqueFilename}`;
+    
+    console.log(`Original filename: ${originalName}`);
+    console.log(`Final object name: ${objectName}`);
 
     // Ensure bucket exists
     const bucketExists = await getMinioClient().bucketExists(bucket).catch(() => false);
@@ -380,7 +408,11 @@ exports.uploadExcel = async (req, res) => {
             // Generate and save processed Excel file
             try {
               const processedExcelBuffer = await generateProcessedExcel(dataRows, databaseResults, rtrRecord.rtrId);
-              const generatedFileName = `processed-${originalName.replace('.xlsx', '')}-${Date.now()}.xlsx`;
+              const originalFileName = req.file.originalname || 'rtr-upload.xlsx';
+              const baseName = originalFileName.replace(/\.[^/.]+$/, ''); // Remove extension
+              const ext = originalFileName.split('.').pop(); // Get extension
+              const timestamp = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+              const generatedFileName = `${baseName}_processed_${timestamp}.${ext}`;
               const generatedFile = await saveGeneratedFile(processedExcelBuffer, generatedFileName, rtrRecord.rtrId);
               generatedFileUrl = generatedFile.fileUrl;
               
@@ -1033,9 +1065,13 @@ async function updateTicketWithData(ticketId, finalData, updatedBy) {
 async function saveGeneratedFile(fileBuffer, fileName, rtrId) {
   const bucket = 'uploads';
   const folder = 'rtr/generated';
-  const timestamp = Date.now();
-  const sanitizedName = fileName.replace(/[^a-zA-Z0-9.-]/g, '_');
-  const objectName = `${folder}/${rtrId}-${timestamp}-${sanitizedName}`;
+  
+  // Create a more descriptive filename
+  const baseName = fileName.replace(/\.[^/.]+$/, ''); // Remove extension
+  const ext = fileName.split('.').pop(); // Get extension
+  const timestamp = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+  const descriptiveName = `${baseName}_processed_${timestamp}.${ext}`;
+  const objectName = `${folder}/${descriptiveName}`;
 
   // Ensure bucket exists
   const bucketExists = await getMinioClient().bucketExists(bucket).catch(() => false);
@@ -1461,9 +1497,38 @@ exports.saveStepperData = async (req, res) => {
         const bucket = 'uploads';
         const folder = 'rtr/uploaded';
         const originalName = fileInfo.originalName || 'rtr-upload.xlsx';
-        const timestamp = Date.now();
-        const sanitizedName = originalName.replace(/[^a-zA-Z0-9.-]/g, '_');
-        const objectName = `${folder}/${timestamp}-${sanitizedName}`;
+        
+        // Function to generate unique filename (same as uploadExcel)
+        const generateUniqueFilename = async (baseName) => {
+          let counter = 0;
+          let finalName = baseName;
+          
+          while (true) {
+            const objectName = `${folder}/${finalName}`;
+            try {
+              // Check if file exists
+              await getMinioClient().statObject(bucket, objectName);
+              // File exists, try with counter
+              counter++;
+              const nameWithoutExt = baseName.replace(/\.[^/.]+$/, ''); // Remove extension
+              const ext = baseName.split('.').pop(); // Get extension
+              finalName = `${nameWithoutExt}_${counter}.${ext}`;
+            } catch (err) {
+              if (err.code === 'NotFound') {
+                // File doesn't exist, we can use this name
+                return finalName;
+              }
+              throw err;
+            }
+          }
+        };
+        
+        // Generate unique filename
+        const uniqueFilename = await generateUniqueFilename(originalName);
+        const objectName = `${folder}/${uniqueFilename}`;
+        
+        console.log(`Stepper - Original filename: ${originalName}`);
+        console.log(`Stepper - Final object name: ${objectName}`);
 
         // Ensure bucket exists
         const bucketExists = await getMinioClient().bucketExists(bucket).catch(() => false);
@@ -1515,6 +1580,29 @@ exports.saveStepperData = async (req, res) => {
         }
         results.summary.total++;
       }
+    }
+
+    // Step 2.5: Generate TicketStatus records for new tickets
+    let ticketStatusResults = null;
+    try {
+      console.log('Generating TicketStatus records for new tickets...');
+      
+      // Extract ticket IDs from successfully created tickets
+      const newTicketIds = results.newTicketsCreated
+        .filter(ticket => ticket.result && ticket.result.length > 0 && ticket.result[0].success)
+        .map(ticket => ticket.result[0].ticketId)
+        .filter(id => id); // Filter out any undefined IDs
+      
+      if (newTicketIds.length > 0) {
+        console.log(`Generating TicketStatus records for ${newTicketIds.length} new tickets:`, newTicketIds);
+        ticketStatusResults = await RTR.generateTicketStatusesForTickets(newTicketIds, updatedBy || 1);
+        console.log(`TicketStatus generation completed: ${ticketStatusResults.summary.totalStatusesCreated} statuses created`);
+      } else {
+        console.log('No new tickets to generate TicketStatus records for');
+      }
+    } catch (ticketStatusError) {
+      console.error("Failed to generate TicketStatus records:", ticketStatusError);
+      // Don't fail the entire operation if TicketStatus generation fails
     }
 
     // Step 3: Process inconsistent tickets with user decisions
@@ -1592,12 +1680,27 @@ exports.saveStepperData = async (req, res) => {
         ];
 
         const processedExcelBuffer = await generateProcessedExcel(allProcessedData, results, rtrRecord.rtrId);
-        const generatedFileName = `stepper-processed-${Date.now()}.xlsx`;
+        const originalFileName = fileInfo?.originalName || 'rtr-upload.xlsx';
+        const baseName = originalFileName.replace(/\.[^/.]+$/, ''); // Remove extension
+        const ext = originalFileName.split('.').pop(); // Get extension
+        const timestamp = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+        const generatedFileName = `${baseName}_stepper_processed_${timestamp}.${ext}`;
         const generatedFile = await saveGeneratedFile(processedExcelBuffer, generatedFileName, rtrRecord.rtrId);
         generatedFileUrl = generatedFile.fileUrl;
       } catch (genError) {
         console.error("Failed to generate processed Excel file:", genError);
       }
+    }
+
+    // Step 7: Update permit statuses based on expiration dates
+    let permitStatusResults = null;
+    try {
+      console.log('Updating permit statuses and checking for permits expiring within 7 days...');
+      permitStatusResults = await RTR.updatePermitStatusesAndCheckExpiring(updatedBy || 1);
+      console.log(`Comprehensive permit update completed: ${permitStatusResults.summary.permitsStatusUpdated} permits updated, ${permitStatusResults.summary.ticketsCommentUpdated} tickets updated`);
+    } catch (permitError) {
+      console.error("Failed to update permit statuses and check expiring permits:", permitError);
+      // Don't fail the entire operation if permit status update fails
     }
 
     return res.status(200).json({
@@ -1614,7 +1717,33 @@ exports.saveStepperData = async (req, res) => {
           ticketsUpdated: results.summary.updated,
           missingInfoFilled: results.summary.created - (newTickets?.length || 0),
           skippedRows: results.summary.skipped
-        }
+        },
+        ticketStatusGeneration: ticketStatusResults ? {
+          totalTickets: ticketStatusResults.summary.totalTickets,
+          processed: ticketStatusResults.summary.processed,
+          successful: ticketStatusResults.summary.successful,
+          failed: ticketStatusResults.summary.failed,
+          totalPhasesFound: ticketStatusResults.summary.totalPhasesFound,
+          totalStatusesCreated: ticketStatusResults.summary.totalStatusesCreated
+        } : null,
+        permitStatusUpdate: permitStatusResults ? {
+          permits: {
+            total: permitStatusResults.summary.totalPermitsChecked,
+            statusUpdated: permitStatusResults.summary.permitsStatusUpdated,
+            unchanged: permitStatusResults.summary.totalPermitsChecked - permitStatusResults.summary.permitsStatusUpdated,
+            statusChanges: {
+              toExpired: permitStatusResults.statusUpdates.filter(r => r.updated && r.newStatus === 'EXPIRED').length,
+              toExpiresToday: permitStatusResults.statusUpdates.filter(r => r.updated && r.newStatus === 'EXPIRES_TODAY').length,
+              toActive: permitStatusResults.statusUpdates.filter(r => r.updated && r.newStatus === 'ACTIVE').length,
+              toPending: permitStatusResults.statusUpdates.filter(r => r.updated && r.newStatus === 'PENDING').length
+            }
+          },
+          tickets: {
+            total: permitStatusResults.summary.totalTicketsChecked,
+            commentUpdated: permitStatusResults.summary.ticketsCommentUpdated,
+            unchanged: permitStatusResults.summary.totalTicketsChecked - permitStatusResults.summary.ticketsCommentUpdated
+          }
+        } : null
       }
     });
 
@@ -1974,6 +2103,93 @@ exports.updateTicketsWithDatabaseValues = async (req, res) => {
       success: false,
       message: 'Failed to update Excel file with database values',
       error: error.message
+    });
+  }
+};
+
+// New method to update permit statuses based on expiration dates
+exports.updatePermitStatuses = async (req, res) => {
+  try {
+    const updatedBy = req.body.updatedBy || 1;
+    
+    console.log('Starting comprehensive permit status and expiration check...');
+    
+    // Use the combined method that updates statuses and checks for expiring permits
+    const results = await RTR.updatePermitStatusesAndCheckExpiring(updatedBy);
+    
+    const summary = {
+      permits: {
+        total: results.summary.totalPermitsChecked,
+        statusUpdated: results.summary.permitsStatusUpdated,
+        unchanged: results.summary.totalPermitsChecked - results.summary.permitsStatusUpdated,
+        statusChanges: {
+          toExpired: results.statusUpdates.filter(r => r.updated && r.newStatus === 'EXPIRED').length,
+          toExpiresToday: results.statusUpdates.filter(r => r.updated && r.newStatus === 'EXPIRES_TODAY').length,
+          toActive: results.statusUpdates.filter(r => r.updated && r.newStatus === 'ACTIVE').length,
+          toPending: results.statusUpdates.filter(r => r.updated && r.newStatus === 'PENDING').length
+        }
+      },
+      tickets: {
+        total: results.summary.totalTicketsChecked,
+        commentUpdated: results.summary.ticketsCommentUpdated,
+        unchanged: results.summary.totalTicketsChecked - results.summary.ticketsCommentUpdated
+      }
+    };
+    
+    console.log('Comprehensive permit update completed:', summary);
+    
+    res.status(200).json({
+      success: true,
+      message: 'Permit statuses and ticket comments updated successfully',
+      data: {
+        summary: summary,
+        permitStatusUpdates: results.statusUpdates,
+        ticketCommentUpdates: results.expiringChecks
+      }
+    });
+    
+  } catch (error) {
+    console.error('Error updating permit statuses and checking expiring permits:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to update permit statuses and check expiring permits',
+      details: error.message
+    });
+  }
+};
+
+// New method to generate TicketStatus records for tickets
+exports.generateTicketStatuses = async (req, res) => {
+  try {
+    const { ticketIds, updatedBy } = req.body;
+    
+    if (!ticketIds || !Array.isArray(ticketIds) || ticketIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'ticketIds array is required and must not be empty'
+      });
+    }
+    
+    console.log(`Generating TicketStatus records for ${ticketIds.length} tickets...`);
+    
+    // Generate TicketStatus records for the specified tickets
+    const results = await RTR.generateTicketStatusesForTickets(ticketIds, updatedBy || 1);
+    
+    res.status(200).json({
+      success: true,
+      message: 'TicketStatus records generated successfully',
+      data: {
+        summary: results.summary,
+        results: results.results
+      }
+    });
+    
+  } catch (error) {
+    console.error('Error generating TicketStatus records:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to generate TicketStatus records',
+      details: error.message
     });
   }
 };

@@ -11,7 +11,9 @@ const {
   analyzeForStepper,
   validateStepperData,
   saveStepperData,
-  updateTicketsWithDatabaseValues
+  updateTicketsWithDatabaseValues,
+  updatePermitStatuses,
+  generateTicketStatuses
 } = require("../../controllers/RTR/rtrController");
 const multer = require("multer");
 
@@ -89,6 +91,12 @@ router.post("/stepper/save", analyzeMiddleware, saveStepperData);
 
 // Update Excel file with database values
 router.post("/update-with-database", upload.single("file"), updateTicketsWithDatabaseValues);
+
+// Update permit statuses based on expiration dates
+router.post("/update-permit-statuses", updatePermitStatuses);
+
+// Generate TicketStatus records for tickets
+router.post("/generate-ticket-statuses", generateTicketStatuses);
 
 /**
  * @swagger
@@ -1627,6 +1635,351 @@ router.post("/update-with-database", upload.single("file"), updateTicketsWithDat
  *                   type: string
  *                   example: "Failed to update Excel file with database values"
  *                 error:
+ *                   type: string
+ *                   example: "Database connection failed"
+ *
+ * @swagger
+ * /rtr/update-permit-statuses:
+ *   post:
+ *     summary: Update all permit statuses based on expiration dates and check for permits expiring within 7 days
+ *     description: Checks all permits in the database and updates their status based on their expiration date. Also checks for permits expiring within 7 days and updates the corresponding tickets' comment7d field to 'TK - NEEDS PERMIT EXTENSION' if the comment is null or empty.
+ *     tags: [RTR]
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               updatedBy:
+ *                 type: integer
+ *                 description: User ID who is performing the update
+ *                 example: 1
+ *     responses:
+ *       200:
+ *         description: Permit statuses and ticket comments updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Permit statuses and ticket comments updated successfully"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     summary:
+ *                       type: object
+ *                       properties:
+ *                         permits:
+ *                           type: object
+ *                           properties:
+ *                             total:
+ *                               type: integer
+ *                               description: Total number of permits processed
+ *                               example: 25
+ *                             statusUpdated:
+ *                               type: integer
+ *                               description: Number of permits that had their status updated
+ *                               example: 5
+ *                             unchanged:
+ *                               type: integer
+ *                               description: Number of permits that didn't need status updates
+ *                               example: 20
+ *                             statusChanges:
+ *                               type: object
+ *                               properties:
+ *                                 toExpired:
+ *                                   type: integer
+ *                                   description: Number of permits changed to EXPIRED
+ *                                   example: 3
+ *                                 toExpiresToday:
+ *                                   type: integer
+ *                                   description: Number of permits changed to EXPIRES_TODAY
+ *                                   example: 1
+ *                                 toActive:
+ *                                   type: integer
+ *                                   description: Number of permits changed to ACTIVE
+ *                                   example: 1
+ *                                 toPending:
+ *                                   type: integer
+ *                                   description: Number of permits changed to PENDING
+ *                                   example: 0
+ *                         tickets:
+ *                           type: object
+ *                           properties:
+ *                             total:
+ *                               type: integer
+ *                               description: Total number of tickets with permits expiring within 7 days
+ *                               example: 8
+ *                             commentUpdated:
+ *                               type: integer
+ *                               description: Number of tickets that had their comment7d updated
+ *                               example: 3
+ *                             unchanged:
+ *                               type: integer
+ *                               description: Number of tickets that didn't need comment updates
+ *                               example: 5
+ *                     permitStatusUpdates:
+ *                       type: array
+ *                       description: Detailed results for each permit status update
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           permitId:
+ *                             type: integer
+ *                             description: Permit ID
+ *                             example: 123
+ *                           oldStatus:
+ *                             type: string
+ *                             description: Previous status
+ *                             example: "ACTIVE"
+ *                           newStatus:
+ *                             type: string
+ *                             description: New status after update
+ *                             example: "EXPIRED"
+ *                           updated:
+ *                             type: boolean
+ *                             description: Whether the status was actually changed
+ *                             example: true
+ *                     ticketCommentUpdates:
+ *                       type: array
+ *                       description: Detailed results for each ticket comment update
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           ticketId:
+ *                             type: integer
+ *                             description: Ticket ID
+ *                             example: 456
+ *                           ticketCode:
+ *                             type: string
+ *                             description: Ticket code
+ *                             example: "TK6514243"
+ *                           permitId:
+ *                             type: integer
+ *                             description: Associated permit ID
+ *                             example: 123
+ *                           permitNumber:
+ *                             type: string
+ *                             description: Permit number
+ *                             example: "PERM-2024-001"
+ *                           expireDate:
+ *                             type: string
+ *                             format: date
+ *                             description: Permit expiration date
+ *                             example: "2024-01-20"
+ *                           daysUntilExpiry:
+ *                             type: integer
+ *                             description: Days until permit expires
+ *                             example: 3
+ *                           oldComment:
+ *                             type: string
+ *                             description: Previous comment7d value
+ *                             example: ""
+ *                           newComment:
+ *                             type: string
+ *                             description: New comment7d value
+ *                             example: "TK - NEEDS PERMIT EXTENSION"
+ *                           updated:
+ *                             type: boolean
+ *                             description: Whether the comment was actually updated
+ *                             example: true
+ *                           reason:
+ *                             type: string
+ *                             description: Reason if not updated (only present when updated is false)
+ *                             example: "Comment already set to something other than extension message"
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 error:
+ *                   type: string
+ *                   example: "Failed to update permit statuses and check expiring permits"
+ *                 details:
+ *                   type: string
+ *                   example: "Database connection failed"
+ *
+ * @swagger
+ * /rtr/generate-ticket-statuses:
+ *   post:
+ *     summary: Generate TicketStatus records for tickets based on their ContractUnit phases
+ *     description: Creates TicketStatus records for the specified tickets based on the phases defined in their ContractUnits. Each ContractUnit has associated phases (TaskStatus records) that define the workflow steps. This endpoint creates TicketStatus records to track the progress of each ticket through these phases.
+ *     tags: [RTR]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - ticketIds
+ *             properties:
+ *               ticketIds:
+ *                 type: array
+ *                 description: Array of ticket IDs to generate TicketStatus records for
+ *                 items:
+ *                   type: integer
+ *                 example: [1, 2, 3, 4, 5]
+ *               updatedBy:
+ *                 type: integer
+ *                 description: User ID who is performing the operation
+ *                 example: 1
+ *     responses:
+ *       200:
+ *         description: TicketStatus records generated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "TicketStatus records generated successfully"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     summary:
+ *                       type: object
+ *                       properties:
+ *                         totalTickets:
+ *                           type: integer
+ *                           description: Total number of tickets processed
+ *                           example: 5
+ *                         processed:
+ *                           type: integer
+ *                           description: Number of tickets successfully processed
+ *                           example: 5
+ *                         successful:
+ *                           type: integer
+ *                           description: Number of tickets that had TicketStatus records generated
+ *                           example: 4
+ *                         failed:
+ *                           type: integer
+ *                           description: Number of tickets that failed to process
+ *                           example: 1
+ *                         totalPhasesFound:
+ *                           type: integer
+ *                           description: Total number of phases found across all ContractUnits
+ *                           example: 20
+ *                         totalStatusesCreated:
+ *                           type: integer
+ *                           description: Total number of TicketStatus records created
+ *                           example: 15
+ *                     results:
+ *                       type: array
+ *                       description: Detailed results for each ticket
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           ticketId:
+ *                             type: integer
+ *                             description: Ticket ID
+ *                             example: 1
+ *                           contractUnitId:
+ *                             type: integer
+ *                             description: ContractUnit ID associated with the ticket
+ *                             example: 10
+ *                           phasesFound:
+ *                             type: integer
+ *                             description: Number of phases found for the ContractUnit
+ *                             example: 4
+ *                           statusesCreated:
+ *                             type: integer
+ *                             description: Number of TicketStatus records created for this ticket
+ *                             example: 3
+ *                           skipped:
+ *                             type: boolean
+ *                             description: Whether the ticket was skipped
+ *                             example: false
+ *                           reason:
+ *                             type: string
+ *                             description: Reason for skipping (only present when skipped is true)
+ *                             example: "No ContractUnit assigned to ticket"
+ *                           error:
+ *                             type: string
+ *                             description: Error message (only present when processing failed)
+ *                             example: "Ticket not found"
+ *                           results:
+ *                             type: array
+ *                             description: Detailed results for each phase (only present when not skipped)
+ *                             items:
+ *                               type: object
+ *                               properties:
+ *                                 taskStatusId:
+ *                                   type: integer
+ *                                   description: TaskStatus ID
+ *                                   example: 1
+ *                                 taskStatusName:
+ *                                   type: string
+ *                                   description: TaskStatus name
+ *                                   example: "Sawcut"
+ *                                 taskStatusDescription:
+ *                                   type: string
+ *                                   description: TaskStatus description
+ *                                   example: "Cutting the damaged pavement section with a saw"
+ *                                 created:
+ *                                   type: boolean
+ *                                   description: Whether the TicketStatus record was created
+ *                                   example: true
+ *                                 reason:
+ *                                   type: string
+ *                                   description: Reason if not created (only present when created is false)
+ *                                   example: "TicketStatus already exists"
+ *                                 error:
+ *                                   type: string
+ *                                   description: Error message if creation failed (only present when created is false)
+ *                                   example: "Database constraint violation"
+ *                                 ticketStatusRecord:
+ *                                   type: object
+ *                                   description: Created TicketStatus record (only present when created is true)
+ *                                   properties:
+ *                                     taskStatusId:
+ *                                       type: integer
+ *                                       example: 1
+ *                                     ticketId:
+ *                                       type: integer
+ *                                       example: 1
+ *       400:
+ *         description: Invalid request data
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 error:
+ *                   type: string
+ *                   example: "ticketIds array is required and must not be empty"
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 error:
+ *                   type: string
+ *                   example: "Failed to generate TicketStatus records"
+ *                 details:
  *                   type: string
  *                   example: "Database connection failed"
  */

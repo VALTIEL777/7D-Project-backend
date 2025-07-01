@@ -130,6 +130,221 @@ class RTR {
     return res.rows[0].permitid;
   }
 
+  // Helper method to determine permit status based on expiration date
+  static determinePermitStatus(expireDate) {
+    if (!expireDate) {
+      return 'PENDING'; // No expiration date set
+    }
+    
+    const currentDate = new Date();
+    const expirationDate = new Date(expireDate);
+    
+    // Reset time to start of day for accurate date comparison
+    currentDate.setHours(0, 0, 0, 0);
+    expirationDate.setHours(0, 0, 0, 0);
+    
+    if (expirationDate < currentDate) {
+      return 'EXPIRED';
+    } else if (expirationDate.getTime() === currentDate.getTime()) {
+      return 'EXPIRES_TODAY';
+    } else {
+      return 'ACTIVE';
+    }
+  }
+
+  // Method to update permit status based on expiration date
+  static async updatePermitStatus(permitId, updatedBy) {
+    try {
+      // Get the permit with its expiration date
+      const permitRes = await db.query(
+        'SELECT expireDate FROM Permits WHERE PermitId = $1 AND deletedAt IS NULL;',
+        [permitId]
+      );
+      
+      if (permitRes.rows.length === 0) {
+        throw new Error(`Permit with ID ${permitId} not found`);
+      }
+      
+      const expireDate = permitRes.rows[0].expiredate;
+      const newStatus = this.determinePermitStatus(expireDate);
+      
+      // Update the permit status
+      const updateRes = await db.query(
+        'UPDATE Permits SET status = $1, updatedBy = $2 WHERE PermitId = $3 RETURNING *;',
+        [newStatus, updatedBy, permitId]
+      );
+      
+      return updateRes.rows[0];
+    } catch (error) {
+      console.error(`Error updating permit status for permit ${permitId}:`, error);
+      throw error;
+    }
+  }
+
+  // Method to update all permit statuses based on expiration dates
+  static async updateAllPermitStatuses(updatedBy) {
+    try {
+      // Get all permits that need status updates
+      const permitsRes = await db.query(
+        `SELECT PermitId, expireDate, status 
+         FROM Permits 
+         WHERE deletedAt IS NULL 
+         AND (status = 'ACTIVE' OR status = 'PENDING' OR status = 'EXPIRES_TODAY');`
+      );
+      
+      const results = [];
+      
+      for (const permit of permitsRes.rows) {
+        const newStatus = this.determinePermitStatus(permit.expiredate);
+        
+        // Only update if status has changed
+        if (newStatus !== permit.status) {
+          const updateRes = await db.query(
+            'UPDATE Permits SET status = $1, updatedBy = $2 WHERE PermitId = $3 RETURNING *;',
+            [newStatus, updatedBy, permit.permitid]
+          );
+          
+          results.push({
+            permitId: permit.permitid,
+            oldStatus: permit.status,
+            newStatus: newStatus,
+            updated: true
+          });
+        } else {
+          results.push({
+            permitId: permit.permitid,
+            oldStatus: permit.status,
+            newStatus: newStatus,
+            updated: false
+          });
+        }
+      }
+      
+      return results;
+    } catch (error) {
+      console.error('Error updating all permit statuses:', error);
+      throw error;
+    }
+  }
+
+  // Method to check permits expiring within 7 days and update ticket comments
+  static async checkPermitsExpiringSoon(updatedBy) {
+    try {
+      console.log('Checking for permits expiring within 7 days...');
+      
+      // Calculate date 7 days from now
+      const sevenDaysFromNow = new Date();
+      sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7);
+      sevenDaysFromNow.setHours(23, 59, 59, 999); // End of day
+      
+      const currentDate = new Date();
+      currentDate.setHours(0, 0, 0, 0); // Start of day
+      
+      console.log(`Checking permits expiring between ${currentDate.toISOString()} and ${sevenDaysFromNow.toISOString()}`);
+      
+      // Get permits expiring within 7 days and their associated tickets
+      const permitsRes = await db.query(
+        `SELECT 
+           p.PermitId,
+           p.permitNumber,
+           p.expireDate,
+           p.status,
+           t.ticketId,
+           t.ticketCode,
+           t.comment7d
+         FROM Permits p
+         INNER JOIN PermitedTickets pt ON p.PermitId = pt.permitId
+         INNER JOIN Tickets t ON pt.ticketId = t.ticketId
+         WHERE p.deletedAt IS NULL 
+         AND pt.deletedAt IS NULL
+         AND t.deletedAt IS NULL
+         AND p.expireDate >= $1 
+         AND p.expireDate <= $2
+         AND (t.comment7d IS NULL OR t.comment7d = '' OR t.comment7d = 'TK - NEEDS PERMIT EXTENSION')
+         ORDER BY p.expireDate ASC;`,
+        [currentDate, sevenDaysFromNow]
+      );
+      
+      console.log(`Found ${permitsRes.rows.length} tickets with permits expiring within 7 days`);
+      
+      const results = [];
+      
+      for (const row of permitsRes.rows) {
+        const daysUntilExpiry = Math.ceil((new Date(row.expiredate) - currentDate) / (1000 * 60 * 60 * 24));
+        
+        // Only update if comment7d is null, empty, or already has the extension message
+        if (!row.comment7d || row.comment7d === '' || row.comment7d === 'TK - NEEDS PERMIT EXTENSION') {
+          // Update the ticket's comment7d
+          const updateRes = await db.query(
+            'UPDATE Tickets SET comment7d = $1, updatedBy = $2 WHERE ticketId = $3 RETURNING ticketId, comment7d;',
+            ['TK - NEEDS PERMIT EXTENSION', updatedBy, row.ticketid]
+          );
+          
+          results.push({
+            ticketId: row.ticketid,
+            ticketCode: row.ticketcode,
+            permitId: row.permitid,
+            permitNumber: row.permitnumber,
+            expireDate: row.expiredate,
+            daysUntilExpiry: daysUntilExpiry,
+            oldComment: row.comment7d || '',
+            newComment: 'TK - NEEDS PERMIT EXTENSION',
+            updated: true
+          });
+          
+          console.log(`Updated ticket ${row.ticketcode} (ID: ${row.ticketid}) - Permit ${row.permitnumber} expires in ${daysUntilExpiry} days`);
+        } else {
+          results.push({
+            ticketId: row.ticketid,
+            ticketCode: row.ticketcode,
+            permitId: row.permitid,
+            permitNumber: row.permitnumber,
+            expireDate: row.expiredate,
+            daysUntilExpiry: daysUntilExpiry,
+            oldComment: row.comment7d,
+            newComment: row.comment7d,
+            updated: false,
+            reason: 'Comment already set to something other than extension message'
+          });
+        }
+      }
+      
+      console.log(`Permit extension check completed: ${results.filter(r => r.updated).length} tickets updated`);
+      
+      return results;
+    } catch (error) {
+      console.error('Error checking permits expiring soon:', error);
+      throw error;
+    }
+  }
+
+  // Combined method to update permit statuses and check for expiring permits
+  static async updatePermitStatusesAndCheckExpiring(updatedBy) {
+    try {
+      console.log('Starting comprehensive permit status and expiration check...');
+      
+      // First update permit statuses
+      const statusResults = await this.updateAllPermitStatuses(updatedBy);
+      
+      // Then check for permits expiring within 7 days
+      const expiringResults = await this.checkPermitsExpiringSoon(updatedBy);
+      
+      return {
+        statusUpdates: statusResults,
+        expiringChecks: expiringResults,
+        summary: {
+          totalPermitsChecked: statusResults.length,
+          permitsStatusUpdated: statusResults.filter(r => r.updated).length,
+          totalTicketsChecked: expiringResults.length,
+          ticketsCommentUpdated: expiringResults.filter(r => r.updated).length
+        }
+      };
+    } catch (error) {
+      console.error('Error in comprehensive permit update:', error);
+      throw error;
+    }
+  }
+
   static async createPermitedTicket(permitId, ticketId, createdBy, updatedBy) {
     const res = await db.query(
       'INSERT INTO PermitedTickets(permitId, ticketId, createdBy, updatedBy) VALUES($1, $2, $3, $4) RETURNING *;',
@@ -312,19 +527,18 @@ class RTR {
 
         // Step 9: Create Permit
         console.log(`Step 9: Creating permit with AGENCY_NO: ${row.AGENCY_NO}`);
-        const currentDate = new Date();
-        const expireDate = new Date(row.EXP_DATE);
-        const status = expireDate > currentDate ? 'ACTIVE' : 'EXPIRED';
+        const permitStatus = this.determinePermitStatus(row.EXP_DATE);
+        console.log(`Step 9 - Permit status determined: ${permitStatus} (expireDate: ${row.EXP_DATE})`);
         
         const permitId = await this.createPermit(
           row.AGENCY_NO,
           row.START_DATE,
           row.EXP_DATE,
-          status,
+          permitStatus,
           createdBy,
           updatedBy
         );
-        console.log(`Step 9 - Created Permit ID: ${permitId}`);
+        console.log(`Step 9 - Created Permit ID: ${permitId} with status: ${permitStatus}`);
 
         // Step 10: Create PermitedTicket
         console.log(`Step 10: Creating permitted ticket link`);
@@ -389,6 +603,183 @@ class RTR {
   static async getRTRById(rtrId) {
     const res = await db.query('SELECT * FROM RTRs WHERE rtrId = $1;', [rtrId]);
     return res.rows[0];
+  }
+
+  // Method to generate TicketStatus records for a ticket based on its ContractUnit phases
+  static async generateTicketStatusesForTicket(ticketId, updatedBy) {
+    try {
+      console.log(`Generating TicketStatus records for ticket ${ticketId}...`);
+      
+      // First, get the ticket's contractUnitId
+      const ticketRes = await db.query(
+        'SELECT contractUnitId FROM Tickets WHERE ticketId = $1 AND deletedAt IS NULL;',
+        [ticketId]
+      );
+      
+      if (ticketRes.rows.length === 0) {
+        throw new Error(`Ticket with ID ${ticketId} not found`);
+      }
+      
+      const contractUnitId = ticketRes.rows[0].contractunitid;
+      
+      if (!contractUnitId) {
+        console.log(`Ticket ${ticketId} has no ContractUnit assigned, skipping TicketStatus generation`);
+        return {
+          ticketId: ticketId,
+          contractUnitId: null,
+          phasesFound: 0,
+          statusesCreated: 0,
+          skipped: true,
+          reason: 'No ContractUnit assigned to ticket'
+        };
+      }
+      
+      console.log(`Ticket ${ticketId} has ContractUnit ${contractUnitId}`);
+      
+      // Get the ContractUnit phases (TaskStatus records) for this ContractUnit
+      const phasesRes = await db.query(
+        `SELECT 
+           cup.contractUnitId,
+           cup.taskStatusId,
+           ts.name as taskStatusName,
+           ts.description as taskStatusDescription
+         FROM ContractUnitsPhases cup
+         INNER JOIN TaskStatus ts ON cup.taskStatusId = ts.taskStatusId
+         WHERE cup.contractUnitId = $1 
+         AND cup.deletedAt IS NULL 
+         AND ts.deletedAt IS NULL
+         ORDER BY cup.taskStatusId;`,
+        [contractUnitId]
+      );
+      
+      console.log(`Found ${phasesRes.rows.length} phases for ContractUnit ${contractUnitId}`);
+      
+      if (phasesRes.rows.length === 0) {
+        console.log(`No phases found for ContractUnit ${contractUnitId}, skipping TicketStatus generation`);
+        return {
+          ticketId: ticketId,
+          contractUnitId: contractUnitId,
+          phasesFound: 0,
+          statusesCreated: 0,
+          skipped: true,
+          reason: 'No phases defined for ContractUnit'
+        };
+      }
+      
+      // Check which TicketStatus records already exist for this ticket
+      const existingStatusesRes = await db.query(
+        'SELECT taskStatusId FROM TicketStatus WHERE ticketId = $1 AND deletedAt IS NULL;',
+        [ticketId]
+      );
+      
+      const existingTaskStatusIds = existingStatusesRes.rows.map(row => row.taskstatusid);
+      console.log(`Existing TicketStatus records for ticket ${ticketId}: ${existingTaskStatusIds.length}`);
+      
+      const results = [];
+      let createdCount = 0;
+      
+      // Create TicketStatus records for each phase that doesn't already exist
+      for (const phase of phasesRes.rows) {
+        if (!existingTaskStatusIds.includes(phase.taskstatusid)) {
+          try {
+            // Insert new TicketStatus record
+            const insertRes = await db.query(
+              `INSERT INTO TicketStatus (taskStatusId, ticketId, createdBy, updatedBy) 
+               VALUES ($1, $2, $3, $4) 
+               RETURNING taskStatusId, ticketId;`,
+              [phase.taskstatusid, ticketId, updatedBy, updatedBy]
+            );
+            
+            results.push({
+              taskStatusId: phase.taskstatusid,
+              taskStatusName: phase.taskstatusname,
+              taskStatusDescription: phase.taskstatusdescription,
+              created: true,
+              ticketStatusRecord: insertRes.rows[0]
+            });
+            
+            createdCount++;
+            console.log(`Created TicketStatus for ticket ${ticketId}, taskStatus: ${phase.taskstatusname} (ID: ${phase.taskstatusid})`);
+          } catch (insertError) {
+            console.error(`Error creating TicketStatus for ticket ${ticketId}, taskStatus ${phase.taskstatusid}:`, insertError);
+            results.push({
+              taskStatusId: phase.taskstatusid,
+              taskStatusName: phase.taskstatusname,
+              taskStatusDescription: phase.taskstatusdescription,
+              created: false,
+              error: insertError.message
+            });
+          }
+        } else {
+          results.push({
+            taskStatusId: phase.taskstatusid,
+            taskStatusName: phase.taskstatusname,
+            taskStatusDescription: phase.taskstatusdescription,
+            created: false,
+            reason: 'TicketStatus already exists'
+          });
+          console.log(`TicketStatus already exists for ticket ${ticketId}, taskStatus: ${phase.taskstatusname} (ID: ${phase.taskstatusid})`);
+        }
+      }
+      
+      console.log(`TicketStatus generation completed for ticket ${ticketId}: ${createdCount} new records created`);
+      
+      return {
+        ticketId: ticketId,
+        contractUnitId: contractUnitId,
+        phasesFound: phasesRes.rows.length,
+        statusesCreated: createdCount,
+        skipped: false,
+        results: results
+      };
+      
+    } catch (error) {
+      console.error(`Error generating TicketStatus records for ticket ${ticketId}:`, error);
+      throw error;
+    }
+  }
+
+  // Method to generate TicketStatus records for multiple tickets
+  static async generateTicketStatusesForTickets(ticketIds, updatedBy) {
+    try {
+      console.log(`Generating TicketStatus records for ${ticketIds.length} tickets...`);
+      
+      const results = [];
+      
+      for (const ticketId of ticketIds) {
+        try {
+          const result = await this.generateTicketStatusesForTicket(ticketId, updatedBy);
+          results.push(result);
+        } catch (error) {
+          console.error(`Error processing ticket ${ticketId}:`, error);
+          results.push({
+            ticketId: ticketId,
+            error: error.message,
+            skipped: true
+          });
+        }
+      }
+      
+      const summary = {
+        totalTickets: ticketIds.length,
+        processed: results.length,
+        successful: results.filter(r => !r.skipped || r.statusesCreated > 0).length,
+        failed: results.filter(r => r.error).length,
+        totalPhasesFound: results.reduce((sum, r) => sum + (r.phasesFound || 0), 0),
+        totalStatusesCreated: results.reduce((sum, r) => sum + (r.statusesCreated || 0), 0)
+      };
+      
+      console.log(`TicketStatus generation completed for all tickets:`, summary);
+      
+      return {
+        summary: summary,
+        results: results
+      };
+      
+    } catch (error) {
+      console.error('Error generating TicketStatus records for multiple tickets:', error);
+      throw error;
+    }
   }
 }
 

@@ -45,6 +45,128 @@ class Addresses {
     `);
     return res.rows;
   }
+
+  static async getAddressesForNewRouteGeneration() {
+    const res = await db.query(`
+      SELECT DISTINCT 
+        a.addressId,
+        a.addressNumber,
+        a.addressCardinal,
+        a.addressStreet,
+        a.addressSuffix,
+        t.ticketId,
+        t.ticketCode,
+        t.comment7d,
+        t.quantity,
+        t.amountToPay,
+        t.ticketType,
+        -- Permit information
+        p.permitNumber,
+        p.expireDate as permitExpireDate,
+        p.status as permitStatus
+      FROM Addresses a 
+      JOIN TicketAddresses ta ON a.addressId = ta.addressId 
+      JOIN Tickets t ON ta.ticketId = t.ticketId 
+      LEFT JOIN PermitedTickets pt ON t.ticketId = pt.ticketId
+      LEFT JOIN Permits p ON pt.permitId = p.PermitId
+      WHERE t.comment7d IS NULL 
+      AND a.deletedAt IS NULL 
+      AND ta.deletedAt IS NULL 
+      AND t.deletedAt IS NULL
+      AND (pt.deletedAt IS NULL OR pt.deletedAt IS NULL)
+      AND (p.deletedAt IS NULL OR p.deletedAt IS NULL)
+      ORDER BY a.addressId, t.ticketId;
+    `);
+    
+    // Get ticket statuses separately for each ticket
+    const addressesWithStatuses = [];
+    for (const address of res.rows) {
+      const statusRes = await db.query(`
+        SELECT 
+          ts.taskStatusId,
+          ts.name as taskStatusName,
+          ts.description as taskStatusDescription,
+          tks.startingDate,
+          tks.endingDate,
+          tks.observation,
+          tks.crewId
+        FROM TicketStatus tks
+        JOIN TaskStatus ts ON tks.taskStatusId = ts.taskStatusId
+        WHERE tks.ticketId = $1 
+        AND tks.deletedAt IS NULL 
+        AND ts.deletedAt IS NULL
+        ORDER BY ts.taskStatusId;
+      `, [address.ticketid]);
+      
+      addressesWithStatuses.push({
+        ...address,
+        ticketStatuses: statusRes.rows
+      });
+    }
+    
+    return addressesWithStatuses;
+  }
+
+  static async getAvailableAddresses() {
+    const res = await db.query(`
+      SELECT DISTINCT 
+        a.addressId,
+        a.addressNumber,
+        a.addressCardinal,
+        a.addressStreet,
+        a.addressSuffix,
+        t.ticketId,
+        t.ticketCode,
+        t.comment7d,
+        t.quantity,
+        t.amountToPay,
+        t.ticketType,
+        -- Permit information
+        p.permitNumber,
+        p.expireDate as permitExpireDate,
+        p.status as permitStatus
+      FROM Addresses a 
+      JOIN TicketAddresses ta ON a.addressId = ta.addressId 
+      JOIN Tickets t ON ta.ticketId = t.ticketId 
+      LEFT JOIN PermitedTickets pt ON t.ticketId = pt.ticketId
+      LEFT JOIN Permits p ON pt.permitId = p.PermitId
+      WHERE (t.comment7d IS NULL OR t.comment7d = 'TK - PERMIT EXTENDED')
+      AND a.deletedAt IS NULL 
+      AND ta.deletedAt IS NULL 
+      AND t.deletedAt IS NULL
+      AND (pt.deletedAt IS NULL OR pt.deletedAt IS NULL)
+      AND (p.deletedAt IS NULL OR p.deletedAt IS NULL)
+      ORDER BY a.addressId, t.ticketId;
+    `);
+    
+    // Get ticket statuses separately for each ticket
+    const addressesWithStatuses = [];
+    for (const address of res.rows) {
+      const statusRes = await db.query(`
+        SELECT 
+          ts.taskStatusId,
+          ts.name as taskStatusName,
+          ts.description as taskStatusDescription,
+          tks.startingDate,
+          tks.endingDate,
+          tks.observation,
+          tks.crewId
+        FROM TicketStatus tks
+        JOIN TaskStatus ts ON tks.taskStatusId = ts.taskStatusId
+        WHERE tks.ticketId = $1 
+        AND tks.deletedAt IS NULL 
+        AND ts.deletedAt IS NULL
+        ORDER BY ts.taskStatusId;
+      `, [address.ticketid]);
+      
+      addressesWithStatuses.push({
+        ...address,
+        ticketStatuses: statusRes.rows
+      });
+    }
+    
+    return addressesWithStatuses;
+  }
 }
 
 module.exports = Addresses; 

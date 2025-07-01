@@ -143,6 +143,68 @@ const TicketsController = {
       res.status(500).json({ message: 'Error fetching tickets', error: error.message });
     }
   },
+
+  async getByTicketCode(req, res) {
+    try {
+      const { ticketCode } = req.params;
+      const ticket = await Tickets.findByTicketCode(ticketCode);
+      if (!ticket) {
+        return res.status(404).json({ message: 'Ticket not found' });
+      }
+      res.status(200).json(ticket);
+    } catch (error) {
+      console.error('Error fetching ticket by ticket code:', error);
+      res.status(500).json({ message: 'Error fetching ticket', error: error.message });
+    }
+  },
+
+  async getTicketWithAddressAndStatuses(req, res) {
+    try {
+      const { ticketCode } = req.params;
+      const ticket = await Tickets.getTicketWithAddressAndStatuses(ticketCode);
+      
+      if (!ticket) {
+        return res.status(404).json({ 
+          success: false,
+          message: 'Ticket not found',
+          ticketCode: ticketCode 
+        });
+      }
+
+      res.status(200).json({
+        success: true,
+        data: {
+          ticketId: ticket.ticketid,
+          ticketCode: ticket.ticketcode,
+          quantity: ticket.quantity,
+          daysOutstanding: ticket.daysoutstanding,
+          comment7d: ticket.comment7d,
+          partnerComment: ticket.partnercomment,
+          partnerSupervisorComment: ticket.partnersupervisorcomment,
+          contractNumber: ticket.contractnumber,
+          amountToPay: ticket.amounttopay,
+          ticketType: ticket.tickettype,
+          createdAt: ticket.createdat,
+          updatedAt: ticket.updatedat,
+          address: {
+            fullAddress: ticket.fulladdress?.trim() || null,
+            addressNumber: ticket.addressnumber,
+            addressCardinal: ticket.addresscardinal,
+            addressStreet: ticket.addressstreet,
+            addressSuffix: ticket.addressesuffix
+          },
+          taskStatuses: ticket.taskstatuses || []
+        }
+      });
+    } catch (error) {
+      console.error('Error fetching ticket with address and statuses:', error);
+      res.status(500).json({ 
+        success: false,
+        message: 'Error fetching ticket information', 
+        error: error.message 
+      });
+    }
+  },
 };
 
 module.exports = TicketsController; 

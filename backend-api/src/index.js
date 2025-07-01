@@ -98,6 +98,7 @@ const necessaryPhasesRoutes = require('./routes/ticket-logic/NecessaryPhasesRout
 const ticketsRoutes = require('./routes/ticket-logic/TicketsRoutes');
 const rtrRoutes = require('./routes/RTR/rtrRoutes');
 const notificationsRoutes = require('./routes/notifications/NotificationsRoutes');
+const routeOptimizationRoutes = require('./routes/route/RouteOptimizationRoutes');
 
 app.get('/api/health', (req, res) => {
   res.status(200).json({ status: 'OK' });
@@ -149,6 +150,7 @@ app.use('/api/necessaryphases', necessaryPhasesRoutes);
 app.use('/api/tickets', ticketsRoutes);
 app.use('/api/rtr', rtrRoutes);
 app.use('/api/notifications', notificationsRoutes);
+app.use('/api/route-optimization', routeOptimizationRoutes);
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server listening on port ${PORT}`);

@@ -231,4 +231,10 @@ router.put('/:routeId', RoutesController.updateRoute);
  */
 router.delete('/:routeId', RoutesController.deleteRoute);
 
+// Route optimization endpoints
+router.post('/optimize', RoutesController.optimizeRoute);
+router.get('/:routeId/optimized', RoutesController.getOptimizedRoute);
+router.get('/:routeId/tickets', RoutesController.getRouteTickets);
+router.put('/:routeId/tickets/:ticketId/queue', RoutesController.updateTicketQueue);
+
 module.exports = router; 

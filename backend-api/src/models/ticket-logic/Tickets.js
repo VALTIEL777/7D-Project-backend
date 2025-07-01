@@ -148,6 +148,65 @@ class Tickets {
     `);
     return result.rows;
   }
+
+  // Get ticket information by ticketCode with full address and statuses
+  static async getTicketWithAddressAndStatuses(ticketCode) {
+    const result = await db.query(`
+      SELECT 
+        t.ticketId,
+        t.ticketCode,
+        t.quantity,
+        t.daysOutstanding,
+        t.comment7d,
+        t.PartnerComment,
+        t.PartnerSupervisorComment,
+        t.contractNumber,
+        t.amountToPay,
+        t.ticketType,
+        t.createdAt,
+        t.updatedAt,
+        -- Full address construction
+        CONCAT(
+          COALESCE(a.addressNumber, ''), ' ',
+          COALESCE(a.addressCardinal, ''), ' ',
+          COALESCE(a.addressStreet, ''), ' ',
+          COALESCE(a.addressSuffix, '')
+        ) as fullAddress,
+        -- Individual address components
+        a.addressNumber,
+        a.addressCardinal,
+        a.addressStreet,
+        a.addressSuffix,
+        -- Task statuses as JSON array
+        COALESCE(
+          JSON_AGG(
+            DISTINCT JSONB_BUILD_OBJECT(
+              'taskStatusId', ts.taskStatusId,
+              'name', ts.name,
+              'description', ts.description,
+              'startingDate', tks.startingDate,
+              'endingDate', tks.endingDate,
+              'observation', tks.observation,
+              'crewId', tks.crewId
+            )
+          ) FILTER (WHERE ts.taskStatusId IS NOT NULL),
+          '[]'::json
+        ) as taskStatuses
+      FROM Tickets t
+      LEFT JOIN TicketAddresses ta ON t.ticketId = ta.ticketId
+      LEFT JOIN Addresses a ON ta.addressId = a.addressId
+      LEFT JOIN TicketStatus tks ON t.ticketId = tks.ticketId
+      LEFT JOIN TaskStatus ts ON tks.taskStatusId = ts.taskStatusId
+      WHERE t.ticketCode = $1 AND t.deletedAt IS NULL
+      GROUP BY 
+        t.ticketId, t.ticketCode, t.quantity, t.daysOutstanding, t.comment7d,
+        t.PartnerComment, t.PartnerSupervisorComment, t.contractNumber,
+        t.amountToPay, t.ticketType, t.createdAt, t.updatedAt,
+        a.addressNumber, a.addressCardinal, a.addressStreet, a.addressSuffix
+    `, [ticketCode]);
+    
+    return result.rows[0];
+  }
 }
 
 module.exports = Tickets; 

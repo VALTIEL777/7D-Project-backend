@@ -17,37 +17,6 @@ INSERT INTO Payments (checkId, paymentNumber, datePaid, amountPaid, status, paym
   (3, 'PAY003', '2024-01-03', 1500.00, 'Completed', 'http://pay3.com', 3, 3);
 
 
--- Mock data for wayfinding
-INSERT INTO wayfinding (wayfindingId, location, fromAddressNumber, fromAddressCardinal, fromAddressStreet, fromAddressSuffix, toAddressNumber, toAddressCardinal, toAddressStreet, toAddressSuffix, width, length, surfaceTotal, createdBy, updatedBy) VALUES
-  (1, 'Loc1', '100', 'N', 'Main', 'St', '200', 'S', 'Elm', 'Ave', 10.5, 20.0, 210.0, 1, 1),
-  (2, 'Loc2', '101', 'E', 'Oak', 'Blvd', '201', 'W', 'Pine', 'Rd', 12.0, 18.0, 216.0, 2, 2);
-
-
--- Mock data for IncidentsMx
-INSERT INTO IncidentsMx (incidentId, name, earliestRptDate, createdBy, updatedBy) VALUES
-  (1, 'Incident 1', '2024-01-10', 1, 1),
-  (2, 'Incident 2', '2024-01-11', 2, 2);
-
-
--- Mock data for Addresses
-INSERT INTO Addresses (addressId, addressNumber, addressCardinal, addressStreet, addressSuffix, createdBy, updatedBy) VALUES
-  (1, '123', 'N', 'Main', 'St', 1, 1),
-  (2, '456', 'S', 'Elm', 'Ave', 2, 2);
-
-
-
--- Mock data for Permits
-INSERT INTO Permits (PermitId, permitNumber, status, startDate, expireDate, createdBy, updatedBy) VALUES
-  (1, 'PRM001', 'Active', '2024-01-01', '2024-12-31', 1, 1),
-  (2, 'PRM002', 'Expired', '2023-01-01', '2023-12-31', 2, 2);
-
-
-
--- Mock data for Diggers
-INSERT INTO Diggers (diggerId, permitId, diggerNumber, status, startDate, expireDate, watchnProtect, createdBy, updatedBy) VALUES
-  (1, 1, 'DG001', 'Active', '2024-01-01', '2024-06-01', true, 1, 1),
-  (2, 2, 'DG002', 'Inactive', '2023-01-01', '2023-06-01', false, 2, 2);
-
 -- Mock data for Skills
 INSERT INTO Skills (skillId, name, description, createdBy, updatedBy) VALUES
   (1, 'Welding', 'Welding skills', 1, 1),
@@ -67,12 +36,6 @@ INSERT INTO Crews (crewId, type, photo, workedHours, createdBy, updatedBy) VALUE
 INSERT INTO CrewEmployees (crewId, employeeId, crewLeader, createdBy, updatedBy) VALUES
   (1, 1, true, 1, 1),
   (2, 2, false, 2, 2);
-
--- Mock data for Routes
-INSERT INTO Routes (routeId, routeCode, type, startDate, endDate, createdBy, updatedBy) VALUES
-  (1, 'RTE001', 'concrete', '2024-01-01', '2024-01-10', 1, 1),
-  (2, 'RTE002', 'asphalt', '2024-02-01', '2024-02-10', 2, 2);
-
 
 
 
@@ -101,9 +64,5 @@ INSERT INTO usedEquipment (CrewId, equipmentId, startDate, endDate, hoursLent, q
   (1, 1, '2024-01-01', '2024-01-02', 8.0, 1, 800.0, 'Used for digging', 1, 1),
   (2, 2, '2024-02-01', '2024-02-02', 6.0, 1, 900.0, 'Used for grading', 2, 2);
 
--- Mock data for RTRs
-INSERT INTO RTRs (rtrId, name, url, createdAt, updatedAt) VALUES
-  (1, 'RTR File 1', 'http://rtr1.com', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-  (2, 'RTR File 2', 'http://rtr2.com', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP); 
 
 

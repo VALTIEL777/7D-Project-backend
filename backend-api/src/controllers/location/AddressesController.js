@@ -74,6 +74,44 @@ const AddressesController = {
       res.status(500).json({ message: 'Error fetching addresses', error: error.message });
     }
   },
+
+  async getAddressesForNewRouteGeneration(req, res) {
+    try {
+      const addresses = await Addresses.getAddressesForNewRouteGeneration();
+      res.status(200).json({
+        success: true,
+        message: 'Addresses retrieved successfully for new route generation',
+        count: addresses.length,
+        data: addresses
+      });
+    } catch (error) {
+      console.error('Error fetching addresses for new route generation:', error);
+      res.status(500).json({ 
+        success: false,
+        message: 'Error fetching addresses for new route generation', 
+        error: error.message 
+      });
+    }
+  },
+
+  async getAvailableAddresses(req, res) {
+    try {
+      const addresses = await Addresses.getAvailableAddresses();
+      res.status(200).json({
+        success: true,
+        message: 'Available addresses retrieved successfully',
+        count: addresses.length,
+        data: addresses
+      });
+    } catch (error) {
+      console.error('Error fetching available addresses:', error);
+      res.status(500).json({ 
+        success: false,
+        message: 'Error fetching available addresses', 
+        error: error.message 
+      });
+    }
+  }
 };
 
 module.exports = AddressesController; 
