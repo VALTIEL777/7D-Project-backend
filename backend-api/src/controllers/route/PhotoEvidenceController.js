@@ -1,4 +1,6 @@
 const PhotoEvidence = require('../../models/route/PhotoEvidence');
+const NotificationService = require('../../services/NotificationService');
+const Tickets = require('../../models/ticket-logic/Tickets');
 const minioClient = require('../../config/minio');
 const path = require('path');
 const exif = require('exif-parser');
@@ -76,6 +78,21 @@ const PhotoEvidenceController = {
       const newPhotoEvidence = await PhotoEvidence.create(
         ticketStatusId, ticketId, name, latitude, longitude, photo, date, comment, fileUrl, createdBy, updatedBy
       );
+      
+      // 5. Create notification for photo upload
+      if (ticketId) {
+        const ticket = await Tickets.findById(ticketId);
+        if (ticket) {
+          const userIds = await NotificationService.getTicketNotificationUsers(ticketId);
+          await NotificationService.notifyPhotoUploaded(
+            ticketId,
+            ticket.ticketCode,
+            createdBy,
+            userIds
+          );
+        }
+      }
+      
       res.status(201).json(newPhotoEvidence);
     } catch (error) {
       console.error('Error creating PhotoEvidence:', error);

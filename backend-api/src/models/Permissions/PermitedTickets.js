@@ -11,20 +11,20 @@ class PermitedTickets {
 
   static async findById(permitId, ticketId) {
     const res = await db.query(
-      'SELECT * FROM PermitedTickets WHERE permitId = $1 AND ticketId = $2;',
+      'SELECT * FROM PermitedTickets WHERE permitId = $1 AND ticketId = $2 AND deletedAt IS NULL;',
       [permitId, ticketId]
     );
     return res.rows[0];
   }
 
   static async findAll() {
-    const res = await db.query('SELECT * FROM PermitedTickets;');
+    const res = await db.query('SELECT * FROM PermitedTickets WHERE deletedAt IS NULL;');
     return res.rows;
   }
 
   static async update(permitId, ticketId, updatedBy) {
     const res = await db.query(
-      'UPDATE PermitedTickets SET updatedAt = CURRENT_TIMESTAMP, updatedBy = $1 WHERE permitId = $2 AND ticketId = $3 RETURNING *;',
+      'UPDATE PermitedTickets SET updatedAt = CURRENT_TIMESTAMP, updatedBy = $1 WHERE permitId = $2 AND ticketId = $3 AND deletedAt IS NULL RETURNING *;',
       [updatedBy, permitId, ticketId]
     );
     return res.rows[0];
@@ -32,7 +32,7 @@ class PermitedTickets {
 
   static async delete(permitId, ticketId) {
     const res = await db.query(
-      'UPDATE PermitedTickets SET deletedAt = CURRENT_TIMESTAMP WHERE permitId = $1 AND ticketId = $2 RETURNING *;',
+      'UPDATE PermitedTickets SET deletedAt = CURRENT_TIMESTAMP WHERE permitId = $1 AND ticketId = $2 AND deletedAt IS NULL RETURNING *;',
       [permitId, ticketId]
     );
     return res.rows[0];

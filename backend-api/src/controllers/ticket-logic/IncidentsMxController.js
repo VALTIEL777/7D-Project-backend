@@ -1,10 +1,20 @@
 const IncidentsMx = require('../../models/ticket-logic/IncidentsMx');
+const NotificationService = require('../../services/NotificationService');
 
 const IncidentsMxController = {
   async createIncidentMx(req, res) {
     try {
       const { name, earliestRptDate, createdBy, updatedBy } = req.body;
       const newIncidentMx = await IncidentsMx.create(name, earliestRptDate, createdBy, updatedBy);
+      
+      // Create notification for new incident
+      await NotificationService.notifyNewIncident(
+        newIncidentMx.incidentId,
+        name,
+        createdBy,
+        null // Assign to all users for new incidents
+      );
+      
       res.status(201).json(newIncidentMx);
     } catch (error) {
       console.error('Error creating IncidentMx:', error);

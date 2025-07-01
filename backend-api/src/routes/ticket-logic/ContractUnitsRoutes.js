@@ -26,7 +26,7 @@ const router = express.Router();
  *               - itemCode
  *               - name
  *               - unit
- *               - CostPerUnit
+ *               - costPerUnit
  *               - createdBy
  *               - updatedBy
  *             properties:
@@ -58,11 +58,11 @@ const router = express.Router();
  *                 type: string
  *                 description: Work explicitly not included in this contract unit.
  *                 example: Fine grading, sub-base preparation.
- *               CDOTStandardImg:
+ *               cdotStandardImg:
  *                 type: string
  *                 description: URL or path to the CDOT standard image for this unit.
  *                 example: /images/cdot_slab.jpg
- *               CostPerUnit:
+ *               costPerUnit:
  *                 type: number
  *                 format: float
  *                 description: The cost per unit.
@@ -71,7 +71,7 @@ const router = express.Router();
  *                 type: string
  *                 description: The operational zone for this contract unit.
  *                 example: Zone A
- *               PaymentClause:
+ *               paymentClause:
  *                 type: string
  *                 description: Details about the payment terms for this contract unit.
  *                 example: Payment upon completion and inspection.
@@ -95,9 +95,24 @@ const router = express.Router();
  *                   type: integer
  *                   description: The auto-generated ID of the contract unit.
  *                   example: 1
+ *                 itemCode:
+ *                   type: string
+ *                   example: 'CU001'
  *                 name:
  *                   type: string
  *                   example: Concrete Slab
+ *                 unit:
+ *                   type: string
+ *                   example: Sq Yard
+ *                 costPerUnit:
+ *                   type: number
+ *                   example: 50.00
+ *                 cdotStandardImg:
+ *                   type: string
+ *                   example: /images/cdot_slab.jpg
+ *                 paymentClause:
+ *                   type: string
+ *                   example: Payment upon completion and inspection.
  *       500:
  *         description: Server error
  */
@@ -212,11 +227,11 @@ router.get('/', ContractUnitsController.getAllContractUnits);
  *                 type: string
  *                 description: Updated list of work not included.
  *                 example: Advanced drainage systems.
- *               CDOTStandardImg:
+ *               cdotStandardImg:
  *                 type: string
  *                 description: Updated URL or path to the CDOT standard image.
  *                 example: /images/cdot_slab_v2.jpg
- *               CostPerUnit:
+ *               costPerUnit:
  *                 type: number
  *                 format: float
  *                 description: The updated cost per unit.
@@ -225,7 +240,7 @@ router.get('/', ContractUnitsController.getAllContractUnits);
  *                 type: string
  *                 description: The updated operational zone.
  *                 example: Zone B
- *               PaymentClause:
+ *               paymentClause:
  *                 type: string
  *                 description: Updated payment terms.
  *                 example: Net 15 days upon final approval.
@@ -244,9 +259,24 @@ router.get('/', ContractUnitsController.getAllContractUnits);
  *                 contractUnitId:
  *                   type: integer
  *                   example: 1
+ *                 itemCode:
+ *                   type: string
+ *                   example: 'CU001-REV'
  *                 name:
  *                   type: string
  *                   example: Reinforced Concrete Slab
+ *                 unit:
+ *                   type: string
+ *                   example: Sq Meter
+ *                 costPerUnit:
+ *                   type: number
+ *                   example: 55.00
+ *                 cdotStandardImg:
+ *                   type: string
+ *                   example: /images/cdot_slab_v2.jpg
+ *                 paymentClause:
+ *                   type: string
+ *                   example: Net 15 days upon final approval.
  *       404:
  *         description: Contract unit not found
  *       500:
@@ -278,6 +308,28 @@ router.put('/:contractUnitId', ContractUnitsController.updateContractUnit);
  *                 message:
  *                   type: string
  *                   example: ContractUnit deleted successfully
+ *                 deletedContractUnit:
+ *                   type: object
+ *                   properties:
+ *                     contractUnitId:
+ *                       type: integer
+ *                       example: 1
+ *                     itemCode:
+ *                       type: string
+ *                       example: 'CU001'
+ *                     name:
+ *                       type: string
+ *                       example: Concrete Slab
+ *                     unit:
+ *                       type: string
+ *                       example: Sq Yard
+ *                     costPerUnit:
+ *                       type: number
+ *                       example: 50.00
+ *                     deletedAt:
+ *                       type: string
+ *                       format: date-time
+ *                       example: '2024-01-01T12:00:00.000Z'
  *       404:
  *         description: Contract unit not found
  *       500:

@@ -10,25 +10,25 @@ class Equipment {
   }
 
   static async findById(equipmentId) {
-    const res = await db.query('SELECT * FROM Equipment WHERE equipmentId = $1;', [equipmentId]);
+    const res = await db.query('SELECT * FROM Equipment WHERE equipmentId = $1 AND deletedAt IS NULL;', [equipmentId]);
     return res.rows[0];
   }
 
   static async findAll() {
-    const res = await db.query('SELECT * FROM Equipment;');
+    const res = await db.query('SELECT * FROM Equipment WHERE deletedAt IS NULL;');
     return res.rows;
   }
 
   static async update(equipmentId, supplierId, equipmentName, owner, type, hourlyRate, observation, updatedBy) {
     const res = await db.query(
-      'UPDATE Equipment SET supplierId = $1, equipmentName = $2, owner = $3, type = $4, hourlyRate = $5, observation = $6, updatedAt = CURRENT_TIMESTAMP, updatedBy = $7 WHERE equipmentId = $8 RETURNING *;',
+      'UPDATE Equipment SET supplierId = $1, equipmentName = $2, owner = $3, type = $4, hourlyRate = $5, observation = $6, updatedAt = CURRENT_TIMESTAMP, updatedBy = $7 WHERE equipmentId = $8 AND deletedAt IS NULL RETURNING *;',
       [supplierId, equipmentName, owner, type, hourlyRate, observation, updatedBy, equipmentId]
     );
     return res.rows[0];
   }
 
   static async delete(equipmentId) {
-    const res = await db.query('UPDATE Equipment SET deletedAt = CURRENT_TIMESTAMP WHERE equipmentId = $1 RETURNING *;', [equipmentId]);
+    const res = await db.query('UPDATE Equipment SET deletedAt = CURRENT_TIMESTAMP WHERE equipmentId = $1 AND deletedAt IS NULL RETURNING *;', [equipmentId]);
     return res.rows[0];
   }
 }
