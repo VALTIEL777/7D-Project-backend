@@ -10,25 +10,25 @@ class Payments {
   }
 
   static async findById(checkId) {
-    const res = await db.query('SELECT * FROM Payments WHERE checkId = $1;', [checkId]);
+    const res = await db.query('SELECT * FROM Payments WHERE checkId = $1 AND deletedAt IS NULL;', [checkId]);
     return res.rows[0];
   }
 
   static async findAll() {
-    const res = await db.query('SELECT * FROM Payments;');
+    const res = await db.query('SELECT * FROM Payments WHERE deletedAt IS NULL;');
     return res.rows;
   }
 
   static async update(checkId, paymentNumber, datePaid, amountPaid, status, paymentURL, updatedBy) {
     const res = await db.query(
-      'UPDATE Payments SET paymentNumber = $1, datePaid = $2, amountPaid = $3, status = $4, paymentURL = $5, updatedAt = CURRENT_TIMESTAMP, updatedBy = $6 WHERE checkId = $7 RETURNING *;',
+      'UPDATE Payments SET paymentNumber = $1, datePaid = $2, amountPaid = $3, status = $4, paymentURL = $5, updatedAt = CURRENT_TIMESTAMP, updatedBy = $6 WHERE checkId = $7 AND deletedAt IS NULL RETURNING *;',
       [paymentNumber, datePaid, amountPaid, status, paymentURL, updatedBy, checkId]
     );
     return res.rows[0];
   }
 
   static async delete(checkId) {
-    const res = await db.query('UPDATE Payments SET deletedAt = CURRENT_TIMESTAMP WHERE checkId = $1 RETURNING *;', [checkId]);
+    const res = await db.query('UPDATE Payments SET deletedAt = CURRENT_TIMESTAMP WHERE checkId = $1 AND deletedAt IS NULL RETURNING *;', [checkId]);
     return res.rows[0];
   }
 }

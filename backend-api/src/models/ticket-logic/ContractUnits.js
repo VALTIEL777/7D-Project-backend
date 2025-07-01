@@ -10,25 +10,30 @@ class ContractUnits {
   }
 
   static async findById(contractUnitId) {
-    const res = await db.query('SELECT * FROM ContractUnits WHERE contractUnitId = $1;', [contractUnitId]);
+    const res = await db.query('SELECT * FROM ContractUnits WHERE contractUnitId = $1 AND deletedAt IS NULL;', [contractUnitId]);
     return res.rows[0];
   }
 
   static async findAll() {
+    const res = await db.query('SELECT * FROM ContractUnits WHERE deletedAt IS NULL;');
+    return res.rows;
+  }
+
+  static async findAllIncludingDeleted() {
     const res = await db.query('SELECT * FROM ContractUnits;');
     return res.rows;
   }
 
   static async update(contractUnitId, neededMobilization, neededContractUnit, itemCode, name, unit, description, workNotIncluded, CDOTStandardImg, CostPerUnit, zone, PaymentClause, updatedBy) {
     const res = await db.query(
-      'UPDATE ContractUnits SET neededMobilization = $1, neededContractUnit = $2, itemCode = $3, name = $4, unit = $5, description = $6, workNotIncluded = $7, CDOTStandardImg = $8, CostPerUnit = $9, zone = $10, PaymentClause = $11, updatedAt = CURRENT_TIMESTAMP, updatedBy = $12 WHERE contractUnitId = $13 RETURNING *;',
+      'UPDATE ContractUnits SET neededMobilization = $1, neededContractUnit = $2, itemCode = $3, name = $4, unit = $5, description = $6, workNotIncluded = $7, CDOTStandardImg = $8, CostPerUnit = $9, zone = $10, PaymentClause = $11, updatedAt = CURRENT_TIMESTAMP, updatedBy = $12 WHERE contractUnitId = $13 AND deletedAt IS NULL RETURNING *;',
       [neededMobilization, neededContractUnit, itemCode, name, unit, description, workNotIncluded, CDOTStandardImg, CostPerUnit, zone, PaymentClause, updatedBy, contractUnitId]
     );
     return res.rows[0];
   }
 
   static async delete(contractUnitId) {
-    const res = await db.query('UPDATE ContractUnits SET deletedAt = CURRENT_TIMESTAMP WHERE contractUnitId = $1 RETURNING *;', [contractUnitId]);
+    const res = await db.query('UPDATE ContractUnits SET deletedAt = CURRENT_TIMESTAMP WHERE contractUnitId = $1 AND deletedAt IS NULL RETURNING *;', [contractUnitId]);
     return res.rows[0];
   }
 }

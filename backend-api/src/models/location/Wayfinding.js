@@ -10,25 +10,25 @@ class Wayfinding {
   }
 
   static async findById(wayfindingId) {
-    const res = await db.query('SELECT * FROM wayfinding WHERE wayfindingId = $1;', [wayfindingId]);
+    const res = await db.query('SELECT * FROM wayfinding WHERE wayfindingId = $1 AND deletedAt IS NULL;', [wayfindingId]);
     return res.rows[0];
   }
 
   static async findAll() {
-    const res = await db.query('SELECT * FROM wayfinding;');
+    const res = await db.query('SELECT * FROM wayfinding WHERE deletedAt IS NULL;');
     return res.rows;
   }
 
   static async update(wayfindingId, streetFrom, streetTo, location, addressCardinal, addressStreet, addressSuffix, width, length, surfaceTotal, updatedBy) {
     const res = await db.query(
-      'UPDATE wayfinding SET streetFrom = $1, streetTo = $2, location = $3, addressCardinal = $4, addressStreet = $5, addressSuffix = $6, width = $7, length = $8, surfaceTotal = $9, updatedAt = CURRENT_TIMESTAMP, updatedBy = $10 WHERE wayfindingId = $11 RETURNING *;',
+      'UPDATE wayfinding SET streetFrom = $1, streetTo = $2, location = $3, addressCardinal = $4, addressStreet = $5, addressSuffix = $6, width = $7, length = $8, surfaceTotal = $9, updatedAt = CURRENT_TIMESTAMP, updatedBy = $10 WHERE wayfindingId = $11 AND deletedAt IS NULL RETURNING *;',
       [streetFrom, streetTo, location, addressCardinal, addressStreet, addressSuffix, width, length, surfaceTotal, updatedBy, wayfindingId]
     );
     return res.rows[0];
   }
 
   static async delete(wayfindingId) {
-    const res = await db.query('UPDATE wayfinding SET deletedAt = CURRENT_TIMESTAMP WHERE wayfindingId = $1 RETURNING *;', [wayfindingId]);
+    const res = await db.query('UPDATE wayfinding SET deletedAt = CURRENT_TIMESTAMP WHERE wayfindingId = $1 AND deletedAt IS NULL RETURNING *;', [wayfindingId]);
     return res.rows[0];
   }
 }

@@ -1,15 +1,32 @@
 // index.js
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const db = require('./config/db.js');
 const swaggerUi = require('swagger-ui-express');
 const specs = require('./config/swagger');
+const ScheduledTasks = require('./services/ScheduledTasks');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 const allowedOrigins = [
   'https://7d-compass-api.christba.com',  // for Swagger
-  'https://7d-compass.christba.com'       // for your frontend
+  'https://7d-compass.christba.com',       // for your frontend
+  'http://localhost:3005',
+  'http://localhost:3000',
+  'http://localhost:3001',
+  'http://localhost:3002',
+  'http://localhost:3003',
+  'http://localhost:3004',
+  'http://localhost:9000',
+  'http://localhost:9001',
+  'http://localhost:5432',
+  'http://127.0.0.1:3000',
+  'http://127.0.0.1:3001',
+  'http://127.0.0.1:3002',
+  'http://127.0.0.1:3003',
+  'http://127.0.0.1:3004',
+  'http://127.0.0.1:3005'
 ];
 
 app.use(cors({
@@ -30,7 +47,8 @@ app.use(cors({
 }));
 
 
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // Swagger UI setup
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs, {
@@ -46,6 +64,7 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs, {
 }));
 
 // Import routes
+const authRoutes = require('./routes/auth/authRoutes');
 const userRoutes = require('./routes/users/UserRoutes');
 const crewRoutes = require('./routes/human-resources/CrewsRoutes');
 const crewEmployeesRoutes = require('./routes/human-resources/CrewEmployeesRoutes');
@@ -78,6 +97,8 @@ const incidentsMxRoutes = require('./routes/ticket-logic/IncidentsMxRoutes');
 const necessaryPhasesRoutes = require('./routes/ticket-logic/NecessaryPhasesRoutes');
 const ticketsRoutes = require('./routes/ticket-logic/TicketsRoutes');
 const rtrRoutes = require('./routes/RTR/rtrRoutes');
+const notificationsRoutes = require('./routes/notifications/NotificationsRoutes');
+const routeOptimizationRoutes = require('./routes/route/RouteOptimizationRoutes');
 
 app.get('/api/health', (req, res) => {
   res.status(200).json({ status: 'OK' });
@@ -95,6 +116,7 @@ app.get('/api/test-db', async (req, res) => {
 });
 
 // Use routes
+app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/crews', crewRoutes);
 app.use('/api/crewemployees', crewEmployeesRoutes);
@@ -127,7 +149,12 @@ app.use('/api/incidentsmx', incidentsMxRoutes);
 app.use('/api/necessaryphases', necessaryPhasesRoutes);
 app.use('/api/tickets', ticketsRoutes);
 app.use('/api/rtr', rtrRoutes);
+app.use('/api/notifications', notificationsRoutes);
+app.use('/api/route-optimization', routeOptimizationRoutes);
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server listening on port ${PORT}`);
+  
+  // Start the notification scheduler
+  ScheduledTasks.startScheduler();
 });

@@ -36,6 +36,37 @@ const CrewsController = {
     }
   },
 
+  //nuevos metodos
+  async getfindAllWithEmployees(req, res) {
+    try {
+      const allCrews = await Crews.findAllWithEmployees();
+      res.status(200).json(allCrews);
+    } catch (error) {
+      console.error('Error fetching all Crews:', error);
+      res.status(500).json({ message: 'Error fetching Crews', error: error.message });
+    }
+  },
+  
+async updateWithEmployees(req, res) {
+  const { crewId } = req.params;
+  const { type, workedHours, employees } = req.body;
+
+  try {
+    const updatedCrew = await Crews.updateCrewWithEmployees(crewId, {
+      type,
+      workedHours,
+      employees
+    });
+
+    res.status(200).json(updatedCrew);
+  } catch (error) {
+    console.error('Error updating Crew:', error);
+    res.status(500).json({
+      message: 'Error updating Crew',
+      error: error.message
+    });
+  }
+},
   async updateCrews(req, res) {
     try {
       const { crewId } = req.params;

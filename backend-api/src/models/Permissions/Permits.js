@@ -10,25 +10,25 @@ class Permits {
   }
 
   static async findById(PermitId) {
-    const res = await db.query('SELECT * FROM Permits WHERE PermitId = $1;', [PermitId]);
+    const res = await db.query('SELECT * FROM Permits WHERE PermitId = $1 AND deletedAt IS NULL;', [PermitId]);
     return res.rows[0];
   }
 
   static async findAll() {
-    const res = await db.query('SELECT * FROM Permits;');
+    const res = await db.query('SELECT * FROM Permits WHERE deletedAt IS NULL;');
     return res.rows;
   }
 
   static async update(PermitId, permitNumber, status, startDate, expireDate, updatedBy) {
     const res = await db.query(
-      'UPDATE Permits SET permitNumber = $1, status = $2, startDate = $3, expireDate = $4, updatedAt = CURRENT_TIMESTAMP, updatedBy = $5 WHERE PermitId = $6 RETURNING *;',
+      'UPDATE Permits SET permitNumber = $1, status = $2, startDate = $3, expireDate = $4, updatedAt = CURRENT_TIMESTAMP, updatedBy = $5 WHERE PermitId = $6 AND deletedAt IS NULL RETURNING *;',
       [permitNumber, status, startDate, expireDate, updatedBy, PermitId]
     );
     return res.rows[0];
   }
 
   static async delete(PermitId) {
-    const res = await db.query('UPDATE Permits SET deletedAt = CURRENT_TIMESTAMP WHERE PermitId = $1 RETURNING *;', [PermitId]);
+    const res = await db.query('UPDATE Permits SET deletedAt = CURRENT_TIMESTAMP WHERE PermitId = $1 AND deletedAt IS NULL RETURNING *;', [PermitId]);
     return res.rows[0];
   }
 }

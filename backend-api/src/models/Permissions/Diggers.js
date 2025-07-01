@@ -10,25 +10,25 @@ class Diggers {
   }
 
   static async findById(diggerId) {
-    const res = await db.query('SELECT * FROM Diggers WHERE diggerId = $1;', [diggerId]);
+    const res = await db.query('SELECT * FROM Diggers WHERE diggerId = $1 AND deletedAt IS NULL;', [diggerId]);
     return res.rows[0];
   }
 
   static async findAll() {
-    const res = await db.query('SELECT * FROM Diggers;');
+    const res = await db.query('SELECT * FROM Diggers WHERE deletedAt IS NULL;');
     return res.rows;
   }
 
   static async update(diggerId, permitId, diggerNumber, status, startDate, expireDate, watchnProtect, updatedBy) {
     const res = await db.query(
-      'UPDATE Diggers SET permitId = $1, diggerNumber = $2, status = $3, startDate = $4, expireDate = $5, watchnProtect = $6, updatedAt = CURRENT_TIMESTAMP, updatedBy = $7 WHERE diggerId = $8 RETURNING *;',
+      'UPDATE Diggers SET permitId = $1, diggerNumber = $2, status = $3, startDate = $4, expireDate = $5, watchnProtect = $6, updatedAt = CURRENT_TIMESTAMP, updatedBy = $7 WHERE diggerId = $8 AND deletedAt IS NULL RETURNING *;',
       [permitId, diggerNumber, status, startDate, expireDate, watchnProtect, updatedBy, diggerId]
     );
     return res.rows[0];
   }
 
   static async delete(diggerId) {
-    const res = await db.query('UPDATE Diggers SET deletedAt = CURRENT_TIMESTAMP WHERE diggerId = $1 RETURNING *;', [diggerId]);
+    const res = await db.query('UPDATE Diggers SET deletedAt = CURRENT_TIMESTAMP WHERE diggerId = $1 AND deletedAt IS NULL RETURNING *;', [diggerId]);
     return res.rows[0];
   }
 }
