@@ -365,24 +365,30 @@ class RouteOptimizationService {
                 const addr = addressQuery.rows[0];
                 
                 // Use the fullAddress if available, otherwise construct it
+                let addressString;
                 if (addr.fulladdress) {
-                    return addr.fulladdress.trim();
-                }
-                
-                // Fallback: construct address from individual components
-                const parts = [
-                    addr.addressnumber,
-                    addr.addresscardinal,
-                    addr.addressstreet,
-                    addr.addressesuffix
-                ].filter(Boolean); // Filter out null/undefined/empty strings
+                    addressString = addr.fulladdress.trim();
+                } else {
+                    // Fallback: construct address from individual components
+                    const parts = [
+                        addr.addressnumber,
+                        addr.addresscardinal,
+                        addr.addressstreet,
+                        addr.addressesuffix
+                    ].filter(Boolean); // Filter out null/undefined/empty strings
 
+                    addressString = parts.join(', ').replace(/,(\s*,){1,}/g, ',').replace(/,$/, '').trim();
+                }
+
+                // Append "Chicago, Illinois" to all addresses for better geocoding accuracy
+                const fullAddress = `${addressString}, Chicago, Illinois`;
+                
                 // If we have latitude and longitude, we can use them for more accurate geocoding
                 if (addr.latitude && addr.longitude) {
-                    return `${parts.join(', ').replace(/,(\s*,){1,}/g, ',').replace(/,$/, '').trim()} (${addr.latitude}, ${addr.longitude})`;
+                    return `${fullAddress} (${addr.latitude}, ${addr.longitude})`;
                 }
 
-                return parts.join(', ').replace(/,(\s*,){1,}/g, ',').replace(/,$/, '').trim();
+                return fullAddress;
             }
             
             // If no address found in database, generate a sample address for demonstration
@@ -403,8 +409,8 @@ class RouteOptimizationService {
             const addressIndex = (ticket.ticketid || 0) % sampleAddresses.length;
             const sampleAddr = sampleAddresses[addressIndex];
             
-            // Construct the full address string
-            const fullAddress = `${sampleAddr.number} ${sampleAddr.cardinal} ${sampleAddr.street} ${sampleAddr.suffix}`.trim();
+            // Construct the full address string with Chicago, Illinois
+            const fullAddress = `${sampleAddr.number} ${sampleAddr.cardinal} ${sampleAddr.street} ${sampleAddr.suffix}, Chicago, Illinois`.trim();
             
             console.log(`Generated sample address for ticket ${ticket.ticketid}: ${fullAddress}`);
             return fullAddress;
