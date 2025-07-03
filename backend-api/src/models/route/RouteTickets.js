@@ -11,7 +11,7 @@ class RouteTickets {
 
   static async createBatch(routeTickets) {
     // Create multiple route tickets in a single transaction
-    const client = await db.connect();
+    const client = await db.pool.connect();
     
     try {
       await client.query('BEGIN');

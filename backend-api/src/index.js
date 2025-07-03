@@ -96,6 +96,7 @@ const contractUnitsPhasesRoutes = require('./routes/ticket-logic/ContractUnitsPh
 const incidentsMxRoutes = require('./routes/ticket-logic/IncidentsMxRoutes');
 const necessaryPhasesRoutes = require('./routes/ticket-logic/NecessaryPhasesRoutes');
 const ticketsRoutes = require('./routes/ticket-logic/TicketsRoutes');
+const statisticsRoutes = require('./routes/ticket-logic/StatisticsRoutes');
 const rtrRoutes = require('./routes/RTR/rtrRoutes');
 const notificationsRoutes = require('./routes/notifications/NotificationsRoutes');
 const routeOptimizationRoutes = require('./routes/route/RouteOptimizationRoutes');
@@ -148,6 +149,7 @@ app.use('/api/contractunitsphases', contractUnitsPhasesRoutes);
 app.use('/api/incidentsmx', incidentsMxRoutes);
 app.use('/api/necessaryphases', necessaryPhasesRoutes);
 app.use('/api/tickets', ticketsRoutes);
+app.use('/api/statistics', statisticsRoutes);
 app.use('/api/rtr', rtrRoutes);
 app.use('/api/notifications', notificationsRoutes);
 app.use('/api/route-optimization', routeOptimizationRoutes);
