@@ -407,7 +407,16 @@ exports.uploadExcel = async (req, res) => {
             
             // Generate and save processed Excel file
             try {
-              const processedExcelBuffer = await generateProcessedExcel(dataRows, databaseResults, rtrRecord.rtrId);
+              let processedExcelBuffer;
+              
+              // Use formatting-preserving function since we have the original file buffer
+              try {
+                processedExcelBuffer = await generateProcessedExcelWithFormatting(req.file.buffer, databaseResults, rtrRecord.rtrId);
+              } catch (formattingError) {
+                console.warn("Failed to preserve formatting, falling back to basic generation:", formattingError);
+                processedExcelBuffer = await generateProcessedExcel(dataRows, databaseResults, rtrRecord.rtrId);
+              }
+              
               const originalFileName = req.file.originalname || 'rtr-upload.xlsx';
               const baseName = originalFileName.replace(/\.[^/.]+$/, ''); // Remove extension
               const ext = originalFileName.split('.').pop(); // Get extension
@@ -1679,7 +1688,21 @@ exports.saveStepperData = async (req, res) => {
           ...(skippedRows || []).map(t => ({ ...t, status: 'skipped' }))
         ];
 
-        const processedExcelBuffer = await generateProcessedExcel(allProcessedData, results, rtrRecord.rtrId);
+        let processedExcelBuffer;
+        
+        // Use formatting-preserving function if we have the original file buffer
+        if (fileInfo && fileInfo.buffer) {
+          try {
+            const originalBuffer = Buffer.from(fileInfo.buffer, 'base64');
+            processedExcelBuffer = await generateProcessedExcelWithFormatting(originalBuffer, results, rtrRecord.rtrId);
+          } catch (formattingError) {
+            console.warn("Failed to preserve formatting, falling back to basic generation:", formattingError);
+            processedExcelBuffer = await generateProcessedExcel(allProcessedData, results, rtrRecord.rtrId);
+          }
+        } else {
+          processedExcelBuffer = await generateProcessedExcel(allProcessedData, results, rtrRecord.rtrId);
+        }
+        
         const originalFileName = fileInfo?.originalName || 'rtr-upload.xlsx';
         const baseName = originalFileName.replace(/\.[^/.]+$/, ''); // Remove extension
         const ext = originalFileName.split('.').pop(); // Get extension
@@ -2041,15 +2064,8 @@ exports.updateTicketsWithDatabaseValues = async (req, res) => {
       }
     }
 
-    // 3. Create new workbook with updated data
-    const newWorkbook = XLSX.utils.book_new();
-    
-    // Convert updated data back to worksheet format
-    const updatedWorksheet = XLSX.utils.json_to_sheet(updatedData);
-    XLSX.utils.book_append_sheet(newWorkbook, updatedWorksheet, sheetName);
-
-    // 4. Generate new Excel file buffer
-    const newExcelBuffer = XLSX.write(newWorkbook, { type: 'buffer', bookType: 'xlsx' });
+    // 3. Update the original Excel file while preserving formatting
+    const newExcelBuffer = await updateExcelWithDatabaseValues(req.file.buffer, updateResults);
 
     // 5. Generate file name with "_updated" and date
     const originalName = req.file.originalname || 'rtr-update.xlsx';
@@ -2193,3 +2209,163 @@ exports.generateTicketStatuses = async (req, res) => {
     });
   }
 };
+
+// Function to update Excel file while preserving original formatting
+async function updateExcelWithDatabaseValues(originalBuffer, updateResults) {
+  // Read the original workbook to preserve all formatting
+  const workbook = XLSX.read(originalBuffer, { type: 'buffer' });
+  const sheetName = 'Seven-D';
+  const sheet = workbook.Sheets[sheetName];
+  
+  if (!sheet) {
+    throw new Error(`Sheet "${sheetName}" not found in workbook`);
+  }
+  
+  // Get the range of the sheet
+  const range = XLSX.utils.decode_range(sheet['!ref']);
+  
+  // Find the header row to get column mappings
+  const headers = [];
+  let headerRowIndex = -1;
+  
+  // Find the header row (first row with expected column names)
+  for (let row = range.s.r; row <= range.e.r; row++) {
+    const rowData = [];
+    for (let col = range.s.c; col <= range.e.c; col++) {
+      const cellAddress = XLSX.utils.encode_cell({ r: row, c: col });
+      const cell = sheet[cellAddress];
+      rowData.push(cell ? cell.v : '');
+    }
+    
+    const normalized = rowData.map(normalize);
+    const matchCount = importantColumns.filter((col) =>
+      normalized.includes(normalize(col))
+    ).length;
+    
+    if (matchCount >= importantColumns.length * 0.6) {
+      headerRowIndex = row;
+      headers.push(...rowData);
+      break;
+    }
+  }
+  
+  if (headerRowIndex === -1) {
+    throw new Error('Could not find header row with expected column names');
+  }
+  
+  // Find the "Contractor Comments" column index
+  const contractorCommentsColIndex = headers.findIndex(header => 
+    normalize(header).includes('CONTRACTOR') && normalize(header).includes('COMMENTS')
+  );
+  
+  if (contractorCommentsColIndex === -1) {
+    throw new Error('Could not find "Contractor Comments" column');
+  }
+  
+  // Update only the data cells in the "Contractor Comments" column
+  for (const result of updateResults) {
+    if (result.status === 'updated') {
+      // Calculate the row index (1-based to 0-based, and add header row offset)
+      const dataRowIndex = headerRowIndex + result.row; // result.row is 1-based
+      const cellAddress = XLSX.utils.encode_cell({ 
+        r: dataRowIndex, 
+        c: contractorCommentsColIndex 
+      });
+      
+      // Update the cell value while preserving any existing formatting
+      if (!sheet[cellAddress]) {
+        // Create new cell if it doesn't exist
+        sheet[cellAddress] = { v: result.newValue, t: 's' };
+      } else {
+        // Update existing cell value while preserving formatting
+        sheet[cellAddress].v = result.newValue;
+        sheet[cellAddress].t = 's'; // String type
+      }
+    }
+  }
+  
+  // Generate the updated Excel buffer
+  const updatedBuffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+  
+  return updatedBuffer;
+}
+
+// Function to generate processed Excel file while preserving original formatting
+async function generateProcessedExcelWithFormatting(originalBuffer, processedResults, rtrId) {
+  // Read the original workbook to preserve all formatting
+  const workbook = XLSX.read(originalBuffer, { type: 'buffer' });
+  const sheetName = 'Seven-D';
+  const sheet = workbook.Sheets[sheetName];
+  
+  if (!sheet) {
+    throw new Error(`Sheet "${sheetName}" not found in workbook`);
+  }
+  
+  // Get the range of the sheet
+  const range = XLSX.utils.decode_range(sheet['!ref']);
+  
+  // Find the header row to get column mappings
+  const headers = [];
+  let headerRowIndex = -1;
+  
+  // Find the header row (first row with expected column names)
+  for (let row = range.s.r; row <= range.e.r; row++) {
+    const rowData = [];
+    for (let col = range.s.c; col <= range.e.c; col++) {
+      const cellAddress = XLSX.utils.encode_cell({ r: row, c: col });
+      const cell = sheet[cellAddress];
+      rowData.push(cell ? cell.v : '');
+    }
+    
+    const normalized = rowData.map(normalize);
+    const matchCount = importantColumns.filter((col) =>
+      normalized.includes(normalize(col))
+    ).length;
+    
+    if (matchCount >= importantColumns.length * 0.6) {
+      headerRowIndex = row;
+      headers.push(...rowData);
+      break;
+    }
+  }
+  
+  if (headerRowIndex === -1) {
+    throw new Error('Could not find header row with expected column names');
+  }
+  
+  // Add a new column for processing status at the end
+  const statusColIndex = headers.length;
+  const statusHeader = 'Processing Status';
+  
+  // Add status header
+  const statusHeaderCell = XLSX.utils.encode_cell({ r: headerRowIndex, c: statusColIndex });
+  sheet[statusHeaderCell] = { v: statusHeader, t: 's' };
+  
+  // Update the range to include the new column
+  range.e.c = statusColIndex;
+  sheet['!ref'] = XLSX.utils.encode_range(range);
+  
+  // Add status information to each data row
+  for (let i = 0; i < processedResults.length; i++) {
+    const result = processedResults[i];
+    const dataRowIndex = headerRowIndex + i + 1; // +1 for header row, +i for data row
+    
+    if (dataRowIndex <= range.e.r) {
+      const statusCell = XLSX.utils.encode_cell({ r: dataRowIndex, c: statusColIndex });
+      const status = result.success ? 'SUCCESS' : 'FAILED';
+      const message = result.success ? (result.message || 'Processed successfully') : (result.error || 'Processing failed');
+      
+      sheet[statusCell] = { 
+        v: `${status}: ${message}`, 
+        t: 's' 
+      };
+    }
+  }
+  
+  // Generate the updated Excel buffer
+  const updatedBuffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+  
+  return updatedBuffer;
+}
+
+// Function to save generated files to MinIO

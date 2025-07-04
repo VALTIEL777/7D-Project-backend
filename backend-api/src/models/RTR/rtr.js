@@ -748,6 +748,39 @@ class RTR {
       
       for (const ticketId of ticketIds) {
         try {
+          // First check if the ticket has comment7d as null or empty
+          const ticketCheckRes = await db.query(
+            'SELECT ticketId, comment7d FROM Tickets WHERE ticketId = $1 AND deletedAt IS NULL;',
+            [ticketId]
+          );
+          
+          if (ticketCheckRes.rows.length === 0) {
+            console.log(`Ticket ${ticketId} not found, skipping`);
+            results.push({
+              ticketId: ticketId,
+              error: 'Ticket not found',
+              skipped: true
+            });
+            continue;
+          }
+          
+          const ticket = ticketCheckRes.rows[0];
+          const comment7d = ticket.comment7d;
+          
+          // Only generate TicketStatus records if comment7d is null or empty
+          if (comment7d !== null && comment7d !== '' && comment7d !== undefined) {
+            console.log(`Ticket ${ticketId} has comment7d: "${comment7d}", skipping TicketStatus generation`);
+            results.push({
+              ticketId: ticketId,
+              comment7d: comment7d,
+              skipped: true,
+              reason: 'comment7d is not null or empty'
+            });
+            continue;
+          }
+          
+          console.log(`Ticket ${ticketId} has comment7d: "${comment7d}", proceeding with TicketStatus generation`);
+          
           const result = await this.generateTicketStatusesForTicket(ticketId, updatedBy);
           results.push(result);
         } catch (error) {
@@ -765,6 +798,7 @@ class RTR {
         processed: results.length,
         successful: results.filter(r => !r.skipped || r.statusesCreated > 0).length,
         failed: results.filter(r => r.error).length,
+        skipped: results.filter(r => r.skipped && !r.error && !r.statusesCreated).length,
         totalPhasesFound: results.reduce((sum, r) => sum + (r.phasesFound || 0), 0),
         totalStatusesCreated: results.reduce((sum, r) => sum + (r.statusesCreated || 0), 0)
       };
