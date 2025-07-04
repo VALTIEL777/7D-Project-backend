@@ -11,11 +11,16 @@ const RouteOptimizationController = {
     try {
       const { ticketIds, crewIds, startLocation, endLocation } = req.body;
 
+      // Set default locations if not provided
+      const defaultLocation = '2000 W 43rd St, Chicago, IL 60609, Estados Unidos';
+      const finalStartLocation = startLocation || defaultLocation;
+      const finalEndLocation = endLocation || defaultLocation;
+
       console.log('Route optimization request:', {
         ticketIds,
         crewIds,
-        startLocation,
-        endLocation
+        startLocation: finalStartLocation,
+        endLocation: finalEndLocation
       });
 
       // Validate input
@@ -68,7 +73,9 @@ const RouteOptimizationController = {
 
       res.status(200).json({
         message: 'Routes optimized successfully',
-        data: optimizedRoutes
+        data: optimizedRoutes,
+        startLocation: finalStartLocation,
+        endLocation: finalEndLocation
       });
 
     } catch (error) {
@@ -165,13 +172,20 @@ const RouteOptimizationController = {
     try {
       console.log('[geocodeOptimize] Received request:', JSON.stringify(req.body, null, 2));
       const { originAddress, destinationAddress, intermediateAddresses } = req.body;
-      if (!originAddress || !destinationAddress || !Array.isArray(intermediateAddresses) || intermediateAddresses.length === 0) {
+      
+      // Set default addresses if not provided
+      const defaultAddress = '2000 W 43rd St, Chicago, IL 60609, Estados Unidos';
+      const finalOriginAddress = originAddress || defaultAddress;
+      const finalDestinationAddress = destinationAddress || defaultAddress;
+      
+      if (!Array.isArray(intermediateAddresses) || intermediateAddresses.length === 0) {
         return res.status(400).json({
-          message: 'originAddress, destinationAddress, and non-empty intermediateAddresses array are required.'
+          message: 'intermediateAddresses array is required and must not be empty.'
         });
       }
+      
       // 1. Optimize the route
-      const result = await RouteOptimizationService.optimizeRoute(originAddress, destinationAddress, intermediateAddresses);
+      const result = await RouteOptimizationService.optimizeRoute(finalOriginAddress, finalDestinationAddress, intermediateAddresses);
       // 2. Save the optimized route to the database
       const savedRoute = await RouteOptimizationService.saveOptimizedRoute({
         routeCode: `AUTO-${Date.now()}`,
@@ -181,13 +195,22 @@ const RouteOptimizationController = {
         encodedPolyline: result.encodedPolyline,
         totalDistance: result.totalDistance,
         totalDuration: result.totalDuration,
-        optimizedOrder: result.optimizedOrder,
-        optimizationMetadata: result.apiResponse,
-        tickets: intermediateAddresses.map((address, i) => ({ address, queue: i + 1 }))
+        optimizedOrder: Array.isArray(result.optimizedOrder) ? result.optimizedOrder : [],
+        optimizationMetadata: {
+          optimizationDate: new Date().toISOString(),
+          totalWaypoints: intermediateAddresses.length,
+          originAddress: finalOriginAddress,
+          destinationAddress: finalDestinationAddress,
+          apiStatus: 'success',
+          routeCount: result.apiResponse?.routes?.length || 0
+        },
+        tickets: [] // Skip RouteTickets creation for this test endpoint
       }, 1);
       res.status(200).json({
         message: 'Route optimized and saved successfully (geocoding addresses)',
-        data: savedRoute
+        data: savedRoute,
+        originAddress: finalOriginAddress,
+        destinationAddress: finalDestinationAddress
       });
     } catch (error) {
       console.error('Geocode-based route optimization error:', error);

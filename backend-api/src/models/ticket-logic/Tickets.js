@@ -10,17 +10,45 @@ class Tickets {
   }
 
   static async findById(ticketId) {
-    const result = await db.query('SELECT * FROM Tickets WHERE ticketId = $1 AND deletedAt IS NULL', [ticketId]);
+    const result = await db.query(`
+      SELECT 
+        t.*,
+        cu.name as contractUnitName,
+        i.name as incidentName
+      FROM Tickets t
+      LEFT JOIN ContractUnits cu ON t.contractUnitId = cu.contractUnitId AND cu.deletedAt IS NULL
+      LEFT JOIN IncidentsMx i ON t.incidentId = i.incidentId AND i.deletedAt IS NULL
+      WHERE t.ticketId = $1 AND t.deletedAt IS NULL
+    `, [ticketId]);
     return result.rows[0];
   }
 
   static async findByTicketCode(ticketCode) {
-    const result = await db.query('SELECT * FROM Tickets WHERE ticketCode = $1 AND deletedAt IS NULL', [ticketCode]);
+    const result = await db.query(`
+      SELECT 
+        t.*,
+        cu.name as contractUnitName,
+        i.name as incidentName
+      FROM Tickets t
+      LEFT JOIN ContractUnits cu ON t.contractUnitId = cu.contractUnitId AND cu.deletedAt IS NULL
+      LEFT JOIN IncidentsMx i ON t.incidentId = i.incidentId AND i.deletedAt IS NULL
+      WHERE t.ticketCode = $1 AND t.deletedAt IS NULL
+    `, [ticketCode]);
     return result.rows[0];
   }
 
   static async findAll() {
-    const result = await db.query('SELECT * FROM Tickets WHERE deletedAt IS NULL');
+    const result = await db.query(`
+      SELECT 
+        t.*,
+        cu.name as contractUnitName,
+        i.name as incidentName
+      FROM Tickets t
+      LEFT JOIN ContractUnits cu ON t.contractUnitId = cu.contractUnitId AND cu.deletedAt IS NULL
+      LEFT JOIN IncidentsMx i ON t.incidentId = i.incidentId AND i.deletedAt IS NULL
+      WHERE t.deletedAt IS NULL
+      ORDER BY t.ticketId ASC
+    `);
     return result.rows;
   }
 
@@ -49,7 +77,7 @@ class Tickets {
         t.daysOutstanding,
         t.comment7d,
         p.expireDate,
-        EXTRACT(DAY FROM (p.expireDate::date - CURRENT_DATE::date)) as days_until_expiry,
+        (p.expireDate::date - CURRENT_DATE::date) as days_until_expiry,
         STRING_AGG(
           CONCAT(
             a.addressNumber, ' ', 
@@ -60,14 +88,15 @@ class Tickets {
           ', '
         ) as addresses
       FROM Tickets t
-      LEFT JOIN PermitedTickets pt ON t.ticketId = pt.ticketId
-      LEFT JOIN Permits p ON pt.permitId = p.PermitId
-      LEFT JOIN TicketAddresses ta ON t.ticketId = ta.ticketId
-      LEFT JOIN Addresses a ON ta.addressId = a.addressId
+      LEFT JOIN PermitedTickets pt ON t.ticketId = pt.ticketId AND pt.deletedAt IS NULL
+      LEFT JOIN Permits p ON pt.permitId = p.PermitId AND p.deletedAt IS NULL
+      LEFT JOIN TicketAddresses ta ON t.ticketId = ta.ticketId AND ta.deletedAt IS NULL
+      LEFT JOIN Addresses a ON ta.addressId = a.addressId AND a.deletedAt IS NULL
       WHERE t.deletedAt IS NULL 
         AND p.expireDate IS NOT NULL
         AND p.expireDate > CURRENT_DATE
         AND p.expireDate <= CURRENT_DATE + INTERVAL '${days} days'
+        AND (t.comment7d IS NULL OR t.comment7d NOT IN ('TK - COMPLETED', 'TK - COMPLETE', 'COMPLETED', 'COMPLETE'))
       GROUP BY t.ticketId, t.ticketCode, t.contractNumber, t.amountToPay, t.ticketType, t.daysOutstanding, t.comment7d, p.expireDate
       ORDER BY p.expireDate ASC
     `);
@@ -86,7 +115,7 @@ class Tickets {
         t.daysOutstanding,
         t.comment7d,
         p.expireDate,
-        EXTRACT(DAY FROM (p.expireDate::date - CURRENT_DATE::date)) as days_until_expiry,
+        (p.expireDate::date - CURRENT_DATE::date) as days_until_expiry,
         STRING_AGG(
           CONCAT(
             a.addressNumber, ' ', 
@@ -97,20 +126,21 @@ class Tickets {
           ', '
         ) as addresses
       FROM Tickets t
-      LEFT JOIN PermitedTickets pt ON t.ticketId = pt.ticketId
-      LEFT JOIN Permits p ON pt.permitId = p.PermitId
-      LEFT JOIN TicketAddresses ta ON t.ticketId = ta.ticketId
-      LEFT JOIN Addresses a ON ta.addressId = a.addressId
+      LEFT JOIN PermitedTickets pt ON t.ticketId = pt.ticketId AND pt.deletedAt IS NULL
+      LEFT JOIN Permits p ON pt.permitId = p.PermitId AND p.deletedAt IS NULL
+      LEFT JOIN TicketAddresses ta ON t.ticketId = ta.ticketId AND ta.deletedAt IS NULL
+      LEFT JOIN Addresses a ON ta.addressId = a.addressId AND a.deletedAt IS NULL
       WHERE t.deletedAt IS NULL 
         AND p.expireDate IS NOT NULL
         AND p.expireDate > CURRENT_DATE + INTERVAL '${days} days'
+        AND (t.comment7d IS NULL OR t.comment7d NOT IN ('TK - COMPLETED', 'TK - COMPLETE', 'COMPLETED', 'COMPLETE'))
       GROUP BY t.ticketId, t.ticketCode, t.contractNumber, t.amountToPay, t.ticketType, t.daysOutstanding, t.comment7d, p.expireDate
       ORDER BY p.expireDate ASC
     `);
     return result.rows;
   }
 
-  // Find expired tickets (tickets that are not completed)
+  // Find expired tickets (tickets where expire date has passed or daysOutstanding is 0)
   static async findExpired() {
     const result = await db.query(`
       SELECT DISTINCT 
@@ -121,6 +151,8 @@ class Tickets {
         t.ticketType,
         t.daysOutstanding,
         t.comment7d,
+        p.expireDate,
+        (CURRENT_DATE::date - p.expireDate::date) as days_expired,
         STRING_AGG(
           CONCAT(
             a.addressNumber, ' ', 
@@ -132,19 +164,23 @@ class Tickets {
         ) as addresses,
         STRING_AGG(DISTINCT ts.name, ', ') as taskStatusNames
       FROM Tickets t
-      LEFT JOIN TicketAddresses ta ON t.ticketId = ta.ticketId
-      LEFT JOIN Addresses a ON ta.addressId = a.addressId
-      LEFT JOIN TicketStatus tks ON t.ticketId = tks.ticketId
-      LEFT JOIN TaskStatus ts ON tks.taskStatusId = ts.taskStatusId
+      LEFT JOIN PermitedTickets pt ON t.ticketId = pt.ticketId AND pt.deletedAt IS NULL
+      LEFT JOIN Permits p ON pt.permitId = p.PermitId AND p.deletedAt IS NULL
+      LEFT JOIN TicketAddresses ta ON t.ticketId = ta.ticketId AND ta.deletedAt IS NULL
+      LEFT JOIN Addresses a ON ta.addressId = a.addressId AND a.deletedAt IS NULL
+      LEFT JOIN TicketStatus tks ON t.ticketId = tks.ticketId AND tks.deletedAt IS NULL
+      LEFT JOIN TaskStatus ts ON tks.taskStatusId = ts.taskStatusId AND ts.deletedAt IS NULL
       WHERE t.deletedAt IS NULL 
-        AND NOT EXISTS (
-          SELECT 1 FROM TicketStatus tks2 
-          JOIN TaskStatus ts2 ON tks2.taskStatusId = ts2.taskStatusId 
-          WHERE tks2.ticketId = t.ticketId 
-            AND ts2.name = 'TK - COMPLETED'
+        AND (
+          -- Tickets with expired permits (expire date has passed)
+          (p.expireDate IS NOT NULL AND p.expireDate < CURRENT_DATE)
+          OR 
+          -- Tickets with daysOutstanding = 0
+          t.daysOutstanding = 0
         )
-      GROUP BY t.ticketId, t.ticketCode, t.contractNumber, t.amountToPay, t.ticketType, t.daysOutstanding, t.comment7d
-      ORDER BY t.ticketId ASC
+        AND (t.comment7d IS NULL OR t.comment7d NOT IN ('TK - COMPLETED', 'TK - COMPLETE', 'COMPLETED', 'COMPLETE'))
+      GROUP BY t.ticketId, t.ticketCode, t.contractNumber, t.amountToPay, t.ticketType, t.daysOutstanding, t.comment7d, p.expireDate
+      ORDER BY p.expireDate ASC, t.ticketId ASC
     `);
     return result.rows;
   }
@@ -206,6 +242,151 @@ class Tickets {
     `, [ticketCode]);
     
     return result.rows[0];
+  }
+
+  // Find tickets with issues (specific comment7d values) and their crew comments
+  static async findTicketsWithIssues() {
+    const result = await db.query(`
+      SELECT 
+        t.ticketId,
+        t.ticketCode,
+        t.contractNumber,
+        t.amountToPay,
+        t.ticketType,
+        t.daysOutstanding,
+        t.comment7d,
+        t.quantity,
+        t.createdAt,
+        t.updatedAt,
+        -- Contract Unit information
+        cu.name as contractUnitName,
+        -- Incident information
+        i.name as incidentName,
+        -- Addresses
+        STRING_AGG(
+          CONCAT(
+            a.addressNumber, ' ', 
+            COALESCE(a.addressCardinal, ''), ' ', 
+            a.addressStreet, ' ', 
+            COALESCE(a.addressSuffix, '')
+          ), 
+          ', '
+        ) as addresses,
+        -- Task statuses with crew comments as JSON array
+        COALESCE(
+          JSON_AGG(
+            JSONB_BUILD_OBJECT(
+              'taskStatusId', ts.taskStatusId,
+              'name', ts.name,
+              'description', ts.description,
+              'startingDate', tks.startingDate,
+              'endingDate', tks.endingDate,
+              'crewComment', tks.observation,
+              'crewId', tks.crewId
+            )
+          ) FILTER (WHERE ts.taskStatusId IS NOT NULL),
+          '[]'::json
+        ) as taskStatuses,
+        -- Count of task statuses
+        COUNT(ts.taskStatusId) as taskStatusCount
+      FROM Tickets t
+      LEFT JOIN ContractUnits cu ON t.contractUnitId = cu.contractUnitId AND cu.deletedAt IS NULL
+      LEFT JOIN IncidentsMx i ON t.incidentId = i.incidentId AND i.deletedAt IS NULL
+      LEFT JOIN TicketAddresses ta ON t.ticketId = ta.ticketId AND ta.deletedAt IS NULL
+      LEFT JOIN Addresses a ON ta.addressId = a.addressId AND a.deletedAt IS NULL
+      LEFT JOIN TicketStatus tks ON t.ticketId = tks.ticketId AND tks.deletedAt IS NULL
+      LEFT JOIN TaskStatus ts ON tks.taskStatusId = ts.taskStatusId AND ts.deletedAt IS NULL
+      WHERE t.deletedAt IS NULL 
+        AND t.comment7d IN ('TK - ON HOLD OFF', 'TK - WILL BE SCHEDULE', 'TK - NEEDS PERMIT EXTENSION')
+      GROUP BY 
+        t.ticketId, t.ticketCode, t.contractNumber, t.amountToPay, t.ticketType, 
+        t.daysOutstanding, t.comment7d, t.quantity, t.createdAt, t.updatedAt,
+        cu.name, i.name
+      ORDER BY t.ticketId ASC
+    `);
+    return result.rows;
+  }
+
+  // Find tickets with issues (specific comment7d values) - NO aggregation
+  static async findTicketsWithIssuesSimple() {
+    const result = await db.query(`
+      SELECT DISTINCT
+        t.ticketId,
+        t.ticketCode,
+        t.contractNumber,
+        t.amountToPay,
+        t.ticketType,
+        t.daysOutstanding,
+        t.comment7d,
+        t.quantity,
+        t.createdAt,
+        t.updatedAt,
+        cu.name as contractUnitName,
+        i.name as incidentName
+      FROM Tickets t
+      LEFT JOIN ContractUnits cu ON t.contractUnitId = cu.contractUnitId AND cu.deletedAt IS NULL
+      LEFT JOIN IncidentsMx i ON t.incidentId = i.incidentId AND i.deletedAt IS NULL
+      INNER JOIN TicketStatus tks ON t.ticketId = tks.ticketId AND tks.deletedAt IS NULL
+      WHERE t.deletedAt IS NULL 
+        AND t.comment7d IN ('TK - ON HOLD OFF', 'TK - WILL BE SCHEDULE', 'TK - NEEDS PERMIT EXTENSION')
+        AND tks.observation IS NOT NULL 
+        AND tks.observation != ''
+        AND tks.observation != ' '
+      ORDER BY t.ticketId ASC
+    `);
+    return result.rows;
+  }
+
+  // Get addresses for a list of ticket IDs
+  static async getAddressesForTickets(ticketIds) {
+    if (!ticketIds.length) return [];
+    const result = await db.query(`
+      SELECT 
+        ta.ticketId,
+        a.addressId,
+        a.addressNumber,
+        a.addressCardinal,
+        a.addressStreet,
+        a.addressSuffix,
+        a.latitude,
+        a.longitude,
+        a.placeid,
+        CONCAT(
+          COALESCE(a.addressNumber, ''), ' ',
+          COALESCE(a.addressCardinal, ''), ' ',
+          COALESCE(a.addressStreet, ''), ' ',
+          COALESCE(a.addressSuffix, '')
+        ) as fullAddress
+      FROM TicketAddresses ta
+      LEFT JOIN Addresses a ON ta.addressId = a.addressId AND a.deletedAt IS NULL
+      WHERE ta.ticketId = ANY($1::int[])
+        AND ta.deletedAt IS NULL
+    `, [ticketIds]);
+    return result.rows;
+  }
+
+  // Get task statuses for a list of ticket IDs
+  static async getTaskStatusesForTickets(ticketIds) {
+    if (!ticketIds.length) return [];
+    const result = await db.query(`
+      SELECT 
+        tks.ticketId,
+        tks.taskStatusId,
+        ts.name,
+        ts.description,
+        tks.startingDate,
+        tks.endingDate,
+        tks.observation as crewComment,
+        tks.crewId
+      FROM TicketStatus tks
+      LEFT JOIN TaskStatus ts ON tks.taskStatusId = ts.taskStatusId AND ts.deletedAt IS NULL
+      WHERE tks.ticketId = ANY($1::int[])
+        AND tks.deletedAt IS NULL
+        AND tks.observation IS NOT NULL 
+        AND tks.observation != ''
+        AND tks.observation != ' '
+    `, [ticketIds]);
+    return result.rows;
   }
 }
 
