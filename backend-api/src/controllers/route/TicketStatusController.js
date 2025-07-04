@@ -26,6 +26,20 @@ const TicketStatusController = {
     }
   },
 
+async getTicketStatusByTicketAndCrew(req, res) {
+  try {
+    const { ticketId, crewId } = req.params;
+    const ticketStatus = await TicketStatus.findByTicketAndCrew(ticketId, crewId);
+    if (!ticketStatus) {
+      return res.status(200).json(null);
+    }
+    res.status(200).json(ticketStatus);
+  } catch (error) {
+    console.error('Error fetching TicketStatus by ticket and crew:', error);
+    res.status(500).json({ message: 'Error fetching TicketStatus', error: error.message });
+  }
+},
+
   async getAllTicketStatuses(req, res) {
     try {
       const allTicketStatuses = await TicketStatus.findAll();
@@ -35,6 +49,18 @@ const TicketStatusController = {
       res.status(500).json({ message: 'Error fetching TicketStatuses', error: error.message });
     }
   },
+
+  // TicketStatusController.js
+async getCompletedTickets(req, res) {
+  try {
+    const completedTickets = await TicketStatus.findCompletedTickets();
+    res.status(200).json(completedTickets);
+  } catch (error) {
+    console.error('Error fetching completed tickets:', error);
+    res.status(500).json({ message: 'Error fetching completed tickets', error: error.message });
+  }
+},
+
 
   async updateTicketStatus(req, res) {
     try {

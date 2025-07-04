@@ -3,8 +3,8 @@ const Crews = require('../../models/human-resources/Crews');
 const CrewsController = {
   async createCrews(req, res) {
     try {
-      const { type, photo, workedHours, createdBy, updatedBy } = req.body;
-      const newCrews = await Crews.create(type, photo, workedHours, createdBy, updatedBy);
+      const { type, photo, workedHours, routeId, createdBy, updatedBy } = req.body;
+      const newCrews = await Crews.create(type, photo, workedHours, routeId, createdBy, updatedBy);
       res.status(201).json(newCrews);
     } catch (error) {
       console.error('Error creating Crews:', error);
@@ -95,6 +95,24 @@ async updateWithEmployees(req, res) {
       res.status(500).json({ message: 'Error deleting Crews', error: error.message });
     }
   },
+
+async getCrewDetails(req, res) {
+  try {
+    const { crewId } = req.params;
+    const crewDetails = await Crews.getCrewDetailsById(crewId);
+
+    if (!crewDetails || crewDetails.length === 0) {
+      return res.status(404).json({ message: 'No se encontraron detalles para este crew' });
+    }
+
+    res.status(200).json(crewDetails);
+  } catch (error) {
+    console.error('❌ Error al obtener detalles del crew:', error);
+    res.status(500).json({ message: 'Error del servidor', error: error.message });
+  }
+}
+
+
 };
 
 module.exports = CrewsController; 

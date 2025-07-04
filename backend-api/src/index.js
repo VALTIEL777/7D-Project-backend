@@ -10,7 +10,9 @@ const PORT = process.env.PORT || 3000;
 
 const allowedOrigins = [
   'https://7d-compass-api.christba.com',  // for Swagger
-  'https://7d-compass.christba.com'       // for your frontend
+  'https://7d-compass.christba.com',      // for your frontend
+  'http://localhost:4200',                //Pruebas
+  'http://localhost:3000'
 ];
 
 app.use(cors({

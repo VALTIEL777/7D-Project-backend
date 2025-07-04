@@ -26,6 +26,21 @@ const ContractUnitsPhasesController = {
     }
   },
 
+  async getPhasesByContractUnitId(req, res) {
+  try {
+    const { contractUnitId } = req.params;
+    const phases = await ContractUnitsPhases.findByContractUnitId(contractUnitId); // Debes crear esto en el modelo
+    if (!phases || phases.length === 0) {
+      return res.status(404).json({ message: 'No phases found for this contract unit' });
+    }
+    res.status(200).json(phases);
+  } catch (error) {
+    console.error('Error retrieving phases by contractUnitId:', error);
+    res.status(500).json({ message: 'Error retrieving phases', error: error.message });
+  }
+},
+
+
   async getAllContractUnitsPhases(req, res) {
     try {
       const allContractUnitsPhases = await ContractUnitsPhases.findAll();

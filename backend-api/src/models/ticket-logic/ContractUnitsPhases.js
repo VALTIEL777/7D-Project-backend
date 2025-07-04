@@ -17,6 +17,16 @@ class ContractUnitsPhases {
     return res.rows[0];
   }
 
+  static async findByContractUnitId(contractUnitId) {
+  const query = `
+    SELECT contractUnitId, necessaryPhaseId
+    FROM ContractUnitsPhases
+    WHERE contractUnitId = $1
+  `;
+  const res = await db.query(query, [contractUnitId]);
+  return res.rows;
+}
+
   static async findAll() {
     const res = await db.query('SELECT * FROM ContractUnitsPhases;');
     return res.rows;

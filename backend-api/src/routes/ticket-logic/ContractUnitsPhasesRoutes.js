@@ -65,6 +65,42 @@ router.post('/', ContractUnitsPhasesController.createContractUnitsPhases);
 
 /**
  * @swagger
+ * /contractunitsphases/contract/{contractUnitId}:
+ *   get:
+ *     summary: Get all phase associations for a given contract unit ID
+ *     tags: [Contract Units Phases]
+ *     parameters:
+ *       - in: path
+ *         name: contractUnitId
+ *         schema:
+ *           type: integer
+ *         required: true
+ *         description: The ID of the contract unit.
+ *     responses:
+ *       200:
+ *         description: A list of necessary phase associations.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   contractUnitId:
+ *                     type: integer
+ *                     example: 1
+ *                   necessaryPhaseId:
+ *                     type: integer
+ *                     example: 1
+ *       404:
+ *         description: No phases found for the contract unit
+ *       500:
+ *         description: Server error
+ */
+router.get('/byContractUnit/:contractUnitId', ContractUnitsPhasesController.getPhasesByContractUnitId);
+
+/**
+ * @swagger
  * /contractunitsphases/{contractUnitId}/{necessaryPhaseId}:
  *   get:
  *     summary: Get a contract unit phase association by contract unit ID and necessary phase ID

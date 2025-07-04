@@ -2,14 +2,32 @@
 INSERT INTO Users (username, password) VALUES 
 ('admin', 'admin123'), 
 ('jorge', 'passw0rd'), 
-('maria', 'm4ri4pwd');
+('maria', 'm4ri4pwd'),
+('laura', 'laura123'),
+('carlos', 'carlito456'),
+('ana', 'anaSecure'),
+('pedro', 'pedro789'),
+('evalh', 'eva123'),
+('agustin', 'agus1234'),
+('christian', 'christian123'),
+('elian', 'elian123');
+
+
 
 -- 2. People (empleados)
 INSERT INTO People (UserId, firstname, lastname, role, phone, email, createdBy, updatedBy)
 VALUES
  (1, 'Jorge', 'Gonzalez', 'Supervisor', '2220001111', 'jorge@gon.com', 1, 1),
  (2, 'María', 'Pérez', 'Supervisor', '2220002222', 'maria@pe.com', 1, 1),
- (3, 'Luis', 'Ramirez', 'Operario', '2220003333', 'luis@ram.com', 1, 1);
+ (3, 'Luis', 'Ramirez', 'Operario', '2220003333', 'luis@ram.com', 1, 1),
+ (4, 'Laura', 'Martínez', 'Operario', '2220004444', 'laura@mart.com', 1, 1),
+ (5, 'Carlos', 'Sánchez', 'Operario', '2220005555', 'carlos@san.com', 1, 1),
+ (6, 'Ana', 'Torres', 'Operario', '2220006666', 'ana@torres.com', 1, 1),
+ (7, 'Pedro', 'Lopez', 'Operario', '2220007777', 'pedro@lopez.com', 1, 1),
+ (8, 'Eva Maria', 'Landa Huerta', 'Supervisor', '2220008888', 'eva.landa@utcv.edu.mx', 1, 1),
+ (9, 'Agustin', 'Landa', 'Supervisor', '2220009999', 'agustin.landa@7dconstruction.comricardo@men.com', 1, 1),
+ (10, 'Christian', 'Barragan Paez', 'Supervisor', '2220009999', '20233l001009@utcv.edu.mx', 1, 1),
+ (11, 'Elian', 'Medina Cobos', 'Supervisor', '2220009999', '20233l001162@utcv.edu.mx', 1, 1);
 
 -- 3. Pagos
 INSERT INTO Payments (paymentNumber, datePaid, amountPaid, status, paymentURL, createdBy, updatedBy)
@@ -24,16 +42,21 @@ VALUES
  ('Norte', 'ShopB', '19.2200', '19.2400', '-96.1400', '-96.1200', 2, 2, 1);
 
 -- 5. Wayfinding
-INSERT INTO wayfinding (streetFrom, streetTo, location, addressCardinal, addressStreet, addressSuffix, width, length, surfaceTotal, createdBy, updatedBy)
+INSERT INTO wayfinding (
+  location, fromAddressStreet, toAddressStreet, fromAddressCardinal, fromAddressSuffix, width, length, surfaceTotal, createdBy, updatedBy
+)
 VALUES
- ('Av. Juarez', 'Calle 5', 'Centro', 'N', 'Juarez', 'Ave', 10.5, 100.0, 1050.0, 1, 1),
- ('Calle 10', 'Calle 12', 'Norte', 'E', '10', 'St', 8.0, 80.0, 640.0, 2, 2);
+  ('Centro', 'Av. Juarez', 'Calle 5', 'N', 'Ave', 10.5, 100.0, 1050.0, 1, 1),
+  ('West', ' W Madison', 'Calle 12', 'E', 'St', 8.0, 80.0, 640.0, 2, 2);
+
 
 -- 6. NecessaryPhases
 INSERT INTO NecessaryPhases (name, description, createdBy, updatedBy)
 VALUES
  ('Excavación', 'Fase de retiro de tierra', 1, 1),
- ('Compactación', 'Compactado de suelo', 1, 1);
+ ('Compactación', 'Compactado de suelo', 1, 1),
+  ('Crack Seal', 'Compactado de suelo', 1, 1),
+    ('Clean Up', 'Limpieza', 1, 1);
 
 -- 7. ContractUnits
 INSERT INTO ContractUnits (neededMobilization, neededContractUnit, itemCode, name, unit, description, workNotIncluded, CostPerUnit, zone, PaymentClause, createdBy, updatedBy)
@@ -55,10 +78,23 @@ VALUES
 
 -- 9. Tickets
 INSERT INTO Tickets 
-(incidentId, cuadranteId, contractUnitId, wayfindingId, paymentId, mobilizationId, ticketCode, quantity, daysOutstanding, comment7d, PeopleGasComment, contractNumber, amountToPay, ticketType, createdBy, updatedBy)
+(
+  incidentId, cuadranteId, contractUnitId, wayfindingId, paymentId, mobilizationId, 
+  ticketCode, quantity, daysOutstanding, comment7d, PartnerComment, contractNumber, 
+  amountToPay, ticketType, createdBy, updatedBy
+)
 VALUES
- (1, 1, 2, 1, 1, NULL, 'TCK-001', 10, 5, 'Pendiente confirmación', 'Sin gas necesario', 'CTR-1001', 125.00, 'regular', 2, 2),
- (1, 2, 1, 2, 2, 1, 'TCK-002', 1, 0, 'Movilización lista', 'Gas OK', 'CTR-1002', 500.00, 'mobilization', 1, 1);
+(
+  1, 1, 1, 1, 1, NULL, 
+  'TCK-001', 10, 5, 'Pendiente confirmación', 'Sin gas necesario', 'CTR-1001', 
+  125.00, 'regular', 2, 2
+),
+(
+  1, 2, 2, 2, 2, 1, 
+  'TCK-002', 1, 0, 'Movilización lista', 'Gas OK', 'CTR-1002', 
+  500.00, 'mobilization', 1, 1
+);
+
 
 -- 10. Invoices
 INSERT INTO Invoices (ticketId, invoiceNumber, invoiceDateRequested, amountRequested, status, invoiceURL, createdBy, updatedBy)
@@ -98,7 +134,9 @@ VALUES
 -- 15. Crews y CrewEmployees
 INSERT INTO Crews (type, photo, workedHours, createdBy, updatedBy)
 VALUES
- ('Equipo A', 'eqA.jpg', 120.5, 1, 1);
+ ('Crack Seal', 'eqA.jpg', 120.5, 1, 1),
+  ('Asphalt', 'eqA.jpg', 120.5, 1, 1),
+ ('Clean Up', 'eqA.jpg', 120.5, 1, 1);
 
 INSERT INTO CrewEmployees (crewId, employeeId, crewLeader, createdBy, updatedBy)
 VALUES
@@ -123,32 +161,50 @@ VALUES
 
 INSERT INTO RouteTickets (routeId, ticketId, queue, createdBy, updatedBy)
 VALUES
- (1, 1, 1, 1, 1);
+ (1, 1, 1, 1, 1),
+  (1, 2, 1, 1, 1);
 
 -- 18. TaskStatus & TicketStatus
 INSERT INTO TaskStatus (name, description, createdBy, updatedBy)
 VALUES
  ('Asignado', 'Ticket asignado al equipo', 1, 1),
- ('En progreso', 'Trabajo en curso', 1, 1);
+ ('En progreso', 'Trabajo en curso', 1, 1),
+  ('En progreso', 'Trabajo de crack seal', 1, 1),
+    ('Completado', 'Trabajo de clean Up', 1, 1);
 
 INSERT INTO TicketStatus (taskStatusId, ticketId, crewId, startingDate, endingDate, observation, createdBy, updatedBy)
 VALUES
  (1, 1, 1, '2025-06-05', NULL, 'Iniciado con Crew A', 1, 1);
 
 -- 19. photoEvidence
-INSERT INTO photoEvidence (ticketStatusId, ticketId, name, latitude, longitude, photo, date, comment, photoURL, address, createdBy, updatedBy)
+INSERT INTO photoEvidence (ticketStatusId, ticketId, name, latitude, longitude, photo, date, comment, photoURL, createdBy, updatedBy)
 VALUES
- (1, 1, 'Inicio Excavación', 19.1900, -96.1300, 'photo1.jpg', '2025-06-06 10:00:00', 'Estado inicial de la zanja', 'https://photos/1', 'Juarez Ave 123', 1, 1);
+ (1, 1, 'Inicio Excavación', 19.1900, -96.1300, 'photo1.jpg', '2025-06-06 10:00:00', 'Estado inicial de la zanja', 'https://photos/1', 1, 1);
 
 -- 20. Suppliers, Inventory, Equipment, usedInventory, usedEquipment
 INSERT INTO Suppliers (name, phone, email, address, createdBy, updatedBy)
-VALUES ('ProveedorA', '2220004444', 'sup@a.com', 'Av. Centro 100', 1, 1);
+VALUES ('ProveedorA', '2220004444', 'sup@a.com', 'Av. Centro 100', 1, 1),
+('BuildMax Supplies', '3125557890', 'contact@buildmax.com', '100 Main St, Chicago, IL', 1, 1),
+('Concrete Solutions', '7734441234', 'info@concretesolutions.com', '220 Industrial Rd, Aurora, IL', 1, 1),
+('LimeCo Distributors', '8473335678', 'sales@limeco.com', '45 Quarry Ln, Joliet, IL', 1, 1),
+('River Sand & Gravel', '6302223456', 'support@riversand.com', '88 Riverside Dr, Naperville, IL', 1, 1),
+('PlasterPro Inc.', '7081114321', 'orders@plasterpro.com', '300 Depot Ave, Elgin, IL', 1, 1);
 
 INSERT INTO Inventory (supplierId, name, costPerUnit, unit, createdBy, updatedBy)
-VALUES (1, 'Cemento', 6.50, 'bolsa', 1, 1);
+VALUES (1, 'Cement', 6.50, 'Tons', 1, 1),
+(2, 'Gravel', 4.20, 'Tons', 1, 1),
+(3, 'Asphalt', 3.75, 'Tons', 1, 1),
+(4, 'Hydrated Lime', 5.60, 'Tons', 1, 1),
+(1, 'Mortar', 7.80, 'Tons', 1, 1),
+(2, 'Plaster', 4.90, 'Tons', 1, 1);
 
 INSERT INTO Equipment (supplierId, equipmentName, owner, type, hourlyRate, hoursLent, observation, createdBy, updatedBy)
-VALUES (1, 'Retroexcavadora', 'ProveedorA', 'machine', 150.00, 0, 'Servicio de palas', 1, 1);
+VALUES (1, 'Retroexcavadora', 'ProveedorA', 'machine', 150.00, 0, 'Servicio de palas', 1, 1),
+(2, 'Bulldozer', 'BuildMax Supplies', 'machine', 200.00, 0, 'Heavy-duty earthmoving', 1, 1),
+(3, 'Concrete Mixer', 'Concrete Solutions', 'tool', 75.00, 0, 'Used for on-site mixing', 1, 1),
+(4, 'Dump Truck', 'LimeCo Distributors', 'vehicle', 180.00, 0, 'Transport of materials', 1, 1),
+(5, 'Portable Generator', 'River Sand & Gravel', 'tool', 50.00, 0, 'Power for remote sites', 1, 1),
+(2, 'Mini Excavator', 'BuildMax Supplies', 'machine', 140.00, 0, 'Ideal for small trenches', 1, 1);
 
 INSERT INTO usedInventory (CrewId, inventoryId, quantity, MaterialCost, createdBy, updatedBy)
 VALUES (1, 1, 50, 325.00, 1, 1);

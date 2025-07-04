@@ -10,9 +10,9 @@ ENV POSTGRES_PASSWORD=mysecretpassword
 RUN mkdir -p /docker-entrypoint-initdb.d
 
 # Copy initialization scripts from the scripts directory
-COPY 7D_DB.sql /docker-entrypoint-initdb.d/01_schema.sql
-COPY contract-units.sql /docker-entrypoint-initdb.d/02_contract_units.sql
-COPY mock_data.sql /docker-entrypoint-initdb.d/03_mock_data.sql
+COPY 01_7D_DB.sql /docker-entrypoint-initdb.d/01_7D_DB.sql
+COPY 03_contract-units.sql /docker-entrypoint-initdb.d/02_quadrants.sql
+COPY mock_data.sql /docker-entrypoint-initdb.d/mock_data.sql
 
 # Set proper permissions for initialization scripts
 RUN chmod 755 /docker-entrypoint-initdb.d/*.sql

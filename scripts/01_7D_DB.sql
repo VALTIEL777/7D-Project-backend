@@ -629,7 +629,11 @@ BEFORE UPDATE ON usedEquipment
 FOR EACH ROW
 EXECUTE FUNCTION set_updated_at_timestamp();
 
+ALTER TABLE Crews
+ADD COLUMN routeId INTEGER REFERENCES Routes(routeId);
 
-INSERT INTO Users (UserId, username, password)
-VALUES (1, 'testuser', 'securepassword123')
-ON CONFLICT (UserId) DO NOTHING;
+
+
+-- INSERT INTO Users (UserId, username, password)
+-- VALUES (1, 'testuser', 'securepassword123')
+-- ON CONFLICT (UserId) DO NOTHING;
