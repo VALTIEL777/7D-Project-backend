@@ -110,23 +110,34 @@ function parseAddress(address) {
   address = address.trim();
   address = address.replace(/^(\d+)-\d+/, "$1");
 
-  const regex = /^(\d+)\s+([NSEW]{1,2})?\s*([\w\s]+?)\s+(ST|AVE|BLVD|RD|LN|DR|PL|CT|CIR|WAY|TER|TRL|PARKWAY|PKWY|HWY|EXPY|EXPRESSWAY|CRES|SQ|ALY|PLZ|BND|PT|ROW|RTE)?\.?$/i;
-  const match = address.match(regex);
-
-  if (!match) {
+  // Strict Chicago-style regex (requires suffix)
+  const strict = /^(\d+(?:-\d+)?)\s+(?:(N|S|E|W|NE|NW|SE|SW)\s+)?([\w.'\- ]+?)\s+(ST(?:REET)?|AVE(?:NUE)?|BLVD(?:EVARD)?|RD(?:ROAD)?|LN(?:LANE)?|DR(?:IVE)?|PL(?:ACE)?|CT(?:COURT)?|CIR(?:CLE)?|WAY|TER(?:RACE)?|TRL(?:TRAIL)?|PARKWAY|PKWY|HWY(?:HIGHWAY)?|EXPY|EXPRESSWAY|CRES(?:CENT)?|SQ(?:UARE)?|ALY(?:ALLEY)?|PLZ(?:A)?|BND(?:BEND)?|PT(?:POINT)?|ROW|RTE(?:ROUTE)?)\.?\s*$/i;
+  let match = address.match(strict);
+  if (match) {
     return {
-      addressNumber: null,
-      addressCardinal: null,
-      addressStreet: address,
+      addressNumber: match[1] || null,
+      addressCardinal: match[2] || null,
+      addressStreet: match[3]?.trim() || null,
+      addressSuffix: match[4] || null,
+    };
+  }
+  // Fallback: no suffix required
+  const fallback = /^(\d+(?:-\d+)?)\s+(?:(N|S|E|W|NE|NW|SE|SW)\s+)?([\w.'\- ]+)$/i;
+  match = address.match(fallback);
+  if (match) {
+    return {
+      addressNumber: match[1] || null,
+      addressCardinal: match[2] || null,
+      addressStreet: match[3]?.trim() || null,
       addressSuffix: null,
     };
   }
-
+  // If all fails, return as-is
   return {
-    addressNumber: match[1] || null,
-    addressCardinal: match[2] || null,
-    addressStreet: match[3]?.trim() || null,
-    addressSuffix: match[4] || null,
+    addressNumber: null,
+    addressCardinal: null,
+    addressStreet: address,
+    addressSuffix: null,
   };
 }
 
@@ -142,7 +153,8 @@ function parseRangeAddress(address) {
 
   address = address.trim();
 
-  const regex = /^([\d\-]+)\s+([NSEW]{1,2})?\s*([\w\s]+?)\s*(ST|AVE|BLVD|RD|LN|DR|PL|CT|CIR|WAY|TER|TRL|PARKWAY|PKWY|HWY|EXPY|EXPRESSWAY|CRES|SQ|ALY|PLZ|BND|PT|ROW|RTE)?\.?$/i;
+  // Updated regex to make street suffix optional and handle addresses without suffixes
+  const regex = /^([\d\-]+)\s+([NSEW]{1,2})?\s*([\w\s]+?)(?:\s+(ST|AVE|BLVD|RD|LN|DR|PL|CT|CIR|WAY|TER|TRL|PARKWAY|PKWY|HWY|EXPY|EXPRESSWAY|CRES|SQ|ALY|PLZ|BND|PT|ROW|RTE))?\.?$/i;
   const match = address.match(regex);
 
   if (!match) {
@@ -947,7 +959,19 @@ function compareTicketData(excelData, databaseTicket) {
 // Helper function to normalize values for comparison
 function normalizeValue(value) {
   if (value === null || value === undefined) return '';
-  if (typeof value === 'string') return value.trim().toLowerCase();
+  if (typeof value === 'string') {
+    const trimmed = value.trim().toLowerCase();
+    
+    // Special handling for permit extension messages
+    // Treat variations of "TK - NEEDS PERMIT EXTENSION" as equivalent
+    if (trimmed.includes('tk - needs permit extension')) {
+      // Extract the base message and ignore date suffixes like "- (6/23)" or "- (12/15)"
+      const baseMessage = trimmed.replace(/\s*-\s*\(\d+\/\d+\)\s*$/, '').trim();
+      return baseMessage;
+    }
+    
+    return trimmed;
+  }
   if (typeof value === 'number') return value.toString();
   if (value instanceof Date) return value.toISOString();
   return String(value).trim().toLowerCase();

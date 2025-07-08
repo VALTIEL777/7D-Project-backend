@@ -219,6 +219,310 @@ const RouteOptimizationController = {
         error: error.message
       });
     }
+  },
+
+  /**
+   * Single route optimization with minimal API calls
+   * @route POST /api/route-optimization/optimize-single
+   * @desc Optimize routes for multiple tickets in a single request to minimize API calls
+   * @access Private
+   */
+  async optimizeSingle(req, res) {
+    try {
+      const {
+        ticketIds,
+        routeCode,
+        type,
+        originAddress,
+        destinationAddress,
+        options = {}
+      } = req.body;
+
+      const createdBy = req.user?.id || 1;
+
+      // Add detailed logging
+      console.log('=== OPTIMIZE SINGLE REQUEST ===');
+      console.log('Request body:', JSON.stringify(req.body, null, 2));
+      console.log('Ticket IDs:', ticketIds);
+      console.log('Type:', type);
+      console.log('Origin Address:', originAddress);
+      console.log('Destination Address:', destinationAddress);
+      console.log('Options:', options);
+
+      // Validate required fields
+      if (!ticketIds || !Array.isArray(ticketIds) || ticketIds.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'ticketIds array is required and must not be empty'
+        });
+      }
+
+      if (!originAddress || !destinationAddress) {
+        return res.status(400).json({
+          success: false,
+          error: 'originAddress and destinationAddress are required'
+        });
+      }
+
+      console.log(`Starting single optimization for ${ticketIds.length} tickets`);
+
+      // Use the new single optimization method with options
+      const result = await RouteOptimizationService.optimizeRouteSingle(
+        ticketIds,
+        routeCode,
+        type,
+        originAddress,
+        destinationAddress,
+        createdBy,
+        options
+      );
+
+      res.status(200).json({
+        success: true,
+        message: result.message || 'Single route optimization completed successfully',
+        data: result
+      });
+
+    } catch (error) {
+      console.error('Single route optimization failed:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to optimize routes',
+        details: error.message
+      });
+    }
+  },
+
+  /**
+   * Add tickets to an existing route
+   * @route POST /api/route-optimization/route/{routeId}/add-tickets
+   * @desc Add tickets to an existing route without re-optimizing
+   * @access Private
+   */
+  async addTicketsToRoute(req, res) {
+    try {
+      const { routeId } = req.params;
+      const { ticketIds } = req.body;
+      const updatedBy = req.user?.id || 1;
+
+      if (!ticketIds || !Array.isArray(ticketIds) || ticketIds.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'ticketIds array is required and must not be empty'
+        });
+      }
+
+      const result = await RouteOptimizationService.addTicketsToRoute(
+        parseInt(routeId),
+        ticketIds,
+        updatedBy
+      );
+
+      res.status(200).json({
+        success: true,
+        message: 'Tickets added to route successfully',
+        data: result
+      });
+
+    } catch (error) {
+      console.error('Failed to add tickets to route:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to add tickets to route',
+        details: error.message
+      });
+    }
+  },
+
+  /**
+   * Remove tickets from an existing route
+   * @route DELETE /api/route-optimization/route/{routeId}/remove-tickets
+   * @desc Remove tickets from an existing route
+   * @access Private
+   */
+  async removeTicketsFromRoute(req, res) {
+    try {
+      const { routeId } = req.params;
+      const { ticketIds } = req.body;
+      const updatedBy = req.user?.id || 1;
+
+      if (!ticketIds || !Array.isArray(ticketIds) || ticketIds.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'ticketIds array is required and must not be empty'
+        });
+      }
+
+      const result = await RouteOptimizationService.removeTicketsFromRoute(
+        parseInt(routeId),
+        ticketIds,
+        updatedBy
+      );
+
+      res.status(200).json({
+        success: true,
+        message: 'Tickets removed from route successfully',
+        data: result
+      });
+
+    } catch (error) {
+      console.error('Failed to remove tickets from route:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to remove tickets from route',
+        details: error.message
+      });
+    }
+  },
+
+  /**
+   * Re-optimize an existing route
+   * @route POST /api/route-optimization/route/{routeId}/reoptimize
+   * @desc Re-optimize an existing route with current tickets
+   * @access Private
+   */
+  async reoptimizeRoute(req, res) {
+    try {
+      const { routeId } = req.params;
+      const { originAddress, destinationAddress } = req.body;
+      const updatedBy = req.user?.id || 1;
+
+      if (!originAddress || !destinationAddress) {
+        return res.status(400).json({
+          success: false,
+          error: 'originAddress and destinationAddress are required'
+        });
+      }
+
+      const result = await RouteOptimizationService.reoptimizeRoute(
+        parseInt(routeId),
+        originAddress,
+        destinationAddress,
+        updatedBy
+      );
+
+      res.status(200).json({
+        success: true,
+        message: 'Route re-optimized successfully',
+        data: result
+      });
+
+    } catch (error) {
+      console.error('Failed to re-optimize route:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to re-optimize route',
+        details: error.message
+      });
+    }
+  },
+
+  /**
+   * Suggest addresses for a ticket without a valid address
+   * @route POST /api/route-optimization/suggest-addresses
+   * @desc Find similar or nearby addresses for tickets missing valid addresses
+   * @access Private
+   */
+  async suggestAddresses(req, res) {
+    try {
+      const { ticketId, partialAddress, options = {} } = req.body;
+
+      if (!ticketId) {
+        return res.status(400).json({
+          success: false,
+          error: 'ticketId is required'
+        });
+      }
+
+      console.log(`Address suggestion request for ticket ${ticketId}`);
+
+      const result = await RouteOptimizationService.suggestAddressesForTicket(
+        parseInt(ticketId),
+        partialAddress,
+        options
+      );
+
+      res.status(200).json({
+        success: true,
+        message: 'Address suggestions generated successfully',
+        data: result
+      });
+
+    } catch (error) {
+      console.error('Failed to suggest addresses:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to suggest addresses',
+        details: error.message
+      });
+    }
+  },
+
+  /**
+   * Find similar addresses for multiple tickets
+   * @route POST /api/route-optimization/suggest-addresses-batch
+   * @desc Find similar addresses for multiple tickets at once
+   * @access Private
+   */
+  async suggestAddressesBatch(req, res) {
+    try {
+      const { tickets, options = {} } = req.body;
+
+      if (!tickets || !Array.isArray(tickets) || tickets.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'tickets array is required and must not be empty'
+        });
+      }
+
+      console.log(`Batch address suggestion request for ${tickets.length} tickets`);
+
+      const results = [];
+      for (const ticket of tickets) {
+        const { ticketId, partialAddress } = ticket;
+        
+        if (!ticketId) {
+          results.push({
+            ticketId: null,
+            error: 'ticketId is required'
+          });
+          continue;
+        }
+
+        try {
+          const result = await RouteOptimizationService.suggestAddressesForTicket(
+            parseInt(ticketId),
+            partialAddress,
+            options
+          );
+          results.push(result);
+        } catch (error) {
+          results.push({
+            ticketId: parseInt(ticketId),
+            error: error.message
+          });
+        }
+      }
+
+      res.status(200).json({
+        success: true,
+        message: 'Batch address suggestions completed',
+        data: {
+          totalTickets: tickets.length,
+          successfulSuggestions: results.filter(r => !r.error).length,
+          failedSuggestions: results.filter(r => r.error).length,
+          results: results
+        }
+      });
+
+    } catch (error) {
+      console.error('Failed to suggest addresses in batch:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to suggest addresses in batch',
+        details: error.message
+      });
+    }
   }
 };
 
