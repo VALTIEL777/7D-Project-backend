@@ -4,90 +4,6 @@ const Crews = require('../../models/human-resources/Crews');
 
 const RouteOptimizationController = {
   /**
-   * Optimize routes for tickets and crews
-   * POST /api/route-optimization/optimize
-   */
-  async optimizeRoutes(req, res) {
-    try {
-      const { ticketIds, crewIds, startLocation, endLocation } = req.body;
-
-      // Set default locations if not provided
-      const defaultLocation = '2000 W 43rd St, Chicago, IL 60609, Estados Unidos';
-      const finalStartLocation = startLocation || defaultLocation;
-      const finalEndLocation = endLocation || defaultLocation;
-
-      console.log('Route optimization request:', {
-        ticketIds,
-        crewIds,
-        startLocation: finalStartLocation,
-        endLocation: finalEndLocation
-      });
-
-      // Validate input
-      if (!ticketIds || !Array.isArray(ticketIds) || ticketIds.length === 0) {
-        return res.status(400).json({ 
-          message: 'ticketIds is required and must be a non-empty array' 
-        });
-      }
-
-      if (!crewIds || !Array.isArray(crewIds) || crewIds.length === 0) {
-        return res.status(400).json({ 
-          message: 'crewIds is required and must be a non-empty array' 
-        });
-      }
-
-      // Fetch tickets with location data
-      const tickets = [];
-      for (const ticketId of ticketIds) {
-        const ticket = await Tickets.findById(ticketId);
-        if (!ticket) {
-          return res.status(404).json({ 
-            message: `Ticket with ID ${ticketId} not found` 
-          });
-        }
-        
-        // Get ticket address for location
-        const ticketAddress = await Tickets.getTicketAddress(ticketId);
-        if (ticketAddress) {
-          ticket.latitude = ticketAddress.latitude;
-          ticket.longitude = ticketAddress.longitude;
-        }
-        
-        tickets.push(ticket);
-      }
-
-      // Fetch crews
-      const crews = [];
-      for (const crewId of crewIds) {
-        const crew = await Crews.findById(crewId);
-        if (!crew) {
-          return res.status(404).json({ 
-            message: `Crew with ID ${crewId} not found` 
-          });
-        }
-        crews.push(crew);
-      }
-
-      // Optimize routes
-      const optimizedRoutes = await RouteOptimizationService.optimizeTicketRoutes(tickets, crews);
-
-      res.status(200).json({
-        message: 'Routes optimized successfully',
-        data: optimizedRoutes,
-        startLocation: finalStartLocation,
-        endLocation: finalEndLocation
-      });
-
-    } catch (error) {
-      console.error('Route optimization error:', error);
-      res.status(500).json({ 
-        message: 'Failed to optimize routes', 
-        error: error.message 
-      });
-    }
-  },
-
-  /**
    * Get route optimization status
    * GET /api/route-optimization/status
    */
@@ -95,71 +11,19 @@ const RouteOptimizationController = {
     try {
       // This endpoint can be used to check the status of long-running optimizations
       res.status(200).json({
+        success: true,
         message: 'Route optimization service is available',
-        status: 'ready'
+        data: {
+          status: 'ready',
+          timestamp: new Date().toISOString()
+        }
       });
     } catch (error) {
       console.error('Status check error:', error);
       res.status(500).json({ 
-        message: 'Failed to check optimization status', 
-        error: error.message 
-      });
-    }
-  },
-
-  /**
-   * Test route optimization with sample data
-   * POST /api/route-optimization/test
-   */
-  async testOptimization(req, res) {
-    try {
-      // Sample data for testing
-      const sampleTickets = [
-        {
-          ticketId: 1,
-          latitude: 41.8781,
-          longitude: -87.6298,
-          ticketCode: 'TEST-001'
-        },
-        {
-          ticketId: 2,
-          latitude: 41.9000,
-          longitude: -87.6500,
-          ticketCode: 'TEST-002'
-        },
-        {
-          ticketId: 3,
-          latitude: 41.8500,
-          longitude: -87.6000,
-          ticketCode: 'TEST-003'
-        }
-      ];
-
-      const sampleCrews = [
-        {
-          crewId: 1,
-          type: 'Concrete',
-          workedHours: 8
-        },
-        {
-          crewId: 2,
-          type: 'Asphalt',
-          workedHours: 8
-        }
-      ];
-
-      const optimizedRoutes = await RouteOptimizationService.optimizeTicketRoutes(sampleTickets, sampleCrews);
-
-      res.status(200).json({
-        message: 'Test optimization completed successfully',
-        data: optimizedRoutes
-      });
-
-    } catch (error) {
-      console.error('Test optimization error:', error);
-      res.status(500).json({ 
-        message: 'Failed to test route optimization', 
-        error: error.message 
+        success: false,
+        error: 'Failed to check optimization status', 
+        details: error.message 
       });
     }
   },
@@ -180,7 +44,8 @@ const RouteOptimizationController = {
       
       if (!Array.isArray(intermediateAddresses) || intermediateAddresses.length === 0) {
         return res.status(400).json({
-          message: 'intermediateAddresses array is required and must not be empty.'
+          success: false,
+          error: 'intermediateAddresses array is required and must not be empty.'
         });
       }
       
@@ -207,6 +72,7 @@ const RouteOptimizationController = {
         tickets: [] // Skip RouteTickets creation for this test endpoint
       }, 1);
       res.status(200).json({
+        success: true,
         message: 'Route optimized and saved successfully (geocoding addresses)',
         data: savedRoute,
         originAddress: finalOriginAddress,
@@ -215,8 +81,9 @@ const RouteOptimizationController = {
     } catch (error) {
       console.error('Geocode-based route optimization error:', error);
       res.status(500).json({
-        message: 'Failed to optimize route with geocoding',
-        error: error.message
+        success: false,
+        error: 'Failed to optimize route with geocoding',
+        details: error.message
       });
     }
   },
@@ -235,6 +102,8 @@ const RouteOptimizationController = {
         type,
         originAddress,
         destinationAddress,
+        startDate,
+        endDate,
         options = {}
       } = req.body;
 
@@ -266,22 +135,25 @@ const RouteOptimizationController = {
 
       console.log(`Starting single optimization for ${ticketIds.length} tickets`);
 
-      // Use the new single optimization method with options
-      const result = await RouteOptimizationService.optimizeRouteSingle(
+      // Use the new consolidated optimization method
+      const result = await RouteOptimizationService.optimizeRouteWithTickets(
         ticketIds,
         routeCode,
         type,
         originAddress,
         destinationAddress,
+        startDate,
+        endDate,
         createdBy,
         options
       );
 
-      res.status(200).json({
-        success: true,
-        message: result.message || 'Single route optimization completed successfully',
-        data: result
-      });
+      // Check if the result indicates success or failure
+      if (result.success) {
+        res.status(200).json(result);
+      } else {
+        res.status(500).json(result);
+      }
 
     } catch (error) {
       console.error('Single route optimization failed:', error);

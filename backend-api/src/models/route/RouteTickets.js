@@ -54,6 +54,14 @@ class RouteTickets {
     return res.rows;
   }
 
+  static async deleteByRouteAndTicket(routeId, ticketId, updatedBy) {
+    const res = await db.query(
+      'UPDATE RouteTickets SET deletedAt = CURRENT_TIMESTAMP, updatedAt = CURRENT_TIMESTAMP, updatedBy = $1 WHERE routeId = $2 AND ticketId = $3 AND deletedAt IS NULL RETURNING *;',
+      [updatedBy, routeId, ticketId]
+    );
+    return res.rows[0];
+  }
+
   static async updateQueue(routeId, ticketId, queue, updatedBy) {
     const res = await db.query(
       'UPDATE RouteTickets SET queue = $1, updatedAt = CURRENT_TIMESTAMP, updatedBy = $2 WHERE routeId = $3 AND ticketId = $4 AND deletedAt IS NULL RETURNING *;',

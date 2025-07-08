@@ -13,19 +13,56 @@ class RouteOptimizationService {
         this.routesApiUrl = 'https://routes.googleapis.com/directions/v2:computeRoutes';
         // Base URL for the Google Maps Platform Geocoding API
         this.geocodingApiUrl = 'https://maps.googleapis.com/maps/api/geocode/json';
-        this.apiKey = process.env.GOOGLE_MAPS_API_KEY;
+        this.googleMapsApiKey = process.env.GOOGLE_MAPS_API_KEY;
         this.projectId = process.env.GOOGLE_CLOUD_PROJECT_ID || 'burguer-menu-fbb80'; // Project ID is not directly used by Maps Platform APIs with API Key
 
-        if (!this.apiKey) {
-            console.error('ERROR: GOOGLE_MAPS_API_KEY is not set in environment variables. Route optimization will fail.');
-            // In a production app, you might want to throw an error or exit here.
+        if (!this.googleMapsApiKey) {
+            console.warn('GOOGLE_MAPS_API_KEY not found in environment variables');
         }
     }
 
-    // Removed: getAccessToken method.
-    // This method is for OAuth/Service Account authentication, typically used by Google Cloud APIs.
-    // The Google Maps Platform Routes API (v2) primarily uses API Keys for server-side calls,
-    // which are passed directly in the URL params.
+    /**
+     * Standardized error handler for consistent error responses
+     * @param {Error} error - The error object
+     * @param {string} context - Context where the error occurred
+     * @param {Object} additionalData - Additional data to include in error
+     * @returns {Object} - Standardized error object
+     */
+    handleError(error, context, additionalData = {}) {
+        const errorMessage = error.message || 'Unknown error occurred';
+        const errorDetails = {
+            message: errorMessage,
+            context: context,
+            timestamp: new Date().toISOString(),
+            ...additionalData
+        };
+
+        console.error(`[${context}] Error:`, errorMessage, additionalData);
+        
+        // Return standardized error object
+        return {
+            success: false,
+            error: errorMessage,
+            details: errorDetails
+        };
+    }
+
+    /**
+     * Standardized success response handler
+     * @param {Object} data - The data to return
+     * @param {string} message - Success message
+     * @param {Object} additionalData - Additional data to include
+     * @returns {Object} - Standardized success object
+     */
+    handleSuccess(data, message, additionalData = {}) {
+        return {
+            success: true,
+            message: message,
+            data: data,
+            timestamp: new Date().toISOString(),
+            ...additionalData
+        };
+    }
 
     /**
      * Geocodes an address string into LatLng coordinates and a placeId.
@@ -45,7 +82,7 @@ class RouteOptimizationService {
                 {
                     params: {
                         address: address,
-                        key: this.apiKey // Using the same API key for Geocoding
+                        key: this.googleMapsApiKey // Using the same API key for Geocoding
                     }
                 }
             );
@@ -67,11 +104,6 @@ class RouteOptimizationService {
         }
     }
 
-    // Removed: generateEncodedPolyline method.
-    // This method was redundant and contained conflicting parameters that caused the error.
-    // The Routes API v2 (computeRoutes) returns the encoded polyline directly in its response
-    // when requested via the X-Goog-FieldMask header in the optimizeRoute method.
-
     /**
      * Optimizes a single route for one vehicle using the Google Maps Platform Routes API (ComputeRoutes).
      * This method handles the full process: geocoding addresses, calling the Routes API for optimization,
@@ -84,7 +116,7 @@ class RouteOptimizationService {
      * @throws {Error} If the API key is missing, waypoint limit is exceeded, geocoding fails, or route optimization fails.
      */
     async optimizeRoute(originAddress, destinationAddress, intermediateAddresses) {
-        if (!this.apiKey) {
+        if (!this.googleMapsApiKey) {
             throw new Error('API Key is not configured for RouteOptimizationService. Please set GOOGLE_MAPS_API_KEY.');
         }
 
@@ -143,7 +175,7 @@ class RouteOptimizationService {
         try {
             console.log('Calling Google Maps Platform Routes API (ComputeRoutes) for optimization...');
             const response = await axios.post(
-                `${this.routesApiUrl}?key=${this.apiKey}`, // API Key passed as query parameter
+                `${this.routesApiUrl}?key=${this.googleMapsApiKey}`, // API Key passed as query parameter
                 requestBody,
                 { headers: headers }
             );
@@ -218,106 +250,205 @@ class RouteOptimizationService {
     }
 
     /**
-     * Orchestrates the entire process: fetches tickets, extracts addresses,
-     * optimizes the route, reorders tickets based on optimization, and saves to the database.
-     * @param {Array<number>} ticketIds - Array of ticket IDs to be included in the route.
-     * @param {string} routeCode - A unique code for the route.
-     * @param {string} type - Type of route (e.g., 'delivery', 'repair').
-     * @param {Date} startDate - Start date/time of the route.
-     * @param {Date} endDate - End date/time of the route.
-     * @param {string} originAddress - The starting address for the route.
-     * @param {string} destinationAddress - The ending address for the route.
-     * @param {number} createdBy - User ID who initiated the optimization.
-     * @returns {Promise<Object>} - Summary of the optimized and saved route.
-     * @throws {Error} If any step in the process fails.
+     * MAIN CONSOLIDATED ROUTE OPTIMIZATION METHOD
+     * This is the single, unified method for optimizing routes with tickets.
+     * Replaces both optimizeAndSaveRoute and optimizeRouteSingle methods.
+     * 
+     * @param {Array<number>} ticketIds - Array of ticket IDs to optimize
+     * @param {string} routeCode - Unique route identifier (optional, will be generated if not provided)
+     * @param {string} type - Route type (SPOTTER, CONCRETE, ASPHALT, default)
+     * @param {string} originAddress - Starting address
+     * @param {string} destinationAddress - Ending address (can be same as origin)
+     * @param {Date} startDate - Route start date (optional, defaults to current date)
+     * @param {Date} endDate - Route end date (optional, defaults to current date)
+     * @param {number} createdBy - User ID
+     * @param {Object} options - Additional options including autoSuggestAddresses, suggestionConfidence
+     * @returns {Promise<Object>} - Standardized response with route data and metadata
      */
-    async optimizeAndSaveRoute(ticketIds, routeCode, type, startDate, endDate, originAddress, destinationAddress, createdBy = 1) {
+    async optimizeRouteWithTickets(ticketIds, routeCode, type, originAddress, destinationAddress, startDate, endDate, createdBy = 1, options = {}) {
         try {
-            // 1. Fetch ticket details including their addresses from the database.
-            // We need the original ticket objects to reorder them later.
-            const ticketsWithAddresses = [];
-            for (const ticketId of ticketIds) {
-                const ticket = await Tickets.findById(ticketId);
-                if (!ticket) {
-                    console.warn(`Ticket with ID ${ticketId} not found and will be skipped for optimization.`);
-                    continue;
-                }
-                
-                const ticketAddress = await this.getTicketAddress(ticket); 
-                if (!ticketAddress) {
-                    console.warn(`Ticket ${ticketId} has no address found and will be skipped for optimization.`);
-                    continue;
-                }
-                
-                ticketsWithAddresses.push({
-                    ticketId: ticket.ticketid,
-                    ticketCode: ticket.ticketcode,
-                    address: ticketAddress,
-                    quantity: ticket.quantity,
-                    amountToPay: ticket.amounttopay
-                    // Include any other relevant ticket data here
-                });
+            // Input validation
+            if (!ticketIds || !Array.isArray(ticketIds) || ticketIds.length === 0) {
+                throw new Error('ticketIds array is required and must not be empty');
             }
 
-            // 2. Extract only the address strings for the optimization API call.
-            const addressesToOptimize = ticketsWithAddresses.map(ticket => ticket.address);
+            if (!originAddress || !destinationAddress) {
+                throw new Error('originAddress and destinationAddress are required');
+            }
+
+            const { autoSuggestAddresses = true, suggestionConfidence = 0.8 } = options;
+
+            console.log(`Starting route optimization for ${ticketIds.length} tickets`);
+
+            // Step 1: Get all ticket addresses in one database query
+            const ticketsWithAddresses = await this.getTicketsWithAddressesBatch(ticketIds, {
+                autoSuggest: autoSuggestAddresses,
+                minConfidence: suggestionConfidence
+            });
             
-            if (addressesToOptimize.length === 0) {
-                throw new Error('No valid addresses found for optimization from the provided tickets after filtering.');
+            if (ticketsWithAddresses.length === 0) {
+                throw new Error('No valid tickets found for optimization');
             }
 
-            // 3. Call the core route optimization logic.
+            // Step 2: Deduplicate addresses to optimize API calls
+            const addressToTicketsMap = new Map(); // address -> array of tickets
+            const uniqueAddresses = []; // array of unique addresses for API call
+            
+            for (const ticket of ticketsWithAddresses) {
+                const address = ticket.address;
+                if (!addressToTicketsMap.has(address)) {
+                    addressToTicketsMap.set(address, []);
+                    uniqueAddresses.push(address);
+                }
+                addressToTicketsMap.get(address).push(ticket);
+            }
+
+            console.log(`Deduplicated ${ticketsWithAddresses.length} tickets into ${uniqueAddresses.length} unique addresses`);
+            console.log('Unique addresses for optimization:', uniqueAddresses);
+
+            // Step 3: Check existing Addresses table and only geocode new addresses
+            const geocodedAddresses = await this.batchGeocodeWithAddresses(uniqueAddresses);
+
+            // Step 4: Optimize unique addresses in one request
             const optimizedRouteResult = await this.optimizeRoute(
                 originAddress,
                 destinationAddress,
-                addressesToOptimize
+                uniqueAddresses
             );
-            
-            // 4. Reorder the original `ticketsWithAddresses` array based on the `optimizedOrder`
-            // returned by the Routes API.
-            const reorderedTicketsForDb = optimizedRouteResult.optimizedOrder.map((originalIndex, queuePosition) => {
-                const originalTicket = ticketsWithAddresses[originalIndex];
-                return {
-                    ...originalTicket,
-                    queue: queuePosition // Assign the new optimized queue position
-                };
-            });
 
-            // 5. Prepare the data structure for saving to your database.
-            const routeDataForDb = {
-                routeCode: routeCode || `ROUTE-${Date.now()}`,
+            // Step 5: Map optimized order back to all tickets
+            let optimizedOrder = optimizedRouteResult.optimizedOrder || [];
+            
+            // If there's only one address and no optimized order, create a default order
+            if (uniqueAddresses.length === 1 && optimizedOrder.length === 0) {
+                optimizedOrder = [0]; // The only address gets position 0
+                console.log('Single address detected, using default order [0]');
+            }
+            
+            // Validate that optimizedOrder has valid indices
+            if (optimizedOrder.length !== uniqueAddresses.length) {
+                console.warn(`Optimized order length (${optimizedOrder.length}) doesn't match unique addresses length (${uniqueAddresses.length}), using sequential order`);
+                optimizedOrder = Array.from({ length: uniqueAddresses.length }, (_, i) => i);
+            }
+
+            // Step 6: Create final ticket order with queue positions
+            const reorderedTickets = [];
+            let globalQueuePosition = 0;
+
+            // Process addresses in optimized order
+            for (let addressIndex = 0; addressIndex < optimizedOrder.length; addressIndex++) {
+                const originalAddressIndex = optimizedOrder[addressIndex];
+                
+                // Validate that originalAddressIndex is within bounds
+                if (originalAddressIndex < 0 || originalAddressIndex >= uniqueAddresses.length) {
+                    console.warn(`Invalid optimizedOrder index: ${originalAddressIndex}, skipping`);
+                    continue;
+                }
+                
+                const address = uniqueAddresses[originalAddressIndex];
+                const ticketsAtThisAddress = addressToTicketsMap.get(address);
+                
+                // Assign sequential queue positions to all tickets at this address
+                for (const ticket of ticketsAtThisAddress) {
+                    reorderedTickets.push({
+                        ...ticket,
+                        queue: globalQueuePosition++
+                    });
+                }
+            }
+
+            console.log(`Final ticket order: ${reorderedTickets.length} tickets with ${uniqueAddresses.length} unique addresses`);
+
+            // Step 7: Prepare route data for database
+            const routeData = {
+                routeCode: routeCode || await this.generateRouteCode(type),
                 type: type || 'default',
                 startDate: startDate || new Date(),
                 endDate: endDate || new Date(),
                 encodedPolyline: optimizedRouteResult.encodedPolyline,
                 totalDistance: optimizedRouteResult.totalDistance,
                 totalDuration: optimizedRouteResult.totalDuration,
-                optimizedOrder: optimizedRouteResult.optimizedOrder, // Store the raw optimized indices
+                optimizedOrder: optimizedRouteResult.optimizedOrder,
                 optimizationMetadata: {
-                    apiResponse: optimizedRouteResult.apiResponse, // Store the full API response for audit/debugging
                     optimizationDate: new Date().toISOString(),
-                    totalWaypoints: addressesToOptimize.length,
+                    totalWaypoints: uniqueAddresses.length,
+                    totalTickets: reorderedTickets.length,
                     originAddress,
-                    destinationAddress
+                    destinationAddress,
+                    method: 'consolidated_optimization_with_deduplication',
+                    apiCallsUsed: 1,
+                    addressDeduplication: {
+                        originalTickets: ticketsWithAddresses.length,
+                        uniqueAddresses: uniqueAddresses.length,
+                        savings: ticketsWithAddresses.length - uniqueAddresses.length
+                    }
                 },
-                tickets: reorderedTicketsForDb // Pass the reordered ticket objects to be saved as RouteTickets
+                tickets: reorderedTickets
             };
 
-            // 6. Save the optimized route and its associated tickets to the database.
-            const savedRoute = await this.saveOptimizedRoute(routeDataForDb, createdBy);
+            // Step 8: Save to database
+            const savedRoute = await this.saveOptimizedRoute(routeData, createdBy);
 
-            // Return a summary of the operation.
-            return {
+            // Step 9: Prepare standardized response
+            const originalTickets = ticketsWithAddresses.filter(t => !t.suggestedAddress);
+            const suggestedTickets = ticketsWithAddresses.filter(t => t.suggestedAddress);
+            
+            const responseData = {
                 routeId: savedRoute.routeid,
                 routeCode: savedRoute.routecode,
                 totalDistance: savedRoute.totaldistance,
                 totalDuration: savedRoute.totalduration,
-                optimizedOrder: savedRoute.optimizedorder,
-                tickets: reorderedTicketsForDb // Return the reordered tickets for the response
+                totalTickets: reorderedTickets.length,
+                uniqueAddresses: uniqueAddresses.length,
+                apiCallsUsed: 1,
+                costEstimate: this.estimateApiCost(1),
+                addressInfo: {
+                    originalAddresses: originalTickets.length,
+                    suggestedAddresses: suggestedTickets.length,
+                    uniqueAddressesUsed: uniqueAddresses.length,
+                    addressDeduplicationSavings: ticketsWithAddresses.length - uniqueAddresses.length,
+                    suggestions: suggestedTickets.map(t => ({
+                        ticketId: t.ticketid,
+                        ticketCode: t.ticketcode,
+                        suggestedAddress: t.address,
+                        confidence: t.suggestionConfidence,
+                        method: t.suggestionMethod
+                    }))
+                },
+                optimizationMetadata: {
+                    optimizedOrder: optimizedRouteResult.optimizedOrder,
+                    totalWaypoints: uniqueAddresses.length,
+                    originAddress,
+                    destinationAddress,
+                    addressDeduplication: {
+                        originalTickets: ticketsWithAddresses.length,
+                        uniqueAddresses: uniqueAddresses.length,
+                        savings: ticketsWithAddresses.length - uniqueAddresses.length
+                    }
+                }
             };
+
+            let successMessage = 'Route optimized successfully';
+            if (suggestedTickets.length > 0) {
+                successMessage += `. ${suggestedTickets.length} addresses were automatically suggested.`;
+            }
+            if (uniqueAddresses.length < ticketsWithAddresses.length) {
+                successMessage += ` ${ticketsWithAddresses.length - uniqueAddresses.length} duplicate addresses were consolidated for API efficiency.`;
+            }
+
+            return this.handleSuccess(responseData, successMessage, {
+                context: 'route_optimization',
+                ticketCount: reorderedTickets.length,
+                uniqueAddressCount: uniqueAddresses.length
+            });
+
         } catch (error) {
-            console.error('Failed to optimize and save route in orchestrator:', error);
-            throw error;
+            return this.handleError(error, 'route_optimization', {
+                ticketIds,
+                type,
+                originAddress,
+                destinationAddress
+            });
         }
     }
 
@@ -684,118 +815,6 @@ class RouteOptimizationService {
     }
 
     /**
-     * Single route optimization with minimal API calls
-     * This approach uses existing geocoded addresses from the Addresses table
-     * to minimize Google Maps API usage and costs.
-     * 
-     * @param {Array<number>} ticketIds - Array of ticket IDs to optimize
-     * @param {string} routeCode - Unique route identifier
-     * @param {string} type - Route type (SPOTTER, CONCRETE, ASPHALT)
-     * @param {string} originAddress - Starting address
-     * @param {string} destinationAddress - Ending address (can be same as origin)
-     * @param {number} createdBy - User ID
-     * @param {Object} options - Additional options including autoSuggestAddresses
-     * @returns {Promise<Object>} - Optimized route data
-     */
-    async optimizeRouteSingle(ticketIds, routeCode, type, originAddress, destinationAddress, createdBy = 1, options = {}) {
-        try {
-            console.log(`Starting single route optimization for ${ticketIds.length} tickets`);
-            
-            const { autoSuggestAddresses = true, suggestionConfidence = 0.8 } = options;
-
-            // Step 1: Get all ticket addresses in one database query
-            const ticketsWithAddresses = await this.getTicketsWithAddressesBatch(ticketIds, {
-                autoSuggest: autoSuggestAddresses,
-                minConfidence: suggestionConfidence
-            });
-            
-            if (ticketsWithAddresses.length === 0) {
-                throw new Error('No valid tickets found for optimization');
-            }
-
-            // Step 2: Check existing Addresses table and only geocode new addresses
-            const geocodedAddresses = await this.batchGeocodeWithAddresses(
-                ticketsWithAddresses.map(t => t.address)
-            );
-
-            // Step 3: Optimize all tickets in one request
-            const addressesToOptimize = ticketsWithAddresses.map(t => t.address);
-            const optimizedRouteResult = await this.optimizeRoute(
-                originAddress,
-                destinationAddress,
-                addressesToOptimize
-            );
-
-            // Step 4: Reorder tickets based on optimization
-            const reorderedTickets = optimizedRouteResult.optimizedOrder.map((originalIndex, queuePosition) => ({
-                ...ticketsWithAddresses[originalIndex],
-                queue: queuePosition
-            }));
-
-            // Step 5: Prepare route data for database
-            const routeData = {
-                routeCode: routeCode || `ROUTE-${Date.now()}`,
-                type: type || 'SINGLE',
-                startDate: new Date(),
-                endDate: new Date(),
-                encodedPolyline: optimizedRouteResult.encodedPolyline,
-                totalDistance: optimizedRouteResult.totalDistance,
-                totalDuration: optimizedRouteResult.totalDuration,
-                optimizedOrder: optimizedRouteResult.optimizedOrder,
-                optimizationMetadata: {
-                    optimizationDate: new Date().toISOString(),
-                    totalWaypoints: addressesToOptimize.length,
-                    originAddress,
-                    destinationAddress,
-                    method: 'single_optimization'
-                },
-                tickets: reorderedTickets
-            };
-
-            // Step 6: Save to database
-            const savedRoute = await this.saveOptimizedRoute(routeData, createdBy);
-
-            // Step 7: Prepare response with address suggestion information
-            const originalTickets = ticketsWithAddresses.filter(t => !t.suggestedAddress);
-            const suggestedTickets = ticketsWithAddresses.filter(t => t.suggestedAddress);
-            
-            const response = {
-                routeId: savedRoute.routeid,
-                routeCode: savedRoute.routecode,
-                totalDistance: savedRoute.totaldistance,
-                totalDuration: savedRoute.totalduration,
-                totalTickets: ticketsWithAddresses.length,
-                apiCallsUsed: 1, // Single optimization call
-                costEstimate: this.estimateApiCost(1),
-                addressInfo: {
-                    originalAddresses: originalTickets.length,
-                    suggestedAddresses: suggestedTickets.length,
-                    suggestions: suggestedTickets.map(t => ({
-                        ticketId: t.ticketid,
-                        ticketCode: t.ticketcode,
-                        suggestedAddress: t.address,
-                        confidence: t.suggestionConfidence,
-                        method: t.suggestionMethod
-                    }))
-                }
-            };
-
-            if (suggestedTickets.length > 0) {
-                console.log(`Route optimization completed with ${suggestedTickets.length} suggested addresses`);
-                response.message = `Route optimized successfully. ${suggestedTickets.length} addresses were automatically suggested.`;
-            } else {
-                response.message = 'Route optimized successfully with all original addresses.';
-            }
-
-            return response;
-
-        } catch (error) {
-            console.error('Single route optimization failed:', error);
-            throw error;
-        }
-    }
-
-    /**
      * Get tickets with addresses in a single database query
      * @param {Array<number>} ticketIds - Array of ticket IDs
      * @param {Object} options - Additional options including autoSuggest
@@ -1145,8 +1164,10 @@ class RouteOptimizationService {
             if (ticketsToAdd.length === 0) {
                 return {
                     routeId: routeId,
-                    message: 'No new tickets to add',
-                    addedTickets: 0
+                    message: 'No new tickets to add (all tickets already exist in route)',
+                    addedTickets: 0,
+                    totalTickets: existingTicketIds.length,
+                    skippedTickets: ticketIds.filter(id => existingTicketIds.includes(id))
                 };
             }
 
@@ -1173,7 +1194,8 @@ class RouteOptimizationService {
                 routeId: routeId,
                 message: `Added ${ticketsToAdd.length} tickets to route`,
                 addedTickets: ticketsToAdd.length,
-                totalTickets: existingTicketIds.length + ticketsToAdd.length
+                totalTickets: existingTicketIds.length + ticketsToAdd.length,
+                skippedTickets: ticketIds.filter(id => existingTicketIds.includes(id))
             };
 
         } catch (error) {
@@ -1284,10 +1306,21 @@ class RouteOptimizationService {
             );
 
             // Update ticket queue positions based on optimization
-            const reorderedTickets = optimizedRouteResult.optimizedOrder.map((originalIndex, queuePosition) => ({
-                ticketId: ticketsWithAddresses[originalIndex].ticketid,
-                queue: queuePosition
-            }));
+            // Add safety check to ensure optimizedOrder indices are valid
+            const reorderedTickets = optimizedRouteResult.optimizedOrder
+                .map((originalIndex, queuePosition) => {
+                    // Check if the originalIndex is valid
+                    if (originalIndex >= 0 && originalIndex < ticketsWithAddresses.length) {
+                        return {
+                            ticketId: ticketsWithAddresses[originalIndex].ticketid,
+                            queue: queuePosition
+                        };
+                    } else {
+                        console.warn(`Invalid optimizedOrder index: ${originalIndex} for queue position ${queuePosition}`);
+                        return null;
+                    }
+                })
+                .filter(ticket => ticket !== null); // Remove any null entries
 
             for (const ticket of reorderedTickets) {
                 await RouteTickets.updateQueue(routeId, ticket.ticketId, ticket.queue, updatedBy);
@@ -1846,6 +1879,100 @@ class RouteOptimizationService {
                 suggestions: [],
                 error: error.message
             };
+        }
+    }
+
+    /**
+     * Generate a proper route code with sequential numbering
+     * @param {string} type - Route type (e.g., 'SPOTTER', 'CONCRETE', 'ASPHALT', 'default')
+     * @returns {Promise<string>} - Generated route code like 'ROUTE-001', 'SPOTTER-2024-001', etc.
+     */
+    async generateRouteCode(type = 'default') {
+        try {
+            // Get the current year
+            const currentYear = new Date().getFullYear();
+            
+            // Get the next route number for this type and year
+            const nextNumber = await this.getNextRouteNumber(type, currentYear);
+            
+            // Format the number with leading zeros (3 digits)
+            const formattedNumber = nextNumber.toString().padStart(3, '0');
+            
+            // Generate route code based on type
+            if (type.toUpperCase() === 'SPOTTER') {
+                return `SPOTTER-${currentYear}-${formattedNumber}`;
+            } else if (type.toUpperCase() === 'CONCRETE') {
+                return `CONCRETE-${currentYear}-${formattedNumber}`;
+            } else if (type.toUpperCase() === 'ASPHALT') {
+                return `ASPHALT-${currentYear}-${formattedNumber}`;
+            } else {
+                return `ROUTE-${formattedNumber}`;
+            }
+        } catch (error) {
+            console.error('Error generating route code:', error);
+            // Better fallback - use random number instead of timestamp
+            const fallbackNumber = Math.floor(Math.random() * 999) + 1;
+            const formattedFallback = fallbackNumber.toString().padStart(3, '0');
+            return `ROUTE-${formattedFallback}`;
+        }
+    }
+
+    /**
+     * Get the next route number for a specific type and year
+     * @param {string} type - Route type
+     * @param {number} year - Year
+     * @returns {Promise<number>} - Next route number
+     */
+    async getNextRouteNumber(type, year) {
+        try {
+            // Query to get the highest route number for this type and year
+            let query;
+            let params;
+            
+            if (type.toUpperCase() === 'SPOTTER') {
+                query = `
+                    SELECT COUNT(*) as count 
+                    FROM Routes 
+                    WHERE type = $1 
+                    AND EXTRACT(YEAR FROM createdAt) = $2 
+                    AND deletedAt IS NULL
+                `;
+                params = [type.toUpperCase(), year];
+            } else if (type.toUpperCase() === 'CONCRETE') {
+                query = `
+                    SELECT COUNT(*) as count 
+                    FROM Routes 
+                    WHERE type = $1 
+                    AND EXTRACT(YEAR FROM createdAt) = $2 
+                    AND deletedAt IS NULL
+                `;
+                params = [type.toUpperCase(), year];
+            } else if (type.toUpperCase() === 'ASPHALT') {
+                query = `
+                    SELECT COUNT(*) as count 
+                    FROM Routes 
+                    WHERE type = $1 
+                    AND EXTRACT(YEAR FROM createdAt) = $2 
+                    AND deletedAt IS NULL
+                `;
+                params = [type.toUpperCase(), year];
+            } else {
+                // For default type, just count all routes
+                query = `
+                    SELECT COUNT(*) as count 
+                    FROM Routes 
+                    WHERE deletedAt IS NULL
+                `;
+                params = [];
+            }
+            
+            const result = await db.query(query, params);
+            const currentCount = parseInt(result.rows[0].count);
+            
+            return currentCount + 1;
+        } catch (error) {
+            console.error('Error getting next route number:', error);
+            return 1; // Fallback to 1 if there's an error
         }
     }
 }
