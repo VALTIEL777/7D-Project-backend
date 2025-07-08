@@ -260,24 +260,26 @@ exports.uploadExcel = async (req, res) => {
     const createdBy = req.body.createdBy || 1; // Default user ID
     const updatedBy = req.body.updatedBy || 1; // Default user ID
 
-    // Check if "Seven-D" sheet exists
-    if (!workbook.SheetNames.includes('Seven-D')) {
+    // Check if "Seven-D" or "Seven-D ALL" sheet exists
+    let sheetName = null;
+    if (workbook.SheetNames.includes('Seven-D')) {
+      sheetName = 'Seven-D';
+    } else if (workbook.SheetNames.includes('Seven-D ALL')) {
+      sheetName = 'Seven-D ALL';
+    } else {
       return res.status(400).json({
         success: false,
-        error: 'Sheet "Seven-D" not found in the Excel file',
+        error: 'Neither "Seven-D" nor "Seven-D ALL" sheet found in the Excel file',
         availableSheets: workbook.SheetNames
       });
     }
-
-    // Only process the "Seven-D" sheet
-    const sheetName = 'Seven-D';
     const sheet = workbook.Sheets[sheetName];
     const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
 
     if (rows.length === 0) {
       return res.status(400).json({
         success: false,
-        error: 'Sheet "Seven-D" is empty'
+        error: `Sheet "${sheetName}" is empty`
       });
     }
 
@@ -960,16 +962,13 @@ function compareTicketData(excelData, databaseTicket) {
 function normalizeValue(value) {
   if (value === null || value === undefined) return '';
   if (typeof value === 'string') {
-    const trimmed = value.trim().toLowerCase();
-    
+    let trimmed = value.trim().toLowerCase();
+    // Remove trailing ' - (number/number)' from any string
+    trimmed = trimmed.replace(/\s*-\s*\(\d{1,2}\/\d{2,4}\)\s*$/, '').trim();
     // Special handling for permit extension messages
-    // Treat variations of "TK - NEEDS PERMIT EXTENSION" as equivalent
     if (trimmed.includes('tk - needs permit extension')) {
-      // Extract the base message and ignore date suffixes like "- (6/23)" or "- (12/15)"
-      const baseMessage = trimmed.replace(/\s*-\s*\(\d+\/\d+\)\s*$/, '').trim();
-      return baseMessage;
+      return trimmed;
     }
-    
     return trimmed;
   }
   if (typeof value === 'number') return value.toString();
@@ -1191,22 +1190,26 @@ exports.uploadForStepper = async (req, res) => {
     // Parse Excel file but don't save to MinIO yet
     const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
     
-    if (!workbook.SheetNames.includes('Seven-D')) {
+    // Check if "Seven-D" or "Seven-D ALL" sheet exists
+    let sheetName = null;
+    if (workbook.SheetNames.includes('Seven-D')) {
+      sheetName = 'Seven-D';
+    } else if (workbook.SheetNames.includes('Seven-D ALL')) {
+      sheetName = 'Seven-D ALL';
+    } else {
       return res.status(400).json({
         success: false,
-        error: 'Sheet "Seven-D" not found in the Excel file',
+        error: 'Neither "Seven-D" nor "Seven-D ALL" sheet found in the Excel file',
         availableSheets: workbook.SheetNames
       });
     }
-
-    const sheetName = 'Seven-D';
     const sheet = workbook.Sheets[sheetName];
     const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
 
     if (rows.length === 0) {
       return res.status(400).json({
         success: false,
-        error: 'Sheet "Seven-D" is empty'
+        error: `Sheet "${sheetName}" is empty`
       });
     }
 
@@ -2007,22 +2010,26 @@ exports.updateTicketsWithDatabaseValues = async (req, res) => {
     // 1. Parse the uploaded Excel file using existing parseExcelData function
     const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
     
-    if (!workbook.SheetNames.includes('Seven-D')) {
+    // Check if "Seven-D" or "Seven-D ALL" sheet exists
+    let sheetName = null;
+    if (workbook.SheetNames.includes('Seven-D')) {
+      sheetName = 'Seven-D';
+    } else if (workbook.SheetNames.includes('Seven-D ALL')) {
+      sheetName = 'Seven-D ALL';
+    } else {
       return res.status(400).json({
         success: false,
-        error: 'Sheet "Seven-D" not found in the Excel file',
+        error: 'Neither "Seven-D" nor "Seven-D ALL" sheet found in the Excel file',
         availableSheets: workbook.SheetNames
       });
     }
-
-    const sheetName = 'Seven-D';
     const sheet = workbook.Sheets[sheetName];
     const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
 
     if (rows.length === 0) {
       return res.status(400).json({
         success: false,
-        error: 'Sheet "Seven-D" is empty'
+        error: `Sheet "${sheetName}" is empty`
       });
     }
 

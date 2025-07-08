@@ -658,9 +658,9 @@ class RTR {
     try {
       console.log(`Generating TicketStatus records for ticket ${ticketId}...`);
       
-      // First, get the ticket's contractUnitId
+      // First, get the ticket's contractUnitId and partnerComment
       const ticketRes = await db.query(
-        'SELECT contractUnitId FROM Tickets WHERE ticketId = $1 AND deletedAt IS NULL;',
+        'SELECT contractUnitId, PartnerComment FROM Tickets WHERE ticketId = $1 AND deletedAt IS NULL;',
         [ticketId]
       );
       
@@ -669,6 +669,26 @@ class RTR {
       }
       
       const contractUnitId = ticketRes.rows[0].contractunitid;
+      const partnerComment = ticketRes.rows[0].partnercomment;
+      
+      // Check if partnerComment contains mobilization-related keywords
+      const mobilizationKeywords = ['mob', 'mobilization'];
+      const hasMobilizationInComment = partnerComment && 
+        mobilizationKeywords.some(keyword => 
+          partnerComment.toLowerCase().includes(keyword.toLowerCase())
+        );
+      
+      if (hasMobilizationInComment) {
+        console.log(`Ticket ${ticketId} has mobilization-related content in partnerComment: "${partnerComment}", skipping TicketStatus generation`);
+        return {
+          ticketId: ticketId,
+          contractUnitId: contractUnitId,
+          phasesFound: 0,
+          statusesCreated: 0,
+          skipped: true,
+          reason: 'Mobilization-related content in partnerComment'
+        };
+      }
       
       if (!contractUnitId) {
         console.log(`Ticket ${ticketId} has no ContractUnit assigned, skipping TicketStatus generation`);
@@ -683,6 +703,32 @@ class RTR {
       }
       
       console.log(`Ticket ${ticketId} has ContractUnit ${contractUnitId}`);
+      
+      // Check if ContractUnit name contains mobilization-related keywords
+      const contractUnitRes = await db.query(
+        'SELECT name FROM ContractUnits WHERE contractUnitId = $1 AND deletedAt IS NULL;',
+        [contractUnitId]
+      );
+      
+      if (contractUnitRes.rows.length > 0) {
+        const contractUnitName = contractUnitRes.rows[0].name;
+        const hasMobilizationInContractUnit = contractUnitName && 
+          mobilizationKeywords.some(keyword => 
+            contractUnitName.toLowerCase().includes(keyword.toLowerCase())
+          );
+        
+        if (hasMobilizationInContractUnit) {
+          console.log(`Ticket ${ticketId} has ContractUnit with mobilization-related name: "${contractUnitName}", skipping TicketStatus generation`);
+          return {
+            ticketId: ticketId,
+            contractUnitId: contractUnitId,
+            phasesFound: 0,
+            statusesCreated: 0,
+            skipped: true,
+            reason: 'Mobilization-related ContractUnit name'
+          };
+        }
+      }
       
       // Get the ContractUnit phases (TaskStatus records) for this ContractUnit
       const phasesRes = await db.query(
