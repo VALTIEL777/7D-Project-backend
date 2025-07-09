@@ -290,6 +290,83 @@ const RouteOptimizationController = {
   },
 
   /**
+   * Optimize routes using clustering for large numbers of locations
+   * @route POST /api/route-optimization/optimize-clustered
+   * @desc Optimize routes by clustering locations into groups of max 25 locations each
+   * @access Private
+   */
+  async optimizeClustered(req, res) {
+    try {
+      const {
+        ticketIds,
+        routeCode,
+        type,
+        originAddress,
+        destinationAddress,
+        startDate,
+        endDate,
+        options = {}
+      } = req.body;
+
+      const createdBy = req.user?.id || 1;
+
+      // Add detailed logging
+      console.log('=== CLUSTERED OPTIMIZATION REQUEST ===');
+      console.log('Request body:', JSON.stringify(req.body, null, 2));
+      console.log('Ticket IDs:', ticketIds);
+      console.log('Type:', type);
+      console.log('Origin Address:', originAddress);
+      console.log('Destination Address:', destinationAddress);
+      console.log('Options:', options);
+
+      // Validate required fields
+      if (!ticketIds || !Array.isArray(ticketIds) || ticketIds.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'ticketIds array is required and must not be empty'
+        });
+      }
+
+      if (!originAddress || !destinationAddress) {
+        return res.status(400).json({
+          success: false,
+          error: 'originAddress and destinationAddress are required'
+        });
+      }
+
+      console.log(`Starting clustered optimization for ${ticketIds.length} tickets`);
+
+      // Use the clustered optimization method
+      const result = await RouteOptimizationService.optimizeRouteWithClustering(
+        ticketIds,
+        routeCode,
+        type,
+        originAddress,
+        destinationAddress,
+        startDate,
+        endDate,
+        createdBy,
+        options
+      );
+
+      // Check if the result indicates success or failure
+      if (result.success) {
+        res.status(200).json(result);
+      } else {
+        res.status(500).json(result);
+      }
+
+    } catch (error) {
+      console.error('Clustered route optimization failed:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to optimize routes with clustering',
+        details: error.message
+      });
+    }
+  },
+
+  /**
    * Suggest addresses for a ticket without a valid address
    * @route POST /api/route-optimization/suggest-addresses
    * @desc Find similar or nearby addresses for tickets missing valid addresses

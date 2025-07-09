@@ -6,6 +6,7 @@ const Routes = require('../models/route/Routes');
 const RouteTickets = require('../models/route/RouteTickets');
 const Tickets = require('../models/ticket-logic/Tickets');
 const db = require('../config/db'); // Assuming this correctly imports your database connection
+const LocationClusteringService = require('./LocationClusteringService');
 
 class RouteOptimizationService {
     constructor() {
@@ -204,6 +205,283 @@ class RouteOptimizationService {
     }
 
     /**
+     * Optimizes routes for large numbers of locations by clustering them into groups of maximum 25 locations each.
+     * This method uses PostGIS spatial clustering to group nearby locations and then optimizes each cluster separately.
+     * 
+     * @param {Array<number>} ticketIds - Array of ticket IDs to optimize
+     * @param {string} routeCode - Base route code (will be appended with cluster number)
+     * @param {string} type - Route type (SPOTTER, CONCRETE, ASPHALT, default)
+     * @param {string} originAddress - Starting address
+     * @param {string} destinationAddress - Ending address (can be same as origin)
+     * @param {Date} startDate - Route start date (optional, defaults to current date)
+     * @param {Date} endDate - Route end date (optional, defaults to current date)
+     * @param {number} createdBy - User ID
+     * @param {Object} options - Additional options including maxDistance for clustering
+     * @returns {Promise<Object>} - Standardized response with multiple route data and metadata
+     */
+    async optimizeRouteWithClustering(ticketIds, routeCode, type, originAddress, destinationAddress, startDate, endDate, createdBy = 1, options = {}) {
+        try {
+            // Input validation
+            if (!ticketIds || !Array.isArray(ticketIds) || ticketIds.length === 0) {
+                throw new Error('ticketIds array is required and must not be empty');
+            }
+
+            if (!originAddress || !destinationAddress) {
+                throw new Error('originAddress and destinationAddress are required');
+            }
+
+            const { maxDistance = 30000, maxLocationsPerCluster = 25, minLocationsPerCluster = 20 } = options;
+
+            console.log(`Starting clustered route optimization for ${ticketIds.length} tickets`);
+
+            // Step 1: Get all ticket addresses in one database query (reuse from parent method)
+            const ticketsWithAddresses = await this.getTicketsWithAddressesBatch(ticketIds, {
+                autoSuggest: false, // Disable auto-suggest for clustering to avoid double geocoding
+                minConfidence: 0.8
+            });
+            
+            if (ticketsWithAddresses.length === 0) {
+                throw new Error('No valid tickets found for clustering');
+            }
+
+            // Step 2: Cluster locations using PostGIS (pass pre-fetched tickets to avoid double geocoding)
+            const clusteringService = new LocationClusteringService();
+            const clusters = await clusteringService.clusterLocations(ticketsWithAddresses, { 
+                maxDistance,
+                maxLocationsPerCluster,
+                minLocationsPerCluster
+            });
+            
+            console.log(`Created ${clusters.length} clusters for optimization`);
+
+            // Step 2: Optimize each cluster separately
+            const optimizedRoutes = [];
+            const errors = [];
+            
+            console.log(`=== CLUSTER OPTIMIZATION START ===`);
+            console.log(`Total clusters to process: ${clusters.length}`);
+
+            for (let i = 0; i < clusters.length; i++) {
+                const cluster = clusters[i];
+                const clusterRouteCode = `${routeCode}-CLUSTER-${i + 1}`;
+                
+                console.log(`\n--- Processing Cluster ${i + 1}/${clusters.length} ---`);
+                console.log(`Cluster ID: ${cluster.clusterId}`);
+                console.log(`Route Code: ${clusterRouteCode}`);
+                console.log(`Tickets in cluster: ${cluster.tickets.length}`);
+                console.log(`Cluster center: ${cluster.centerLat}, ${cluster.centerLng}`);
+                
+                try {
+                    console.log(`Optimizing cluster ${i + 1}/${clusters.length} with ${cluster.tickets.length} tickets (${cluster.uniqueAddresses.length} unique addresses)`);
+                    
+                    // Use tickets directly from the cluster
+                    const clusterTickets = cluster.tickets;
+                    
+                    if (clusterTickets.length === 0) {
+                        console.warn(`❌ CLUSTER SKIPPED: No valid tickets found for cluster ${i + 1} (${clusterRouteCode})`);
+                        console.warn(`   Cluster ID: ${cluster.clusterId}`);
+                        console.warn(`   This cluster will be unassigned!`);
+                        continue;
+                    }
+
+                    // Use unique addresses for optimization (already provided by clustering service)
+                    const uniqueAddresses = cluster.uniqueAddresses.filter(addr => addr && addr.trim() !== '');
+                    
+                    if (uniqueAddresses.length === 0) {
+                        console.warn(`❌ CLUSTER SKIPPED: No valid addresses found for cluster ${i + 1} (${clusterRouteCode})`);
+                        console.warn(`   Cluster ID: ${cluster.clusterId}`);
+                        console.warn(`   Ticket count: ${clusterTickets.length}`);
+                        console.warn(`   This cluster will be unassigned!`);
+                        continue;
+                    }
+                    
+                    // Optimize this cluster using only unique addresses
+                    const optimizedRouteResult = await this.optimizeRoute(
+                        originAddress,
+                        destinationAddress,
+                        uniqueAddresses
+                    );
+
+                    // Map optimized order back to all tickets in this cluster
+                    let optimizedOrder = optimizedRouteResult.optimizedOrder || [];
+                    
+                    // If there's only one address and no optimized order, create a default order
+                    if (uniqueAddresses.length === 1 && optimizedOrder.length === 0) {
+                        optimizedOrder = [0];
+                    }
+                    
+                    // Validate that optimizedOrder has valid indices
+                    if (optimizedOrder.length !== uniqueAddresses.length) {
+                        console.warn(`Optimized order length (${optimizedOrder.length}) doesn't match unique addresses length (${uniqueAddresses.length}), using sequential order`);
+                        optimizedOrder = Array.from({ length: uniqueAddresses.length }, (_, i) => i);
+                    }
+
+                    // Create address to tickets mapping for this cluster
+                    const addressToTicketsMap = new Map();
+                    for (const ticket of clusterTickets) {
+                        const address = ticket.address;
+                        if (!addressToTicketsMap.has(address)) {
+                            addressToTicketsMap.set(address, []);
+                        }
+                        addressToTicketsMap.get(address).push(ticket);
+                    }
+
+                    // Filter uniqueAddresses to only include addresses that have tickets
+                    const addressesWithTickets = uniqueAddresses.filter(address => 
+                        addressToTicketsMap.has(address) && addressToTicketsMap.get(address).length > 0
+                    );
+                    
+                    console.log(`Original unique addresses: ${uniqueAddresses.length}, addresses with tickets: ${addressesWithTickets.length}`);
+
+                    // Create final ticket order with queue positions based on optimized order
+                    const reorderedTickets = [];
+                    let globalQueuePosition = 0; // Start from 0 as requested
+
+                    // Process addresses in optimized order, but only those with tickets
+                    console.log(`=== QUEUE ASSIGNMENT DEBUG ===`);
+                    console.log(`Total addresses in optimized order: ${optimizedOrder.length}`);
+                    console.log(`Total unique addresses: ${uniqueAddresses.length}`);
+                    console.log(`Addresses with tickets: ${addressesWithTickets.length}`);
+                    console.log(`Starting queue position: ${globalQueuePosition}`);
+                    
+                    for (let addressIndex = 0; addressIndex < optimizedOrder.length; addressIndex++) {
+                        const originalAddressIndex = optimizedOrder[addressIndex];
+                        
+                        // Validate that originalAddressIndex is within bounds
+                        if (originalAddressIndex < 0 || originalAddressIndex >= uniqueAddresses.length) {
+                            console.warn(`Invalid optimizedOrder index: ${originalAddressIndex}, skipping`);
+                            continue;
+                        }
+                        
+                        const address = uniqueAddresses[originalAddressIndex];
+                        const ticketsAtThisAddress = addressToTicketsMap.get(address);
+                        
+                        console.log(`Processing address ${addressIndex + 1}/${optimizedOrder.length}: "${address}"`);
+                        console.log(`  - Has tickets: ${ticketsAtThisAddress ? 'YES' : 'NO'}`);
+                        console.log(`  - Ticket count: ${ticketsAtThisAddress ? ticketsAtThisAddress.length : 0}`);
+                        console.log(`  - Current queue position: ${globalQueuePosition}`);
+                        
+                        // Check if tickets exist for this address
+                        if (ticketsAtThisAddress && Array.isArray(ticketsAtThisAddress) && ticketsAtThisAddress.length > 0) {
+                            // Assign sequential queue positions to all tickets at this address
+                            for (const ticket of ticketsAtThisAddress) {
+                                reorderedTickets.push({
+                                    ...ticket,
+                                    queue: globalQueuePosition++
+                                });
+                            }
+                            console.log(`  ✓ Assigned queue positions ${globalQueuePosition - ticketsAtThisAddress.length} to ${globalQueuePosition - 1} for address: ${address}`);
+                        } else {
+                            console.warn(`  ✗ No tickets found for address: ${address} - skipping queue position assignment`);
+                            console.log(`  - Queue position remains: ${globalQueuePosition} (not incremented)`);
+                        }
+                    }
+                    
+                    console.log(`=== QUEUE ASSIGNMENT SUMMARY ===`);
+                    console.log(`Final queue position: ${globalQueuePosition}`);
+                    console.log(`Total tickets assigned: ${reorderedTickets.length}`);
+                    console.log(`Queue numbers used: ${reorderedTickets.map(t => t.queue).join(', ')}`);
+
+                    // Create route data for this cluster
+                    const routeData = {
+                        routeCode: clusterRouteCode,
+                        type: type || 'default',
+                        startDate: startDate || new Date(),
+                        endDate: endDate || new Date(),
+                        encodedPolyline: optimizedRouteResult.encodedPolyline,
+                        totalDistance: optimizedRouteResult.totalDistance,
+                        totalDuration: optimizedRouteResult.totalDuration,
+                        optimizedOrder: JSON.stringify(optimizedRouteResult.optimizedOrder),
+                        optimizationMetadata: JSON.stringify({
+                            optimizationDate: new Date().toISOString(),
+                            totalWaypoints: uniqueAddresses.length,
+                            totalTickets: reorderedTickets.length,
+                            originAddress,
+                            destinationAddress,
+                            method: 'clustered_optimization',
+                            clusterId: cluster.clusterId,
+                            clusterCenter: {
+                                latitude: cluster.centerLat,
+                                longitude: cluster.centerLng
+                            },
+                            maxDistance: maxDistance,
+                            apiCallsUsed: 1
+                        }),
+                        tickets: reorderedTickets
+                    };
+
+                    // Save this cluster route
+                    const savedRoute = await this.saveOptimizedRoute(routeData, createdBy);
+                    
+                    optimizedRoutes.push({
+                        clusterId: cluster.clusterId,
+                        routeId: savedRoute.routeid,
+                        routeCode: savedRoute.routecode,
+                        totalDistance: savedRoute.totaldistance,
+                        totalDuration: savedRoute.totalduration,
+                        ticketCount: reorderedTickets.length,
+                        centerLat: cluster.centerLat,
+                        centerLng: cluster.centerLng
+                    });
+
+                } catch (error) {
+                    console.error(`Error optimizing cluster ${i + 1}:`, error);
+                    errors.push({
+                        clusterId: cluster.clusterId,
+                        error: error.message,
+                        ticketCount: cluster.tickets.length
+                    });
+                }
+            }
+
+            // Step 3: Prepare response
+            const totalDistance = optimizedRoutes.reduce((sum, route) => sum + route.totalDistance, 0);
+            const totalDuration = optimizedRoutes.reduce((sum, route) => sum + route.totalDuration, 0);
+            const totalTickets = optimizedRoutes.reduce((sum, route) => sum + route.ticketCount, 0);
+
+            const responseData = {
+                success: true,
+                message: `Successfully optimized ${optimizedRoutes.length} clusters with ${totalTickets} total tickets`,
+                data: {
+                    baseRouteCode: routeCode,
+                    totalClusters: clusters.length,
+                    optimizedRoutes: optimizedRoutes.length,
+                    totalDistance,
+                    totalDuration,
+                    totalTickets,
+                    clusters: clusters.map(cluster => ({
+                        clusterId: cluster.clusterId,
+                        ticketCount: cluster.tickets.length,
+                        centerLat: cluster.centerLat,
+                        centerLng: cluster.centerLng
+                    })),
+                    errors: errors.length > 0 ? errors : undefined
+                },
+                metadata: {
+                    optimizationDate: new Date().toISOString(),
+                    method: 'clustered_optimization',
+                    maxDistance,
+                    apiCallsUsed: optimizedRoutes.length
+                }
+            };
+
+            if (errors.length > 0) {
+                responseData.warnings = `${errors.length} clusters failed to optimize`;
+            }
+
+            return responseData;
+
+        } catch (error) {
+            console.error('Clustered route optimization failed:', error);
+            return this.handleError(error, 'clustered_route_optimization', {
+                ticketCount: ticketIds.length,
+                routeCode,
+                type
+            });
+        }
+    }
+
+    /**
      * Saves the optimized route data and associated tickets to the database.
      * This method assumes your `Routes` and `RouteTickets` models are correctly implemented.
      * @param {Object} routeData - The processed route data including polyline, order, etc.
@@ -221,8 +499,8 @@ class RouteOptimizationService {
                 routeData.encodedPolyline,
                 routeData.totalDistance,
                 routeData.totalDuration,
-                routeData.optimizedOrder,
-                routeData.optimizationMetadata,
+                JSON.stringify(routeData.optimizedOrder),
+                JSON.stringify(routeData.optimizationMetadata),
                 createdBy,
                 createdBy
             );
@@ -305,6 +583,22 @@ class RouteOptimizationService {
 
             console.log(`Deduplicated ${ticketsWithAddresses.length} tickets into ${uniqueAddresses.length} unique addresses`);
             console.log('Unique addresses for optimization:', uniqueAddresses);
+
+            // Step 2.5: Check if we need to use clustering (more than 25 unique addresses)
+            if (uniqueAddresses.length > 25) {
+                console.log(`More than 25 unique addresses (${uniqueAddresses.length}) detected. Using clustering approach.`);
+                return await this.optimizeRouteWithClustering(
+                    ticketIds,
+                    routeCode,
+                    type,
+                    originAddress,
+                    destinationAddress,
+                    startDate,
+                    endDate,
+                    createdBy,
+                    options
+                );
+            }
 
             // Step 3: Check existing Addresses table and only geocode new addresses
             const geocodedAddresses = await this.batchGeocodeWithAddresses(uniqueAddresses);

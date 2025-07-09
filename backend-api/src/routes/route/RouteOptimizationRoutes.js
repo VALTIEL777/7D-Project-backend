@@ -45,6 +45,13 @@ router.delete('/route/:routeId/remove-tickets', RouteOptimizationController.remo
 router.post('/route/:routeId/reoptimize', RouteOptimizationController.reoptimizeRoute);
 
 /**
+ * @route POST /api/route-optimization/optimize-clustered
+ * @desc Optimize routes by clustering locations into groups of max 25 locations each
+ * @access Private (assuming you have auth middleware)
+ */
+router.post('/optimize-clustered', RouteOptimizationController.optimizeClustered);
+
+/**
  * @route POST /api/route-optimization/suggest-addresses
  * @desc Find similar or nearby addresses for tickets missing valid addresses
  * @access Private (assuming you have auth middleware)
