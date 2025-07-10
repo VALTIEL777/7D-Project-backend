@@ -275,7 +275,8 @@ CREATE TABLE Addresses (
     updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     deletedAt TIMESTAMP,
     createdBy INTEGER REFERENCES Users(UserId),
-    updatedBy INTEGER REFERENCES Users(UserId)
+    updatedBy INTEGER REFERENCES Users(UserId),
+    UNIQUE(addressNumber, addressCardinal, addressStreet, addressSuffix)
 );
 CREATE TABLE TicketAddresses (
     ticketId INTEGER REFERENCES Tickets(ticketId),
@@ -423,7 +424,41 @@ CREATE TABLE Equipment(
     updatedBy INTEGER REFERENCES Users(UserId)
 );
 
+CREATE TABLE PricingAgreements(
+    pricingAgreementId SERIAL PRIMARY KEY,
+    supplierId INTEGER REFERENCES Suppliers(supplierId),
+    startDate DATE,
+    endDate DATE,
+    fileURL TEXT,
+    createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    deletedAt TIMESTAMP,
+    createdBy INTEGER REFERENCES Users(UserId),
+    updatedBy INTEGER REFERENCES Users(UserId)
+);
 
+CREATE TABLE InventoryPricingAgreements(
+    pricingAgreementId INTEGER REFERENCES PricingAgreements(pricingAgreementId),
+    inventoryId INTEGER REFERENCES Inventory(inventoryId),
+    costPerUnit DECIMAL,
+    PRIMARY KEY (pricingAgreementId, inventoryId),
+    createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    deletedAt TIMESTAMP,
+    createdBy INTEGER REFERENCES Users(UserId),
+    updatedBy INTEGER REFERENCES Users(UserId)
+);
+
+CREATE TABLE EquipmentPricingAgreements(
+    pricingAgreementId INTEGER REFERENCES PricingAgreements(pricingAgreementId),
+    equipmentId INTEGER REFERENCES Equipment(equipmentId),
+    PRIMARY KEY (pricingAgreementId, equipmentId),
+    createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    deletedAt TIMESTAMP,
+    createdBy INTEGER REFERENCES Users(UserId),
+    updatedBy INTEGER REFERENCES Users(UserId)
+);
 
 
 CREATE TABLE usedInventory(
@@ -464,6 +499,8 @@ CREATE TABLE RTRs (
     updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     deletedAt TIMESTAMP
 );
+
+-- GeocodeCache table removed - using Addresses table with placeid field instead
 
 CREATE OR REPLACE FUNCTION set_updated_at_timestamp()
 RETURNS TRIGGER AS $$
@@ -681,9 +718,9 @@ INSERT INTO People (UserId, firstname, lastname, role, phone, email) VALUES
 
 -- Zone Managers (1-4)
 INSERT INTO People (UserId, firstname, lastname, role, phone, email) VALUES
-(NULL, 'Barbara', 'Powell', 'Zone 1 Manager', '8723622282', 'Anthony.Gross@wecenergygroup.com'),
+(NULL, 'Barbara', 'Powell', 'Zone 1 Manager', '8723622282', 'Barbara.Powell1@peoplesgasdelivery.com'),
 (NULL, 'Mario', 'Ortiz', 'Zone 2 Manager', '3123660935', 'Mario.Ortiz@peoplesgasdelivery.com'),
-(NULL, 'Bryan', 'Guzman', 'Zone 3 Manager', '3123302832', 'Daniel.Cervantes@peoplesgasdelivery.com'),
+(NULL, 'Bryan', 'Guzman', 'Zone 3 Manager', '3123302832', 'Bryan.Guzman@peoplesgasdelivery.com'),
 (NULL, 'Matthew', 'Puljic', 'Zone 4 Manager', '3123661938', 'Matthew.Puljic@peoplesgasdelivery.com');
 
 -- Regional Managers (North/Central/South)

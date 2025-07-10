@@ -110,23 +110,34 @@ function parseAddress(address) {
   address = address.trim();
   address = address.replace(/^(\d+)-\d+/, "$1");
 
-  const regex = /^(\d+)\s+([NSEW]{1,2})?\s*([\w\s]+?)\s+(ST|AVE|BLVD|RD|LN|DR|PL|CT|CIR|WAY|TER|TRL|PARKWAY|PKWY|HWY|EXPY|EXPRESSWAY|CRES|SQ|ALY|PLZ|BND|PT|ROW|RTE)?\.?$/i;
-  const match = address.match(regex);
-
-  if (!match) {
+  // Strict Chicago-style regex (requires suffix)
+  const strict = /^(\d+(?:-\d+)?)\s+(?:(N|S|E|W|NE|NW|SE|SW)\s+)?([\w.'\- ]+?)\s+(ST(?:REET)?|AVE(?:NUE)?|BLVD(?:EVARD)?|RD(?:ROAD)?|LN(?:LANE)?|DR(?:IVE)?|PL(?:ACE)?|CT(?:COURT)?|CIR(?:CLE)?|WAY|TER(?:RACE)?|TRL(?:TRAIL)?|PARKWAY|PKWY|HWY(?:HIGHWAY)?|EXPY|EXPRESSWAY|CRES(?:CENT)?|SQ(?:UARE)?|ALY(?:ALLEY)?|PLZ(?:A)?|BND(?:BEND)?|PT(?:POINT)?|ROW|RTE(?:ROUTE)?)\.?\s*$/i;
+  let match = address.match(strict);
+  if (match) {
     return {
-      addressNumber: null,
-      addressCardinal: null,
-      addressStreet: address,
+      addressNumber: match[1] || null,
+      addressCardinal: match[2] || null,
+      addressStreet: match[3]?.trim() || null,
+      addressSuffix: match[4] || null,
+    };
+  }
+  // Fallback: no suffix required
+  const fallback = /^(\d+(?:-\d+)?)\s+(?:(N|S|E|W|NE|NW|SE|SW)\s+)?([\w.'\- ]+)$/i;
+  match = address.match(fallback);
+  if (match) {
+    return {
+      addressNumber: match[1] || null,
+      addressCardinal: match[2] || null,
+      addressStreet: match[3]?.trim() || null,
       addressSuffix: null,
     };
   }
-
+  // If all fails, return as-is
   return {
-    addressNumber: match[1] || null,
-    addressCardinal: match[2] || null,
-    addressStreet: match[3]?.trim() || null,
-    addressSuffix: match[4] || null,
+    addressNumber: null,
+    addressCardinal: null,
+    addressStreet: address,
+    addressSuffix: null,
   };
 }
 
@@ -142,7 +153,8 @@ function parseRangeAddress(address) {
 
   address = address.trim();
 
-  const regex = /^([\d\-]+)\s+([NSEW]{1,2})?\s*([\w\s]+?)\s*(ST|AVE|BLVD|RD|LN|DR|PL|CT|CIR|WAY|TER|TRL|PARKWAY|PKWY|HWY|EXPY|EXPRESSWAY|CRES|SQ|ALY|PLZ|BND|PT|ROW|RTE)?\.?$/i;
+  // Updated regex to make street suffix optional and handle addresses without suffixes
+  const regex = /^([\d\-]+)\s+([NSEW]{1,2})?\s*([\w\s]+?)(?:\s+(ST|AVE|BLVD|RD|LN|DR|PL|CT|CIR|WAY|TER|TRL|PARKWAY|PKWY|HWY|EXPY|EXPRESSWAY|CRES|SQ|ALY|PLZ|BND|PT|ROW|RTE))?\.?$/i;
   const match = address.match(regex);
 
   if (!match) {
@@ -248,24 +260,26 @@ exports.uploadExcel = async (req, res) => {
     const createdBy = req.body.createdBy || 1; // Default user ID
     const updatedBy = req.body.updatedBy || 1; // Default user ID
 
-    // Check if "Seven-D" sheet exists
-    if (!workbook.SheetNames.includes('Seven-D')) {
+    // Check if "Seven-D" or "Seven-D ALL" sheet exists
+    let sheetName = null;
+    if (workbook.SheetNames.includes('Seven-D')) {
+      sheetName = 'Seven-D';
+    } else if (workbook.SheetNames.includes('Seven-D ALL')) {
+      sheetName = 'Seven-D ALL';
+    } else {
       return res.status(400).json({
         success: false,
-        error: 'Sheet "Seven-D" not found in the Excel file',
+        error: 'Neither "Seven-D" nor "Seven-D ALL" sheet found in the Excel file',
         availableSheets: workbook.SheetNames
       });
     }
-
-    // Only process the "Seven-D" sheet
-    const sheetName = 'Seven-D';
     const sheet = workbook.Sheets[sheetName];
     const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
 
     if (rows.length === 0) {
       return res.status(400).json({
         success: false,
-        error: 'Sheet "Seven-D" is empty'
+        error: `Sheet "${sheetName}" is empty`
       });
     }
 
@@ -947,7 +961,16 @@ function compareTicketData(excelData, databaseTicket) {
 // Helper function to normalize values for comparison
 function normalizeValue(value) {
   if (value === null || value === undefined) return '';
-  if (typeof value === 'string') return value.trim().toLowerCase();
+  if (typeof value === 'string') {
+    let trimmed = value.trim().toLowerCase();
+    // Remove trailing ' - (number/number)' from any string
+    trimmed = trimmed.replace(/\s*-\s*\(\d{1,2}\/\d{2,4}\)\s*$/, '').trim();
+    // Special handling for permit extension messages
+    if (trimmed.includes('tk - needs permit extension')) {
+      return trimmed;
+    }
+    return trimmed;
+  }
   if (typeof value === 'number') return value.toString();
   if (value instanceof Date) return value.toISOString();
   return String(value).trim().toLowerCase();
@@ -1167,22 +1190,26 @@ exports.uploadForStepper = async (req, res) => {
     // Parse Excel file but don't save to MinIO yet
     const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
     
-    if (!workbook.SheetNames.includes('Seven-D')) {
+    // Check if "Seven-D" or "Seven-D ALL" sheet exists
+    let sheetName = null;
+    if (workbook.SheetNames.includes('Seven-D')) {
+      sheetName = 'Seven-D';
+    } else if (workbook.SheetNames.includes('Seven-D ALL')) {
+      sheetName = 'Seven-D ALL';
+    } else {
       return res.status(400).json({
         success: false,
-        error: 'Sheet "Seven-D" not found in the Excel file',
+        error: 'Neither "Seven-D" nor "Seven-D ALL" sheet found in the Excel file',
         availableSheets: workbook.SheetNames
       });
     }
-
-    const sheetName = 'Seven-D';
     const sheet = workbook.Sheets[sheetName];
     const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
 
     if (rows.length === 0) {
       return res.status(400).json({
         success: false,
-        error: 'Sheet "Seven-D" is empty'
+        error: `Sheet "${sheetName}" is empty`
       });
     }
 
@@ -1983,22 +2010,26 @@ exports.updateTicketsWithDatabaseValues = async (req, res) => {
     // 1. Parse the uploaded Excel file using existing parseExcelData function
     const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
     
-    if (!workbook.SheetNames.includes('Seven-D')) {
+    // Check if "Seven-D" or "Seven-D ALL" sheet exists
+    let sheetName = null;
+    if (workbook.SheetNames.includes('Seven-D')) {
+      sheetName = 'Seven-D';
+    } else if (workbook.SheetNames.includes('Seven-D ALL')) {
+      sheetName = 'Seven-D ALL';
+    } else {
       return res.status(400).json({
         success: false,
-        error: 'Sheet "Seven-D" not found in the Excel file',
+        error: 'Neither "Seven-D" nor "Seven-D ALL" sheet found in the Excel file',
         availableSheets: workbook.SheetNames
       });
     }
-
-    const sheetName = 'Seven-D';
     const sheet = workbook.Sheets[sheetName];
     const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
 
     if (rows.length === 0) {
       return res.status(400).json({
         success: false,
-        error: 'Sheet "Seven-D" is empty'
+        error: `Sheet "${sheetName}" is empty`
       });
     }
 

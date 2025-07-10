@@ -331,3 +331,40 @@ INSERT INTO Quadrants
 ('PGL-223', 'South', 'Zone 4', '41.635302', '41.64751', '-87.585673', '-87.566399', 3, 14 ),
 ('PGL-224', 'South', 'Zone 4', '41.635302', '41.64751', '-87.566399', '-87.545869', 3, 14 ),
 ('PGL-225', 'South', 'Zone 4', '41.635302', '41.64751', '-87.545869', '-87.524547', 3, 14 );
+
+
+
+-- Update Central Shop Zone 1 quadrants to user ID 9
+UPDATE Quadrants 
+SET zoneManagerId = 9
+WHERE name IN (
+    'PGL-67', 'PGL-68', 'PGL-69', 'PGL-70', 'PGL-71', 'PGL-72',
+    'PGL-76', 'PGL-77', 'PGL-78', 'PGL-79', 'PGL-80', 'PGL-81',
+    'PGL-85', 'PGL-86', 'PGL-87', 'PGL-88',
+    'PGL-92', 'PGL-93', 'PGL-94', 'PGL-95',
+    'PGL-99', 'PGL-100', 'PGL-101', 'PGL-102'
+);
+
+UPDATE Quadrants 
+SET  zoneManagerId = 10
+WHERE name IN (
+    'PGL-64', 'PGL-65', 'PGL-66',
+    'PGL-73', 'PGL-74', 'PGL-75',
+    'PGL-82', 'PGL-83', 'PGL-84',
+    'PGL-89', 'PGL-90', 'PGL-91'
+);
+
+UPDATE Quadrants 
+SET  zoneManagerId = 11
+WHERE name IN (
+    'PGL-106', 'PGL-107', 'PGL-108', 'PGL-109',
+    'PGL-114', 'PGL-115', 'PGL-116', 'PGL-117',
+    'PGL-122', 'PGL-123', 'PGL-124', 'PGL-125',
+    'PGL-131', 'PGL-132', 'PGL-133', 'PGL-134',
+    'PGL-140', 'PGL-141', 'PGL-142', 'PGL-143',
+    'PGL-150', 'PGL-151', 'PGL-152', 'PGL-153',
+    'PGL-204', 'PGL-205', 'PGL-206',
+    'PGL-207', 'PGL-208', 'PGL-209',
+    'PGL-210', 'PGL-211',
+    'PGL-219', 'PGL-220'
+);

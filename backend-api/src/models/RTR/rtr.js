@@ -93,6 +93,14 @@ class RTR {
     return res.rows[0].ticketid;
   }
 
+  static async findAddress(addressNumber, addressCardinal, addressStreet, addressSuffix) {
+    const res = await db.query(
+      'SELECT addressId FROM Addresses WHERE addressNumber = $1 AND addressCardinal = $2 AND addressStreet = $3 AND addressSuffix = $4 AND deletedAt IS NULL;',
+      [addressNumber, addressCardinal, addressStreet, addressSuffix]
+    );
+    return res.rows[0]?.addressid;
+  }
+
   static async createAddress(addressNumber, addressCardinal, addressStreet, addressSuffix, createdBy, updatedBy) {
     const res = await db.query(
       'INSERT INTO Addresses(addressNumber, addressCardinal, addressStreet, addressSuffix, createdBy, updatedBy) VALUES($1, $2, $3, $4, $5, $6) RETURNING addressId;',
@@ -101,12 +109,52 @@ class RTR {
     return res.rows[0].addressid;
   }
 
+  static async findOrCreateAddress(addressNumber, addressCardinal, addressStreet, addressSuffix, createdBy, updatedBy) {
+    // First try to find existing address
+    const existingAddressId = await this.findAddress(addressNumber, addressCardinal, addressStreet, addressSuffix);
+    
+    if (existingAddressId) {
+      console.log(`Found existing address ID: ${existingAddressId} for ${addressNumber} ${addressCardinal} ${addressStreet} ${addressSuffix}`);
+      return existingAddressId;
+    }
+    
+    // If not found, create new address
+    console.log(`Creating new address for ${addressNumber} ${addressCardinal} ${addressStreet} ${addressSuffix}`);
+    const newAddressId = await this.createAddress(addressNumber, addressCardinal, addressStreet, addressSuffix, createdBy, updatedBy);
+    console.log(`Created new address ID: ${newAddressId}`);
+    return newAddressId;
+  }
+
+  static async findTicketAddress(ticketId, addressId) {
+    const res = await db.query(
+      'SELECT * FROM TicketAddresses WHERE ticketId = $1 AND addressId = $2 AND deletedAt IS NULL;',
+      [ticketId, addressId]
+    );
+    return res.rows[0];
+  }
+
   static async createTicketAddress(ticketId, addressId, isPartner, is7d, createdBy, updatedBy) {
     const res = await db.query(
       'INSERT INTO TicketAddresses(ticketId, addressId, ispartner, is7d, createdBy, updatedBy) VALUES($1, $2, $3, $4, $5, $6) RETURNING *;',
       [ticketId, addressId, isPartner, is7d, createdBy, updatedBy]
     );
     return res.rows[0];
+  }
+
+  static async findOrCreateTicketAddress(ticketId, addressId, isPartner, is7d, createdBy, updatedBy) {
+    // First try to find existing ticket-address relationship
+    const existingTicketAddress = await this.findTicketAddress(ticketId, addressId);
+    
+    if (existingTicketAddress) {
+      console.log(`Found existing ticket-address relationship: Ticket ${ticketId} - Address ${addressId}`);
+      return existingTicketAddress;
+    }
+    
+    // If not found, create new relationship
+    console.log(`Creating new ticket-address relationship: Ticket ${ticketId} - Address ${addressId}`);
+    const newTicketAddress = await this.createTicketAddress(ticketId, addressId, isPartner, is7d, createdBy, updatedBy);
+    console.log(`Created new ticket-address relationship`);
+    return newTicketAddress;
   }
 
   static async findContractUnitByName(name) {
@@ -501,9 +549,9 @@ class RTR {
         );
         console.log(`Step 6 - Created Ticket ID: ${ticketId}`);
 
-        // Step 7: Create Address
-        console.log(`Step 7: Creating address with ADDRESS: ${row.ADDRESS}`);
-        const addressId = await this.createAddress(
+        // Step 7: Find or Create Address
+        console.log(`Step 7: Finding or creating address with ADDRESS: ${row.ADDRESS}`);
+        const addressId = await this.findOrCreateAddress(
           row.addressNumber,
           row.addressCardinal,
           row.addressStreet,
@@ -511,11 +559,11 @@ class RTR {
           createdBy,
           updatedBy
         );
-        console.log(`Step 7 - Created Address ID: ${addressId}`);
+        console.log(`Step 7 - Address ID: ${addressId}`);
 
-        // Step 8: Create TicketAddress
-        console.log(`Step 8: Creating ticket address link`);
-        await this.createTicketAddress(
+        // Step 8: Find or Create TicketAddress
+        console.log(`Step 8: Finding or creating ticket address link`);
+        await this.findOrCreateTicketAddress(
           ticketId,
           addressId,
           true, // isPartner
@@ -523,7 +571,7 @@ class RTR {
           createdBy,
           updatedBy
         );
-        console.log(`Step 8 - Created TicketAddress link`);
+        console.log(`Step 8 - TicketAddress link established`);
 
         // Step 9: Create Permit
         console.log(`Step 9: Creating permit with AGENCY_NO: ${row.AGENCY_NO}`);
@@ -610,9 +658,9 @@ class RTR {
     try {
       console.log(`Generating TicketStatus records for ticket ${ticketId}...`);
       
-      // First, get the ticket's contractUnitId
+      // First, get the ticket's contractUnitId and partnerComment
       const ticketRes = await db.query(
-        'SELECT contractUnitId FROM Tickets WHERE ticketId = $1 AND deletedAt IS NULL;',
+        'SELECT contractUnitId, PartnerComment FROM Tickets WHERE ticketId = $1 AND deletedAt IS NULL;',
         [ticketId]
       );
       
@@ -621,6 +669,26 @@ class RTR {
       }
       
       const contractUnitId = ticketRes.rows[0].contractunitid;
+      const partnerComment = ticketRes.rows[0].partnercomment;
+      
+      // Check if partnerComment contains mobilization-related keywords
+      const mobilizationKeywords = ['mob', 'mobilization'];
+      const hasMobilizationInComment = partnerComment && 
+        mobilizationKeywords.some(keyword => 
+          partnerComment.toLowerCase().includes(keyword.toLowerCase())
+        );
+      
+      if (hasMobilizationInComment) {
+        console.log(`Ticket ${ticketId} has mobilization-related content in partnerComment: "${partnerComment}", skipping TicketStatus generation`);
+        return {
+          ticketId: ticketId,
+          contractUnitId: contractUnitId,
+          phasesFound: 0,
+          statusesCreated: 0,
+          skipped: true,
+          reason: 'Mobilization-related content in partnerComment'
+        };
+      }
       
       if (!contractUnitId) {
         console.log(`Ticket ${ticketId} has no ContractUnit assigned, skipping TicketStatus generation`);
@@ -635,6 +703,32 @@ class RTR {
       }
       
       console.log(`Ticket ${ticketId} has ContractUnit ${contractUnitId}`);
+      
+      // Check if ContractUnit name contains mobilization-related keywords
+      const contractUnitRes = await db.query(
+        'SELECT name FROM ContractUnits WHERE contractUnitId = $1 AND deletedAt IS NULL;',
+        [contractUnitId]
+      );
+      
+      if (contractUnitRes.rows.length > 0) {
+        const contractUnitName = contractUnitRes.rows[0].name;
+        const hasMobilizationInContractUnit = contractUnitName && 
+          mobilizationKeywords.some(keyword => 
+            contractUnitName.toLowerCase().includes(keyword.toLowerCase())
+          );
+        
+        if (hasMobilizationInContractUnit) {
+          console.log(`Ticket ${ticketId} has ContractUnit with mobilization-related name: "${contractUnitName}", skipping TicketStatus generation`);
+          return {
+            ticketId: ticketId,
+            contractUnitId: contractUnitId,
+            phasesFound: 0,
+            statusesCreated: 0,
+            skipped: true,
+            reason: 'Mobilization-related ContractUnit name'
+          };
+        }
+      }
       
       // Get the ContractUnit phases (TaskStatus records) for this ContractUnit
       const phasesRes = await db.query(
