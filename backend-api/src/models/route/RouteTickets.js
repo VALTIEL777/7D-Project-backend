@@ -10,7 +10,7 @@ class RouteTickets {
   }
 
   static async createBatch(routeTickets) {
-    // Create multiple route tickets in a single transaction
+    // Create multiple route tickets in a single transaction with UPSERT
     const client = await db.pool.connect();
     
     try {
@@ -19,7 +19,15 @@ class RouteTickets {
       const results = [];
       for (const ticket of routeTickets) {
         const res = await client.query(
-          'INSERT INTO RouteTickets(routeId, ticketId, address, queue, createdBy, updatedBy) VALUES($1, $2, $3, $4, $5, $6) RETURNING *;',
+          `INSERT INTO RouteTickets(routeId, ticketId, address, queue, createdBy, updatedBy) 
+           VALUES($1, $2, $3, $4, $5, $6) 
+           ON CONFLICT (routeId, ticketId) 
+           DO UPDATE SET 
+             address = EXCLUDED.address,
+             queue = EXCLUDED.queue,
+             updatedAt = CURRENT_TIMESTAMP,
+             updatedBy = EXCLUDED.updatedBy
+           RETURNING *;`,
           [ticket.routeId, ticket.ticketId, ticket.address, ticket.queue, ticket.createdBy, ticket.updatedBy]
         );
         results.push(res.rows[0]);
@@ -52,6 +60,14 @@ class RouteTickets {
       [routeId]
     );
     return res.rows;
+  }
+
+  static async deleteByRouteAndTicket(routeId, ticketId, updatedBy) {
+    const res = await db.query(
+      'UPDATE RouteTickets SET deletedAt = CURRENT_TIMESTAMP, updatedAt = CURRENT_TIMESTAMP, updatedBy = $1 WHERE routeId = $2 AND ticketId = $3 AND deletedAt IS NULL RETURNING *;',
+      [updatedBy, routeId, ticketId]
+    );
+    return res.rows[0];
   }
 
   static async updateQueue(routeId, ticketId, queue, updatedBy) {

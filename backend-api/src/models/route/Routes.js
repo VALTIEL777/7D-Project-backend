@@ -45,6 +45,17 @@ class Routes {
     return res.rows[0];
   }
 
+  static async updateOptimization(routeId, encodedPolyline, totalDistance, totalDuration, optimizedOrder, updatedBy) {
+    // Convert JavaScript objects to JSON strings for PostgreSQL JSONB fields
+    const optimizedOrderJson = optimizedOrder ? JSON.stringify(optimizedOrder) : null;
+    
+    const res = await db.query(
+      'UPDATE Routes SET encodedPolyline = $1, totalDistance = $2, totalDuration = $3, optimizedOrder = $4, updatedAt = CURRENT_TIMESTAMP, updatedBy = $5 WHERE routeId = $6 AND deletedAt IS NULL RETURNING *;',
+      [encodedPolyline, totalDistance, totalDuration, optimizedOrderJson, updatedBy, routeId]
+    );
+    return res.rows[0];
+  }
+
   // Get route with optimized tickets
   static async findByIdWithOptimizedTickets(routeId) {
     const res = await db.query(`

@@ -549,7 +549,9 @@ router.get('/asphalt', RoutesController.getAsphaltRoutes);
  *   get:
  *     summary: Get tickets ready for spotting routes
  *     tags: [Routes]
- *     description: Retrieves all tickets that are ready for spotting route optimization, including their addresses. These tickets meet the criteria: comment7d is NULL, empty, or TK - PERMIT EXTENDED, and no endingDate for SPOTTING status.
+ *     description: |
+ *       Retrieves all tickets that are ready for spotting route optimization, including their addresses. 
+ *       These tickets meet the criteria: comment7d is NULL, empty, or TK - PERMIT EXTENDED, and no endingDate for SPOTTING status.
  *     responses:
  *       200:
  *         description: Tickets ready for spotting routes retrieved successfully
@@ -643,7 +645,9 @@ router.get('/tickets-ready/spotting', RoutesController.getTicketsReadyForSpottin
  *   get:
  *     summary: Get tickets ready for concrete routes
  *     tags: [Routes]
- *     description: Retrieves all tickets that are ready for concrete route optimization, including their addresses. These tickets meet the criteria: SPOTTING completed (has endingDate) and has SAWCUT status.
+ *     description: |
+ *       Retrieves all tickets that are ready for concrete route optimization, including their addresses. 
+ *       These tickets meet the criteria: SPOTTING completed (has endingDate) and has SAWCUT status.
  *     responses:
  *       200:
  *         description: Tickets ready for concrete routes retrieved successfully
@@ -737,7 +741,9 @@ router.get('/tickets-ready/concrete', RoutesController.getTicketsReadyForConcret
  *   get:
  *     summary: Get tickets ready for asphalt routes
  *     tags: [Routes]
- *     description: Retrieves all tickets that are ready for asphalt route optimization, including their addresses. These tickets meet the criteria: SPOTTING completed and either has GRINDING status (no SAWCUT) or all concrete phases completed.
+ *     description: |
+ *       Retrieves all tickets that are ready for asphalt route optimization, including their addresses. 
+ *       These tickets meet the criteria: SPOTTING completed and either has GRINDING status (no SAWCUT) or all concrete phases completed.
  *     responses:
  *       200:
  *         description: Tickets ready for asphalt routes retrieved successfully
@@ -1378,7 +1384,11 @@ router.post('/optimize/concrete', RoutesController.optimizeConcreteRoute);
  *   post:
  *     summary: Optimize and create an asphalt route
  *     tags: [Routes]
- *     description: Creates an optimized route for asphalt operations. Automatically selects tickets where SPOTTING is completed and either: 1) Has GRINDING status but no SAWCUT, or 2) All concrete phases completed (SAWCUT, REMOVAL, FRAMING, POURING). If originAddress and destinationAddress are not provided, they will default to "2000 W 43rd St, Chicago, IL 60609, Estados Unidos".
+ *     description: |
+ *       Creates an optimized route for asphalt operations. Automatically selects tickets where SPOTTING is completed and either: 
+ *       1) Has GRINDING status but no SAWCUT, or 
+ *       2) All concrete phases completed (SAWCUT, REMOVAL, FRAMING, POURING). 
+ *       If originAddress and destinationAddress are not provided, they will default to "2000 W 43rd St, Chicago, IL 60609, Estados Unidos".
  *     requestBody:
  *       required: true
  *       content:

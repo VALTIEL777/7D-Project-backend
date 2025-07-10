@@ -1,4 +1,4 @@
-FROM node:18-bullseye-slim
+FROM node:18-slim
 WORKDIR /usr/src/app
 
 # Install gcloud CLI and curl for health checks
