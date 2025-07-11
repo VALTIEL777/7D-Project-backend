@@ -505,6 +505,69 @@ const RoutesController = {
     }
   },
 
+  // Get completed spotting routes
+  async getCompletedSpottingRoutes(req, res) {
+    try {
+      const routes = await Routes.findCompletedByTypeWithTickets('SPOTTER');
+      
+      res.status(200).json({
+        message: 'Completed spotting routes retrieved successfully',
+        type: 'SPOTTER',
+        status: 'COMPLETED',
+        count: routes.length,
+        routes: routes
+      });
+    } catch (error) {
+      console.error('Error getting completed spotting routes:', error);
+      res.status(500).json({ 
+        error: 'Failed to get completed spotting routes', 
+        details: error.message 
+      });
+    }
+  },
+
+  // Get completed concrete routes
+  async getCompletedConcreteRoutes(req, res) {
+    try {
+      const routes = await Routes.findCompletedByTypeWithTickets('CONCRETE');
+      
+      res.status(200).json({
+        message: 'Completed concrete routes retrieved successfully',
+        type: 'CONCRETE',
+        status: 'COMPLETED',
+        count: routes.length,
+        routes: routes
+      });
+    } catch (error) {
+      console.error('Error getting completed concrete routes:', error);
+      res.status(500).json({ 
+        error: 'Failed to get completed concrete routes', 
+        details: error.message 
+      });
+    }
+  },
+
+  // Get completed asphalt routes
+  async getCompletedAsphaltRoutes(req, res) {
+    try {
+      const routes = await Routes.findCompletedByTypeWithTickets('ASPHALT');
+      
+      res.status(200).json({
+        message: 'Completed asphalt routes retrieved successfully',
+        type: 'ASPHALT',
+        status: 'COMPLETED',
+        count: routes.length,
+        routes: routes
+      });
+    } catch (error) {
+      console.error('Error getting completed asphalt routes:', error);
+      res.status(500).json({ 
+        error: 'Failed to get completed asphalt routes', 
+        details: error.message 
+      });
+    }
+  },
+
   // Get tickets ready for spotting routes
   async getTicketsReadyForSpotting(req, res) {
     try {
