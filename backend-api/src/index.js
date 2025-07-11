@@ -18,6 +18,8 @@ const allowedOrigins = [
   'http://localhost:3002',
   'http://localhost:3003',
   'http://localhost:3004',
+  'http://localhost:4200',
+  'http://localhost:52329',
   'http://localhost:9000',
   'http://localhost:9001',
   'http://localhost:5432',
@@ -158,5 +160,5 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server listening on port ${PORT}`);
   
   // Start the notification scheduler
-  ScheduledTasks.startScheduler();
+  //ScheduledTasks.startScheduler();
 });

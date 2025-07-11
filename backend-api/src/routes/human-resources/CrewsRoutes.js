@@ -273,4 +273,93 @@ router.put('/:crewId', CrewsController.updateCrews);
  */
 router.delete('/:crewId', CrewsController.deleteCrews);
 
+/**
+ * @swagger
+ * /crews/details/{crewId}:
+ *   get:
+ *     summary: Get detailed crew information
+ *     tags: [Crews]
+ *     parameters:
+ *       - in: path
+ *         name: crewId
+ *         schema:
+ *           type: integer
+ *         required: true
+ *         description: ID of the crew to retrieve details for
+ *     responses:
+ *       200:
+ *         description: Detailed crew information retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   routeid:
+ *                     type: integer
+ *                   routecode:
+ *                     type: string
+ *                   ticketid:
+ *                     type: integer
+ *                   taskstatusid:
+ *                     type: integer
+ *                     nullable: true
+ *                   taskstatusname:
+ *                     type: string
+ *                     nullable: true
+ *                   addressnumber:
+ *                     type: string
+ *                     nullable: true
+ *                   addresscardinal:
+ *                     type: string
+ *                     nullable: true
+ *                   addressstreet:
+ *                     type: string
+ *                     nullable: true
+ *                   addresssuffix:
+ *                     type: string
+ *                     nullable: true
+ *                   contractunitid:
+ *                     type: integer
+ *                     nullable: true
+ *                   itemcode:
+ *                     type: string
+ *                     nullable: true
+ *                   contractunit_name:
+ *                     type: string
+ *                     nullable: true
+ *                   unit:
+ *                     type: string
+ *                     nullable: true
+ *                   contractunit_description:
+ *                     type: string
+ *                     nullable: true
+ *                   costperunit:
+ *                     type: number
+ *                     format: float
+ *                     nullable: true
+ *                   zone:
+ *                     type: string
+ *                     nullable: true
+ *                   paymentclause:
+ *                     type: string
+ *                     nullable: true
+ *                   necessaryphaseid:
+ *                     type: integer
+ *                     nullable: true
+ *                   phase_name:
+ *                     type: string
+ *                     nullable: true
+ *                   phase_description:
+ *                     type: string
+ *                     nullable: true
+ *       404:
+ *         description: Crew not found
+ *       500:
+ *         description: Server error
+ */
+router.get('/details/:crewId', CrewsController.getCrewDetails);
+
+
 module.exports = router; 
