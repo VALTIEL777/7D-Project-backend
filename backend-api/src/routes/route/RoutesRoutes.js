@@ -545,6 +545,318 @@ router.get('/asphalt', RoutesController.getAsphaltRoutes);
 
 /**
  * @swagger
+ * /routes/completed/spotting:
+ *   get:
+ *     summary: Get all completed spotting routes
+ *     tags: [Routes]
+ *     description: Retrieves all completed spotting routes (routes with endDate set). This shows routes that have been finished.
+ *     responses:
+ *       200:
+ *         description: Completed spotting routes retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Completed spotting routes retrieved successfully"
+ *                 type:
+ *                   type: string
+ *                   example: "SPOTTER"
+ *                 status:
+ *                   type: string
+ *                   example: "COMPLETED"
+ *                 count:
+ *                   type: integer
+ *                   description: Number of completed spotting routes returned
+ *                   example: 3
+ *                 routes:
+ *                   type: array
+ *                   description: Array of completed spotting route objects
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       routeId:
+ *                         type: integer
+ *                         description: Unique identifier for the route
+ *                         example: 1
+ *                       routeCode:
+ *                         type: string
+ *                         description: Route code/name
+ *                         example: "SPOTTER-2024-001"
+ *                       type:
+ *                         type: string
+ *                         description: Type of route
+ *                         example: "SPOTTER"
+ *                       startDate:
+ *                         type: string
+ *                         format: date
+ *                         description: Start date of the route
+ *                         example: "2024-06-01"
+ *                       endDate:
+ *                         type: string
+ *                         format: date
+ *                         description: End date of the route (completion date)
+ *                         example: "2024-06-02"
+ *                       totalDistance:
+ *                         type: number
+ *                         description: Total distance in meters
+ *                         example: 15420.5
+ *                       totalDuration:
+ *                         type: number
+ *                         description: Total duration in seconds
+ *                         example: 1800
+ *                       createdAt:
+ *                         type: string
+ *                         format: date-time
+ *                         description: Route creation timestamp
+ *                         example: "2024-06-01T10:30:00Z"
+ *                       tickets:
+ *                         type: array
+ *                         description: Array of tickets associated with this route
+ *                         items:
+ *                           type: object
+ *                           properties:
+ *                             ticketId:
+ *                               type: integer
+ *                               description: Unique identifier for the ticket
+ *                               example: 101
+ *                             ticketCode:
+ *                               type: string
+ *                               description: Ticket code/name
+ *                               example: "TICKET-001"
+ *                             address:
+ *                               type: string
+ *                               description: Full address of the ticket location
+ *                               example: "123 Main St, Chicago, IL"
+ *                             queue:
+ *                               type: integer
+ *                               description: Position in the optimized route order
+ *                               example: 0
+ *                             quantity:
+ *                               type: integer
+ *                               description: Quantity for this ticket
+ *                               example: 1
+ *                             amountToPay:
+ *                               type: number
+ *                               description: Amount to pay for this ticket
+ *                               example: 150.00
+ *       500:
+ *         description: Server error
+ */
+router.get('/completed/spotting', RoutesController.getCompletedSpottingRoutes);
+
+/**
+ * @swagger
+ * /routes/completed/concrete:
+ *   get:
+ *     summary: Get all completed concrete routes
+ *     tags: [Routes]
+ *     description: Retrieves all completed concrete routes (routes with endDate set). This shows routes that have been finished.
+ *     responses:
+ *       200:
+ *         description: Completed concrete routes retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Completed concrete routes retrieved successfully"
+ *                 type:
+ *                   type: string
+ *                   example: "CONCRETE"
+ *                 status:
+ *                   type: string
+ *                   example: "COMPLETED"
+ *                 count:
+ *                   type: integer
+ *                   description: Number of completed concrete routes returned
+ *                   example: 2
+ *                 routes:
+ *                   type: array
+ *                   description: Array of completed concrete route objects
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       routeId:
+ *                         type: integer
+ *                         description: Unique identifier for the route
+ *                         example: 1
+ *                       routeCode:
+ *                         type: string
+ *                         description: Route code/name
+ *                         example: "CONCRETE-2024-001"
+ *                       type:
+ *                         type: string
+ *                         description: Type of route
+ *                         example: "CONCRETE"
+ *                       startDate:
+ *                         type: string
+ *                         format: date
+ *                         description: Start date of the route
+ *                         example: "2024-06-01"
+ *                       endDate:
+ *                         type: string
+ *                         format: date
+ *                         description: End date of the route (completion date)
+ *                         example: "2024-06-02"
+ *                       totalDistance:
+ *                         type: number
+ *                         description: Total distance in meters
+ *                         example: 15420.5
+ *                       totalDuration:
+ *                         type: number
+ *                         description: Total duration in seconds
+ *                         example: 1800
+ *                       createdAt:
+ *                         type: string
+ *                         format: date-time
+ *                         description: Route creation timestamp
+ *                         example: "2024-06-01T10:30:00Z"
+ *                       tickets:
+ *                         type: array
+ *                         description: Array of tickets associated with this route
+ *                         items:
+ *                           type: object
+ *                           properties:
+ *                             ticketId:
+ *                               type: integer
+ *                               description: Unique identifier for the ticket
+ *                               example: 101
+ *                             ticketCode:
+ *                               type: string
+ *                               description: Ticket code/name
+ *                               example: "TICKET-001"
+ *                             address:
+ *                               type: string
+ *                               description: Full address of the ticket location
+ *                               example: "123 Main St, Chicago, IL"
+ *                             queue:
+ *                               type: integer
+ *                               description: Position in the optimized route order
+ *                               example: 0
+ *                             quantity:
+ *                               type: integer
+ *                               description: Quantity for this ticket
+ *                               example: 1
+ *                             amountToPay:
+ *                               type: number
+ *                               description: Amount to pay for this ticket
+ *                               example: 150.00
+ *       500:
+ *         description: Server error
+ */
+router.get('/completed/concrete', RoutesController.getCompletedConcreteRoutes);
+
+/**
+ * @swagger
+ * /routes/completed/asphalt:
+ *   get:
+ *     summary: Get all completed asphalt routes
+ *     tags: [Routes]
+ *     description: Retrieves all completed asphalt routes (routes with endDate set). This shows routes that have been finished.
+ *     responses:
+ *       200:
+ *         description: Completed asphalt routes retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Completed asphalt routes retrieved successfully"
+ *                 type:
+ *                   type: string
+ *                   example: "ASPHALT"
+ *                 status:
+ *                   type: string
+ *                   example: "COMPLETED"
+ *                 count:
+ *                   type: integer
+ *                   description: Number of completed asphalt routes returned
+ *                   example: 1
+ *                 routes:
+ *                   type: array
+ *                   description: Array of completed asphalt route objects
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       routeId:
+ *                         type: integer
+ *                         description: Unique identifier for the route
+ *                         example: 1
+ *                       routeCode:
+ *                         type: string
+ *                         description: Route code/name
+ *                         example: "ASPHALT-2024-001"
+ *                       type:
+ *                         type: string
+ *                         description: Type of route
+ *                         example: "ASPHALT"
+ *                       startDate:
+ *                         type: string
+ *                         format: date
+ *                         description: Start date of the route
+ *                         example: "2024-06-01"
+ *                       endDate:
+ *                         type: string
+ *                         format: date
+ *                         description: End date of the route (completion date)
+ *                         example: "2024-06-02"
+ *                       totalDistance:
+ *                         type: number
+ *                         description: Total distance in meters
+ *                         example: 15420.5
+ *                       totalDuration:
+ *                         type: number
+ *                         description: Total duration in seconds
+ *                         example: 1800
+ *                       createdAt:
+ *                         type: string
+ *                         format: date-time
+ *                         description: Route creation timestamp
+ *                         example: "2024-06-01T10:30:00Z"
+ *                       tickets:
+ *                         type: array
+ *                         description: Array of tickets associated with this route
+ *                         items:
+ *                           type: object
+ *                           properties:
+ *                             ticketId:
+ *                               type: integer
+ *                               description: Unique identifier for the ticket
+ *                               example: 101
+ *                             ticketCode:
+ *                               type: string
+ *                               description: Ticket code/name
+ *                               example: "TICKET-001"
+ *                             address:
+ *                               type: string
+ *                               description: Full address of the ticket location
+ *                               example: "123 Main St, Chicago, IL"
+ *                             queue:
+ *                               type: integer
+ *                               description: Position in the optimized route order
+ *                               example: 0
+ *                             quantity:
+ *                               type: integer
+ *                               description: Quantity for this ticket
+ *                               example: 1
+ *                             amountToPay:
+ *                               type: number
+ *                               description: Amount to pay for this ticket
+ *                               example: 150.00
+ *       500:
+ *         description: Server error
+ */
+router.get('/completed/asphalt', RoutesController.getCompletedAsphaltRoutes);
+
+/**
+ * @swagger
  * /routes/tickets-ready/spotting:
  *   get:
  *     summary: Get tickets ready for spotting routes

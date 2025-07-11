@@ -1,6 +1,7 @@
 const RouteOptimizationService = require('../../services/RouteOptimizationService');
 const Tickets = require('../../models/ticket-logic/Tickets');
 const Crews = require('../../models/human-resources/Crews');
+const RouteTickets = require('../../models/route/RouteTickets');
 
 const RouteOptimizationController = {
   /**
@@ -469,6 +470,126 @@ const RouteOptimizationController = {
       res.status(500).json({
         success: false,
         error: 'Failed to suggest addresses in batch',
+        details: error.message
+      });
+    }
+  },
+
+  /**
+   * Cancel a route by removing the endingDate from all related ticket statuses
+   * @route POST /api/route-optimization/route/{routeId}/cancel
+   * @desc Cancel a route by removing endingDate from all ticket statuses for tickets in the route
+   * @access Private
+   */
+  async cancelRoute(req, res) {
+    try {
+      const { routeId } = req.params;
+      const updatedBy = req.user?.id || 1;
+
+      console.log(`Canceling route ${routeId}`);
+
+      // Get all tickets in the route
+      const routeTickets = await RouteTickets.findByRouteId(parseInt(routeId));
+      
+      if (routeTickets.length === 0) {
+        return res.status(404).json({
+          success: false,
+          error: `No tickets found for route ${routeId}`
+        });
+      }
+
+      const ticketIds = routeTickets.map(rt => rt.ticketid);
+      console.log(`Found ${ticketIds.length} tickets in route ${routeId}`);
+
+      // Update all ticket statuses to remove endingDate (set to NULL)
+      const result = await RouteOptimizationService.cancelRoute(parseInt(routeId), ticketIds, updatedBy);
+
+      res.status(200).json({
+        success: true,
+        message: 'Route canceled successfully',
+        data: result
+      });
+
+    } catch (error) {
+      console.error('Failed to cancel route:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to cancel route',
+        details: error.message
+      });
+    }
+  },
+
+  /**
+   * Complete a route by setting endingDate to current timestamp for all related ticket statuses
+   * @route POST /api/route-optimization/route/{routeId}/complete
+   * @desc Complete a route by setting endingDate to current timestamp for all ticket statuses for tickets in the route
+   * @access Private
+   */
+  async completeRoute(req, res) {
+    try {
+      const { routeId } = req.params;
+      const updatedBy = req.user?.id || 1;
+
+      console.log(`Completing route ${routeId}`);
+
+      // Get all tickets in the route
+      const routeTickets = await RouteTickets.findByRouteId(parseInt(routeId));
+      
+      if (routeTickets.length === 0) {
+        return res.status(404).json({
+          success: false,
+          error: `No tickets found for route ${routeId}`
+        });
+      }
+
+      const ticketIds = routeTickets.map(rt => rt.ticketid);
+      console.log(`Found ${ticketIds.length} tickets in route ${routeId}`);
+
+      // Update all ticket statuses to set endingDate to current timestamp
+      const result = await RouteOptimizationService.completeRoute(parseInt(routeId), ticketIds, updatedBy);
+
+      res.status(200).json({
+        success: true,
+        message: 'Route completed successfully',
+        data: result
+      });
+
+    } catch (error) {
+      console.error('Failed to complete route:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to complete route',
+        details: error.message
+      });
+    }
+  },
+
+  /**
+   * Get detailed information about tickets in a route for debugging
+   * @route GET /api/route-optimization/route/{routeId}/details
+   * @desc Get detailed information about tickets in a route including their status
+   * @access Private
+   */
+  async getRouteDetails(req, res) {
+    try {
+      const { routeId } = req.params;
+
+      console.log(`Getting detailed information for route ${routeId}`);
+
+      const result = await RouteOptimizationService.getRouteTicketDetails(parseInt(routeId));
+
+      res.status(200).json({
+        success: true,
+        message: 'Route details retrieved successfully',
+        data: result
+      });
+
+    } catch (error) {
+      console.error('Failed to get route details:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to get route details',
         details: error.message
       });
     }
