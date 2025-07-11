@@ -21,3 +21,4 @@ COPY . .
 
 EXPOSE 3000
 CMD ["npm", "start"]
+# docker hub  christba/7d-project-backend
