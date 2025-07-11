@@ -17,7 +17,7 @@ INSERT INTO People ( UserId, firstname, lastname, role, phone, email, createdBy,
   ( 5, 'Christian', 'Barragan', 'admin', '3456789012', 'Christian@example.com', 1, 1),
   ( 6, 'Elian', 'Medina', 'admin', '3456789012', 'Elian@example.com', 1, 1),
   ( 7, 'Eva', 'Landa', 'admin', '3456789012', 'Eva@example.com', 1, 1),
-   ( 8, 'Laura', 'Mcqueen', 'admin', '3456789012', 'Eva@example.com', 1, 1);
+   ( 8, 'Laura', 'Mcqueen', 'operator', '3456789012', 'Eva@example.com', 1, 1);
 
 
 -- Mock data for Payments
@@ -82,7 +82,7 @@ INSERT INTO Routes (
     totalDistance, totalDuration, optimizedOrder,
     optimizationMetadata, createdBy, updatedBy
 ) VALUES (
-    'R-001', 'asphalt', '2024-07-01', '2024-07-03', 'abc123xyz',
+    'ASPHALT-001', 'asphalt', '2024-07-01', '2024-07-03', 'abc123xyz',
     10.50, 2.25, '["1", "2", "3"]',
     '{"notes": "optimizado"}', 1, 1
 );
