@@ -11,25 +11,25 @@ class Crews {
 
 
   static async findById(crewId) {
-    const res = await db.query('SELECT * FROM Crews WHERE crewId = $1;', [crewId]);
+    const res = await db.query('SELECT * FROM Crews WHERE crewId = $1 AND deletedAt IS NULL;', [crewId]);
     return res.rows[0];
   }
 
   static async findAll() {
-    const res = await db.query('SELECT * FROM Crews;');
+    const res = await db.query('SELECT * FROM Crews WHERE deletedAt IS NULL;');
     return res.rows;
   }
 
   static async update(crewId, type, photo, workedHours, updatedBy) {
     const res = await db.query(
-      'UPDATE Crews SET type = $1, photo = $2, workedHours = $3, updatedAt = CURRENT_TIMESTAMP, updatedBy = $4 WHERE crewId = $5 RETURNING *;',
+      'UPDATE Crews SET type = $1, photo = $2, workedHours = $3, updatedAt = CURRENT_TIMESTAMP, updatedBy = $4 WHERE crewId = $5 AND deletedAt IS NULL RETURNING *;',
       [type, photo, workedHours, updatedBy, crewId]
     );
     return res.rows[0];
   }
 
   static async delete(crewId) {
-    const res = await db.query('UPDATE Crews SET deletedAt = CURRENT_TIMESTAMP WHERE crewId = $1 RETURNING *;', [crewId]);
+    const res = await db.query('UPDATE Crews SET deletedAt = CURRENT_TIMESTAMP WHERE crewId = $1 AND deletedAt IS NULL RETURNING *;', [crewId]);
     return res.rows[0];
   }
 
@@ -91,17 +91,17 @@ static async getCrewDetailsById(crewId) {
       cu.zone,
       cu.paymentclause,
 
-      -- 🔁 Phases
-      np.necessaryphaseid,
-      np.name AS phase_name,
-      np.description AS phase_description,
+      -- 🔁 Phases (reemplazando NecessaryPhases)
+      ts2.taskstatusid AS phase_id,
+      ts2.name AS phase_name,
+      ts2.description AS phase_description,
 
       -- 📄 Permits
       p.permitid,
       p.permitnumber,
       p.status AS permit_status,
       p.startdate AS permit_start,
-      p.expiredate AS permit_expire,  -- ⬅️ agrega esta coma
+      p.expiredate AS permit_expire,
 
       -- 📄 Diggers
       d.diggerid,
@@ -109,8 +109,6 @@ static async getCrewDetailsById(crewId) {
       d.status AS digger_status,
       d.startdate AS digger_start,
       d.expiredate AS digger_expire
-
-
 
     FROM crews c
     JOIN routes r ON c.routeid = r.routeid
@@ -125,13 +123,12 @@ static async getCrewDetailsById(crewId) {
     LEFT JOIN wayfinding w ON w.wayfindingid = t.wayfindingid
     LEFT JOIN ContractUnits cu ON cu.contractunitid = t.contractunitid
     LEFT JOIN ContractUnitsPhases cup ON cup.contractunitid = cu.contractunitid
-    LEFT JOIN NecessaryPhases np ON np.necessaryphaseid = cup.necessaryphaseid
+    LEFT JOIN TaskStatus ts2 ON ts2.taskstatusid = cup.taskstatusid
 
-    -- 👇 Aquí traes los permisos
+    -- 👇 Permits
     LEFT JOIN PermitedTickets pt ON pt.ticketid = t.ticketid
     LEFT JOIN Permits p ON p.permitid = pt.permitid
     LEFT JOIN Diggers d ON d.permitid = p.permitid
-
 
     WHERE c.crewid = $1;
   `;

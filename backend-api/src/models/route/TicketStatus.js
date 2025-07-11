@@ -11,7 +11,7 @@ class TicketStatus {
 
   static async findById(taskStatusId, ticketId) {
     const res = await db.query(
-      'SELECT * FROM TicketStatus WHERE taskStatusId = $1 AND ticketId = $2;',
+      'SELECT * FROM TicketStatus WHERE taskStatusId = $1 AND ticketId = $2 AND deletedAt IS NULL;',
       [taskStatusId, ticketId]
     );
     return res.rows[0];
@@ -26,7 +26,7 @@ class TicketStatus {
 }
 
   static async findAll() {
-    const res = await db.query('SELECT * FROM TicketStatus;');
+    const res = await db.query('SELECT * FROM TicketStatus WHERE deletedAt IS NULL;');
     return res.rows;
   }
 
@@ -90,7 +90,7 @@ static async findCompletedTickets() {
 
   static async delete(taskStatusId, ticketId) {
     const res = await db.query(
-      'UPDATE TicketStatus SET deletedAt = CURRENT_TIMESTAMP WHERE taskStatusId = $1 AND ticketId = $2 RETURNING *;',
+      'UPDATE TicketStatus SET deletedAt = CURRENT_TIMESTAMP WHERE taskStatusId = $1 AND ticketId = $2 AND deletedAt IS NULL RETURNING *;',
       [taskStatusId, ticketId]
     );
     return res.rows[0];

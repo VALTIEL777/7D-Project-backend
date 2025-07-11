@@ -13,7 +13,7 @@ CREATE TABLE People (
     lastname VARCHAR(45),
     role VARCHAR(128),
     phone VARCHAR(10),
-    email VARCHAR(128) UNIQUE,
+    email VARCHAR(255),
     createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     deletedAt TIMESTAMP,
@@ -51,7 +51,8 @@ CREATE TABLE Quadrants (
     deletedAt TIMESTAMP,
     createdBy INTEGER REFERENCES Users(UserId),
     updatedBy INTEGER REFERENCES Users(UserId),
-    supervisorId INTEGER REFERENCES People(employeeId)
+    supervisorId INTEGER REFERENCES People(employeeId),
+    zoneManagerId INTEGER REFERENCES People(employeeId)
 );
 
 CREATE TABLE wayfinding(
@@ -65,9 +66,9 @@ CREATE TABLE wayfinding(
     toAddressCardinal VARCHAR(64),
     toAddressStreet VARCHAR(64),
     toAddressSuffix VARCHAR(64),
-	width DOUBLE PRECISION,
-    length DOUBLE PRECISION,
-    surfaceTotal DOUBLE PRECISION,
+	width NUMERIC(10, 2),
+    length NUMERIC(10, 2),
+    surfaceTotal NUMERIC(10, 2),
     createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     deletedAt TIMESTAMP,
@@ -75,16 +76,7 @@ CREATE TABLE wayfinding(
     updatedBy INTEGER REFERENCES Users(UserId)
 );
 
-CREATE TABLE NecessaryPhases (
-    necessaryPhaseId SERIAL PRIMARY KEY,
-    name VARCHAR(64),
-    description TEXT,
-    createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    deletedAt TIMESTAMP,
-    createdBy INTEGER REFERENCES Users(UserId),
-    updatedBy INTEGER REFERENCES Users(UserId)
-);
+
 
 CREATE TABLE ContractUnits (
     contractUnitId SERIAL PRIMARY KEY,
@@ -96,7 +88,7 @@ CREATE TABLE ContractUnits (
     description TEXT,
     workNotIncluded TEXT,
     CDOTStandardImg TEXT,
-    CostPerUnit DOUBLE PRECISION,
+    CostPerUnit NUMERIC(10, 2),
     zone VARCHAR(64),
     PaymentClause TEXT,
     createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -106,16 +98,6 @@ CREATE TABLE ContractUnits (
     updatedBy INTEGER REFERENCES Users(UserId)
 );
 
-CREATE TABLE ContractUnitsPhases (
-    contractUnitId INTEGER REFERENCES ContractUnits (contractUnitId),
-    necessaryPhaseId INTEGER REFERENCES NecessaryPhases (necessaryPhaseId),
-    PRIMARY KEY (contractUnitId, necessaryPhaseId),
-    createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    deletedAt TIMESTAMP,
-    createdBy INTEGER REFERENCES Users(UserId),
-    updatedBy INTEGER REFERENCES Users(UserId)
-);
 
 CREATE TABLE IncidentsMx (
     incidentId SERIAL PRIMARY KEY,
@@ -286,11 +268,15 @@ CREATE TABLE Addresses (
     addressCardinal VARCHAR(64),
     addressStreet VARCHAR(64),
     addressSuffix VARCHAR(64),
+    latitude NUMERIC(10, 2),
+    longitude NUMERIC(10, 2),
+    placeid VARCHAR(255),
     createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     deletedAt TIMESTAMP,
     createdBy INTEGER REFERENCES Users(UserId),
-    updatedBy INTEGER REFERENCES Users(UserId)
+    updatedBy INTEGER REFERENCES Users(UserId),
+    UNIQUE(addressNumber, addressCardinal, addressStreet, addressSuffix)
 );
 CREATE TABLE TicketAddresses (
     ticketId INTEGER REFERENCES Tickets(ticketId),
@@ -312,6 +298,11 @@ CREATE TABLE Routes (
     type VARCHAR(64), -- concrete, asphalt
     startDate DATE,
     endDate DATE,
+    encodedPolyline TEXT,
+    totalDistance NUMERIC(10, 2),
+    totalDuration NUMERIC(10, 2),
+    optimizedOrder JSONB,
+    optimizationMetadata JSONB,
     createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     deletedAt TIMESTAMP,
@@ -323,6 +314,7 @@ Create Table RouteTickets(
     routeId INTEGER REFERENCES Routes(routeId),
     ticketId INTEGER REFERENCES Tickets(ticketId),
     PRIMARY KEY (routeId, ticketId),
+    address VARCHAR(255),
     queue INTEGER,
     createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -363,13 +355,24 @@ CREATE TABLE photoEvidence(
     ticketStatusId INTEGER,
     ticketId INTEGER,  -- Add this column to match the composite key
     name VARCHAR(64),
-    latitude DOUBLE PRECISION,
-    longitude DOUBLE PRECISION,
+    latitude NUMERIC(10, 2),
+    longitude NUMERIC(10, 2),
     photo VARCHAR(255),
     date TIMESTAMP,
     comment TEXT,
     photoURL TEXT,
     FOREIGN KEY (ticketStatusId, ticketId) REFERENCES TicketStatus(taskStatusId, ticketId),
+    createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    deletedAt TIMESTAMP,
+    createdBy INTEGER REFERENCES Users(UserId),
+    updatedBy INTEGER REFERENCES Users(UserId)
+);
+
+CREATE TABLE ContractUnitsPhases (
+    contractUnitId INTEGER REFERENCES ContractUnits (contractUnitId),
+    taskStatusId INTEGER REFERENCES TaskStatus ( taskStatusId),
+    PRIMARY KEY (contractUnitId,  taskStatusId),
     createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     deletedAt TIMESTAMP,
@@ -421,7 +424,41 @@ CREATE TABLE Equipment(
     updatedBy INTEGER REFERENCES Users(UserId)
 );
 
+CREATE TABLE PricingAgreements(
+    pricingAgreementId SERIAL PRIMARY KEY,
+    supplierId INTEGER REFERENCES Suppliers(supplierId),
+    startDate DATE,
+    endDate DATE,
+    fileURL TEXT,
+    createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    deletedAt TIMESTAMP,
+    createdBy INTEGER REFERENCES Users(UserId),
+    updatedBy INTEGER REFERENCES Users(UserId)
+);
 
+CREATE TABLE InventoryPricingAgreements(
+    pricingAgreementId INTEGER REFERENCES PricingAgreements(pricingAgreementId),
+    inventoryId INTEGER REFERENCES Inventory(inventoryId),
+    costPerUnit DECIMAL,
+    PRIMARY KEY (pricingAgreementId, inventoryId),
+    createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    deletedAt TIMESTAMP,
+    createdBy INTEGER REFERENCES Users(UserId),
+    updatedBy INTEGER REFERENCES Users(UserId)
+);
+
+CREATE TABLE EquipmentPricingAgreements(
+    pricingAgreementId INTEGER REFERENCES PricingAgreements(pricingAgreementId),
+    equipmentId INTEGER REFERENCES Equipment(equipmentId),
+    PRIMARY KEY (pricingAgreementId, equipmentId),
+    createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    deletedAt TIMESTAMP,
+    createdBy INTEGER REFERENCES Users(UserId),
+    updatedBy INTEGER REFERENCES Users(UserId)
+);
 
 
 CREATE TABLE usedInventory(
@@ -463,6 +500,8 @@ CREATE TABLE RTRs (
     deletedAt TIMESTAMP
 );
 
+-- GeocodeCache table removed - using Addresses table with placeid field instead
+
 CREATE OR REPLACE FUNCTION set_updated_at_timestamp()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -487,10 +526,6 @@ BEFORE UPDATE ON wayfinding
 FOR EACH ROW
 EXECUTE FUNCTION set_updated_at_timestamp();
 
-CREATE TRIGGER set_updated_at_necessaryphases
-BEFORE UPDATE ON NecessaryPhases
-FOR EACH ROW
-EXECUTE FUNCTION set_updated_at_timestamp();
 
 CREATE TRIGGER set_updated_at_contractunits
 BEFORE UPDATE ON ContractUnits
@@ -629,11 +664,91 @@ BEFORE UPDATE ON usedEquipment
 FOR EACH ROW
 EXECUTE FUNCTION set_updated_at_timestamp();
 
+
+
+--indexes
+-- Permits table
+CREATE INDEX idx_permits_expire_date ON Permits(expireDate) WHERE deletedAt IS NULL;
+CREATE INDEX idx_permits_deleted_status ON Permits(deletedAt, status);
+
+-- Tickets table
+CREATE INDEX idx_tickets_comment7d ON Tickets(comment7d) WHERE deletedAt IS NULL;
+CREATE INDEX idx_tickets_deleted ON Tickets(deletedAt) WHERE deletedAt IS NULL;
+CREATE INDEX idx_tickets_ticket_code ON Tickets(ticketCode) WHERE deletedAt IS NULL;
+
+-- PermitedTickets junction table
+CREATE INDEX idx_permitedtickets_permitid ON PermitedTickets(permitId) WHERE deletedAt IS NULL;
+CREATE INDEX idx_permitedtickets_ticketid ON PermitedTickets(ticketId) WHERE deletedAt IS NULL;
+CREATE INDEX idx_permitedtickets_deleted ON PermitedTickets(deletedAt) WHERE deletedAt IS NULL;
+
+-- TicketAddresses table
+CREATE INDEX idx_ticketaddresses_ticketid ON TicketAddresses(ticketId) WHERE deletedAt IS NULL;
+CREATE INDEX idx_ticketaddresses_addressid ON TicketAddresses(addressId) WHERE deletedAt IS NULL;
+
+-- Addresses table
+CREATE INDEX idx_addresses_deleted ON Addresses(deletedAt) WHERE deletedAt IS NULL;
+CREATE INDEX idx_addresses_full ON Addresses(addressNumber, addressCardinal, addressStreet, addressSuffix) WHERE deletedAt IS NULL;
+
+-- TicketStatus table
+CREATE INDEX idx_ticketstatus_ticketid ON TicketStatus(ticketId) WHERE deletedAt IS NULL;
+CREATE INDEX idx_ticketstatus_taskstatusid ON TicketStatus(taskStatusId) WHERE deletedAt IS NULL;
+
+-- TaskStatus table
+CREATE INDEX idx_taskstatus_name ON TaskStatus(name) WHERE deletedAt IS NULL;
+
+CREATE INDEX idx_tickets_comment7d_specific ON Tickets(comment7d) 
+WHERE deletedAt IS NULL AND (comment7d IS NULL OR comment7d = '' OR comment7d = 'TK - NEEDS PERMIT EXTENSION');
+
+CREATE INDEX idx_tickets_with_null_comment7d ON Tickets(ticketId) 
+WHERE comment7d IS NULL AND deletedAt IS NULL;
+
+CREATE INDEX idx_address_ticket_join ON TicketAddresses(addressId, ticketId) 
+WHERE deletedAt IS NULL;
+
 ALTER TABLE Crews
 ADD COLUMN routeId INTEGER REFERENCES Routes(routeId);
 
+INSERT INTO Users ( username, password)
+VALUES ('testuser', 'securepassword123')
+ON CONFLICT (UserId) DO NOTHING;
 
+-- Supervisors
+INSERT INTO People (UserId, firstname, lastname, role, phone, email) VALUES
+(NULL, 'Renee', 'Mercado', 'Supervisor', '7737946851', 'renee.mercado@peoplesgasdelivery.com'),
+(NULL, 'Aaron', 'Collins', 'Supervisor', '7733957426', 'aaron.collins@peoplesgasdelivery.com'),
+(NULL, 'Robert', 'Ozys', 'Supervisor', '3122732664', 'robert.ozys@peoplesgasdelivery.com');
 
--- INSERT INTO Users (UserId, username, password)
--- VALUES (1, 'testuser', 'securepassword123')
--- ON CONFLICT (UserId) DO NOTHING;
+-- Zone Managers (1-4)
+INSERT INTO People (UserId, firstname, lastname, role, phone, email) VALUES
+(NULL, 'Barbara', 'Powell', 'Zone 1 Manager', '8723622282', 'Barbara.Powell1@peoplesgasdelivery.com'),
+(NULL, 'Mario', 'Ortiz', 'Zone 2 Manager', '3123660935', 'Mario.Ortiz@peoplesgasdelivery.com'),
+(NULL, 'Bryan', 'Guzman', 'Zone 3 Manager', '3123302832', 'Bryan.Guzman@peoplesgasdelivery.com'),
+(NULL, 'Matthew', 'Puljic', 'Zone 4 Manager', '3123661938', 'Matthew.Puljic@peoplesgasdelivery.com');
+
+-- Regional Managers (North/Central/South)
+INSERT INTO People (UserId, firstname, lastname, role, phone, email) VALUES
+(NULL, 'Dominick', 'Puckett', 'Regional Manager', '3123514903', 'dominick.puckett@peoplesgasdelivery.com'),
+(NULL, 'James', 'Davis', 'Regional Manager', '7733975593', 'dominick.hernandez@peoplesgasdelivery.com'),
+(NULL, 'Anthony', 'Gross', 'Regional Manager', '3122135259', 'lucero.martinez@peoplesgasdelivery.com'),
+(NULL, 'Giovanni', 'Delgado', 'Regional Manager', '3127991520', NULL);
+
+-- Quadrant Zone Managers (NW/NE/SW/SE)
+INSERT INTO People (UserId, firstname, lastname, role, phone, email) VALUES
+(NULL, 'Jonathan', 'Salgado', 'Quadrant Manager (NE)', '3123668217', 'jonathan.salgado@peoplesgasdelivery.com'),
+(NULL, 'Carl', 'Hughes', 'Quadrant Manager (SW)', '3122082480', 'carl.hughes@peoplesgasdelivery.com'),
+(NULL, 'Pablo', 'Jimenez', 'Quadrant Manager (SE)', '3123661882', 'pablo.jimenez@peoplesgasdelivery.com');
+
+INSERT INTO TaskStatus (name, description)
+VALUES 
+    ('Sawcut', 'Cutting the damaged pavement section with a saw'),
+    ('Framing', 'Creating forms or frames for the new concrete pour'),
+    ('Pour', 'Pouring new concrete into the prepared area'),
+    ('Clean', 'Cleaning the work area and removing debris'),
+    ('Dirt', 'Preparing and compacting the base dirt layer'),
+    ('Grind', 'Grinding down uneven surfaces for smooth transitions'),
+    ('Stripping', 'Removing old pavement or surface materials'),
+    ('Spotting', 'Marking and identifying areas that need repair'),
+    ('Crack Seal', 'Sealing cracks in asphalt to prevent water penetration and pavement degradation'),
+    ('Install Signs', 'Installing road or traffic control signs at designated locations'),
+    ('Steel Plate Pick Up', 'Removing previously installed steel plates from the roadway'),
+    ('Asphalt', 'Laying down or repairing asphalt pavement surfaces');

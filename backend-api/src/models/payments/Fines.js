@@ -10,25 +10,25 @@ class Fines {
   }
 
   static async findById(fineId) {
-    const res = await db.query('SELECT * FROM Fines WHERE fineId = $1;', [fineId]);
+    const res = await db.query('SELECT * FROM Fines WHERE fineId = $1 AND deletedAt IS NULL;', [fineId]);
     return res.rows[0];
   }
 
   static async findAll() {
-    const res = await db.query('SELECT * FROM Fines;');
+    const res = await db.query('SELECT * FROM Fines WHERE deletedAt IS NULL;');
     return res.rows;
   }
 
   static async update(fineId, ticketId, fineNumber, fineDate, paymentDate, amount, status, fineURL, updatedBy) {
     const res = await db.query(
-      'UPDATE Fines SET ticketId = $1, fineNumber = $2, fineDate = $3, paymentDate = $4, amount = $5, status = $6, fineURL = $7, updatedAt = CURRENT_TIMESTAMP, updatedBy = $8 WHERE fineId = $9 RETURNING *;',
+      'UPDATE Fines SET ticketId = $1, fineNumber = $2, fineDate = $3, paymentDate = $4, amount = $5, status = $6, fineURL = $7, updatedAt = CURRENT_TIMESTAMP, updatedBy = $8 WHERE fineId = $9 AND deletedAt IS NULL RETURNING *;',
       [ticketId, fineNumber, fineDate, paymentDate, amount, status, fineURL, updatedBy, fineId]
     );
     return res.rows[0];
   }
 
   static async delete(fineId) {
-    const res = await db.query('UPDATE Fines SET deletedAt = CURRENT_TIMESTAMP WHERE fineId = $1 RETURNING *;', [fineId]);
+    const res = await db.query('UPDATE Fines SET deletedAt = CURRENT_TIMESTAMP WHERE fineId = $1 AND deletedAt IS NULL RETURNING *;', [fineId]);
     return res.rows[0];
   }
 }

@@ -129,5 +129,5 @@ dist
 .yarn/install-state.gz
 .pnp.*
 
-#Mock data
-mock_data.sql
+# Ignore all .pbf files
+*.pbf

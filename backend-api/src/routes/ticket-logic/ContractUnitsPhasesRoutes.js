@@ -7,14 +7,14 @@ const router = express.Router();
  * @swagger
  * tags:
  *   name: Contract Units Phases
- *   description: Managing associations between contract units and necessary phases
+ *   description: Managing associations between contract units and task statuses
  */
 
 /**
  * @swagger
  * /contractunitsphases:
  *   post:
- *     summary: Create a new contract unit phase association
+ *     summary: Create a new contract unit-task status association
  *     tags: [Contract Units Phases]
  *     requestBody:
  *       required: true
@@ -24,7 +24,7 @@ const router = express.Router();
  *             type: object
  *             required:
  *               - contractUnitId
- *               - necessaryPhaseId
+ *               - taskStatusId
  *               - createdBy
  *               - updatedBy
  *             properties:
@@ -32,42 +32,24 @@ const router = express.Router();
  *                 type: integer
  *                 description: The ID of the contract unit.
  *                 example: 1
- *               necessaryPhaseId:
+ *               taskStatusId:
  *                 type: integer
- *                 description: The ID of the necessary phase.
+ *                 description: The ID of the task status.
  *                 example: 1
  *               createdBy:
  *                 type: integer
- *                 description: The ID of the user who created this entry.
  *                 example: 1
  *               updatedBy:
  *                 type: integer
- *                 description: The ID of the user who last updated this entry.
  *                 example: 1
- *     responses:
- *       201:
- *         description: The contract unit phase association was successfully created.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 contractUnitId:
- *                   type: integer
- *                   example: 1
- *                 necessaryPhaseId:
- *                   type: integer
- *                   example: 1
- *       500:
- *         description: Server error
  */
 router.post('/', ContractUnitsPhasesController.createContractUnitsPhases);
 
 /**
  * @swagger
- * /contractunitsphases/contract/{contractUnitId}:
+ * /contractunitsphases/byContractUnit/{contractUnitId}:
  *   get:
- *     summary: Get all phase associations for a given contract unit ID
+ *     summary: Get all task statuses for a given contract unit
  *     tags: [Contract Units Phases]
  *     parameters:
  *       - in: path
@@ -75,116 +57,68 @@ router.post('/', ContractUnitsPhasesController.createContractUnitsPhases);
  *         schema:
  *           type: integer
  *         required: true
- *         description: The ID of the contract unit.
  *     responses:
  *       200:
- *         description: A list of necessary phase associations.
- *         content:
- *           application/json:
- *             schema:
- *               type: array
- *               items:
- *                 type: object
- *                 properties:
- *                   contractUnitId:
- *                     type: integer
- *                     example: 1
- *                   necessaryPhaseId:
- *                     type: integer
- *                     example: 1
+ *         description: A list of task statuses.
  *       404:
- *         description: No phases found for the contract unit
- *       500:
- *         description: Server error
+ *         description: No task statuses found.
  */
 router.get('/byContractUnit/:contractUnitId', ContractUnitsPhasesController.getPhasesByContractUnitId);
 
 /**
  * @swagger
- * /contractunitsphases/{contractUnitId}/{necessaryPhaseId}:
+ * /contractunitsphases/{contractUnitId}/{taskStatusId}:
  *   get:
- *     summary: Get a contract unit phase association by contract unit ID and necessary phase ID
+ *     summary: Get a contract unit-task status association
  *     tags: [Contract Units Phases]
  *     parameters:
  *       - in: path
  *         name: contractUnitId
+ *         required: true
  *         schema:
  *           type: integer
- *         required: true
- *         description: The ID of the contract unit.
  *       - in: path
- *         name: necessaryPhaseId
+ *         name: taskStatusId
+ *         required: true
  *         schema:
  *           type: integer
- *         required: true
- *         description: The ID of the necessary phase.
  *     responses:
  *       200:
- *         description: Contract unit phase association found.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 contractUnitId:
- *                   type: integer
- *                   example: 1
- *                 necessaryPhaseId:
- *                   type: integer
- *                   example: 1
+ *         description: Found.
  *       404:
- *         description: Contract unit phase association not found
- *       500:
- *         description: Server error
+ *         description: Not found.
  */
-router.get('/:contractUnitId/:necessaryPhaseId', ContractUnitsPhasesController.getContractUnitsPhasesById);
+router.get('/:contractUnitId/:taskStatusId', ContractUnitsPhasesController.getContractUnitsPhasesById);
 
 /**
  * @swagger
  * /contractunitsphases:
  *   get:
- *     summary: Retrieve a list of all contract unit phase associations
+ *     summary: Get all contract unit-task status associations
  *     tags: [Contract Units Phases]
  *     responses:
  *       200:
- *         description: A list of contract unit phase associations.
- *         content:
- *           application/json:
- *             schema:
- *               type: array
- *               items:
- *                 type: object
- *                 properties:
- *                   contractUnitId:
- *                     type: integer
- *                     example: 1
- *                   necessaryPhaseId:
- *                     type: integer
- *                     example: 1
- *       500:
- *         description: Server error
+ *         description: List retrieved.
  */
 router.get('/', ContractUnitsPhasesController.getAllContractUnitsPhases);
 
 /**
  * @swagger
- * /contractunitsphases/{contractUnitId}/{necessaryPhaseId}:
+ * /contractunitsphases/{contractUnitId}/{taskStatusId}:
  *   put:
- *     summary: Update a contract unit phase association by contract unit ID and necessary phase ID
+ *     summary: Update a contract unit-task status association
  *     tags: [Contract Units Phases]
  *     parameters:
  *       - in: path
  *         name: contractUnitId
+ *         required: true
  *         schema:
  *           type: integer
- *         required: true
- *         description: The ID of the contract unit.
  *       - in: path
- *         name: necessaryPhaseId
+ *         name: taskStatusId
+ *         required: true
  *         schema:
  *           type: integer
- *         required: true
- *         description: The ID of the necessary phase.
  *     requestBody:
  *       required: true
  *       content:
@@ -194,64 +128,38 @@ router.get('/', ContractUnitsPhasesController.getAllContractUnitsPhases);
  *             properties:
  *               updatedBy:
  *                 type: integer
- *                 description: The ID of the user who last updated this entry.
  *                 example: 2
  *     responses:
  *       200:
- *         description: The contract unit phase association was successfully updated.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 contractUnitId:
- *                   type: integer
- *                   example: 1
- *                 necessaryPhaseId:
- *                   type: integer
- *                   example: 1
+ *         description: Updated successfully.
  *       404:
- *         description: Contract unit phase association not found
- *       500:
- *         description: Server error
+ *         description: Not found.
  */
-router.put('/:contractUnitId/:necessaryPhaseId', ContractUnitsPhasesController.updateContractUnitsPhases);
+router.put('/:contractUnitId/:taskStatusId', ContractUnitsPhasesController.updateContractUnitsPhases);
 
 /**
  * @swagger
- * /contractunitsphases/{contractUnitId}/{necessaryPhaseId}:
+ * /contractunitsphases/{contractUnitId}/{taskStatusId}:
  *   delete:
- *     summary: Delete a contract unit phase association by contract unit ID and necessary phase ID
+ *     summary: Delete a contract unit-task status association
  *     tags: [Contract Units Phases]
  *     parameters:
  *       - in: path
  *         name: contractUnitId
+ *         required: true
  *         schema:
  *           type: integer
- *         required: true
- *         description: The ID of the contract unit.
  *       - in: path
- *         name: necessaryPhaseId
+ *         name: taskStatusId
+ *         required: true
  *         schema:
  *           type: integer
- *         required: true
- *         description: The ID of the necessary phase.
  *     responses:
  *       200:
- *         description: The contract unit phase association was successfully deleted.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 message:
- *                   type: string
- *                   example: ContractUnitsPhases deleted successfully
+ *         description: Deleted successfully.
  *       404:
- *         description: Contract unit phase association not found
- *       500:
- *         description: Server error
+ *         description: Not found.
  */
-router.delete('/:contractUnitId/:necessaryPhaseId', ContractUnitsPhasesController.deleteContractUnitsPhases);
+router.delete('/:contractUnitId/:taskStatusId', ContractUnitsPhasesController.deleteContractUnitsPhases);
 
-module.exports = router; 
+module.exports = router;
