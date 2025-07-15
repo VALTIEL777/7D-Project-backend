@@ -232,7 +232,8 @@ class RouteOptimizationService {
 
             const { maxDistance = 30000, maxLocationsPerCluster = 25, minLocationsPerCluster = 20 } = options;
 
-            console.log(`Starting clustered route optimization for ${ticketIds.length} tickets`);
+            console.log(`Starting location-based clustered route optimization for ${ticketIds.length} tickets`);
+            console.log(`Clustering by unique locations (max ${maxLocationsPerCluster} locations per cluster)`);
 
             // Step 1: Get all ticket addresses in one database query (reuse from parent method)
             const ticketsWithAddresses = await this.getTicketsWithAddressesBatch(ticketIds, {
@@ -244,7 +245,7 @@ class RouteOptimizationService {
                 throw new Error('No valid tickets found for clustering');
             }
 
-            // Step 2: Cluster locations using PostGIS (pass pre-fetched tickets to avoid double geocoding)
+            // Step 2: Cluster by unique locations using PostGIS (max 25 unique locations per cluster)
             const clusteringService = new LocationClusteringService();
             const clusters = await clusteringService.clusterLocations(ticketsWithAddresses, { 
                 maxDistance,
@@ -252,7 +253,8 @@ class RouteOptimizationService {
                 minLocationsPerCluster
             });
             
-            console.log(`Created ${clusters.length} clusters for optimization`);
+            console.log(`Created ${clusters.length} location-based clusters for optimization`);
+            console.log(`Each cluster contains max ${maxLocationsPerCluster} unique locations with all their associated tickets`);
 
             // Step 2: Optimize each cluster separately
             const optimizedRoutes = [];
@@ -265,10 +267,11 @@ class RouteOptimizationService {
                 const cluster = clusters[i];
                 const clusterRouteCode = `${routeCode}-CLUSTER-${i + 1}`;
                 
-                console.log(`\n--- Processing Cluster ${i + 1}/${clusters.length} ---`);
+                console.log(`\n--- Processing Location Cluster ${i + 1}/${clusters.length} ---`);
                 console.log(`Cluster ID: ${cluster.clusterId}`);
                 console.log(`Route Code: ${clusterRouteCode}`);
-                console.log(`Tickets in cluster: ${cluster.tickets.length}`);
+                console.log(`Unique locations in cluster: ${cluster.addressCount}`);
+                console.log(`Total tickets in cluster: ${cluster.tickets.length}`);
                 console.log(`Cluster center: ${cluster.centerLat}, ${cluster.centerLng}`);
                 
                 try {
@@ -584,9 +587,10 @@ class RouteOptimizationService {
             console.log(`Deduplicated ${ticketsWithAddresses.length} tickets into ${uniqueAddresses.length} unique addresses`);
             console.log('Unique addresses for optimization:', uniqueAddresses);
 
-            // Step 2.5: Check if we need to use clustering (more than 25 unique addresses)
+            // Step 2.5: Check if we need to use clustering (more than 25 unique locations)
             if (uniqueAddresses.length > 25) {
-                console.log(`More than 25 unique addresses (${uniqueAddresses.length}) detected. Using clustering approach.`);
+                console.log(`More than 25 unique locations (${uniqueAddresses.length}) detected. Using location-based clustering approach.`);
+                console.log(`This will create clusters with max 25 unique locations each, then assign all tickets at those locations.`);
                 return await this.optimizeRouteWithClustering(
                     ticketIds,
                     routeCode,

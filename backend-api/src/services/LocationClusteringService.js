@@ -21,11 +21,11 @@ class LocationClusteringService {
                 minLocationsPerCluster = this.minLocationsPerCluster 
             } = options;
             
-            console.log(`Clustering ${tickets.length} locations with max distance ${maxDistance}m`);
+            console.log(`Clustering ${tickets.length} tickets with ${maxLocationsPerCluster} max unique locations per cluster`);
             
             // Step 1: Extract unique addresses from tickets
             const uniqueAddresses = [...new Set(tickets.map(ticket => ticket.address))];
-            console.log(`Found ${uniqueAddresses.length} unique addresses`);
+            console.log(`Found ${uniqueAddresses.length} unique addresses from ${tickets.length} tickets`);
             
             // Step 2: Get coordinates for all addresses (geocode if needed)
             const addressCoordinates = await this.getAddressCoordinates(uniqueAddresses);
@@ -36,13 +36,13 @@ class LocationClusteringService {
             
             console.log(`Successfully obtained coordinates for ${addressCoordinates.length} addresses`);
             
-            // Step 3: Perform spatial clustering
-            const clusters = await this.performSpatialClustering(addressCoordinates, maxDistance, maxLocationsPerCluster, minLocationsPerCluster);
+            // Step 3: Perform spatial clustering on UNIQUE LOCATIONS (not tickets)
+            const locationClusters = await this.performSpatialClustering(addressCoordinates, maxDistance, maxLocationsPerCluster, minLocationsPerCluster);
             
-            console.log(`Created ${clusters.length} clusters`);
+            console.log(`Created ${locationClusters.length} location-based clusters`);
             
-            // Step 4: Map clusters back to tickets
-            const ticketClusters = this.mapClustersToTickets(clusters, tickets);
+            // Step 4: Map location clusters back to tickets (assign all tickets at each location to their cluster)
+            const ticketClusters = this.mapLocationClustersToTickets(locationClusters, tickets);
             
             return ticketClusters;
             
@@ -584,9 +584,9 @@ class LocationClusteringService {
             if (combinedSize <= maxLocationsPerCluster) {
                 // Check if clusters are close enough to merge
                 const distance = await this.calculateClusterDistance(existingCluster, smallCluster);
-                console.log(`  Distance between clusters: ${distance}m (max for merging: 3000m)`);
+                console.log(`  Distance between clusters: ${distance}m (max for merging: 15000m)`);
                 
-                if (distance <= 3000) { // 3km threshold for merging
+                if (distance <= 15000) { // 15km threshold for merging (increased for large cities)
                     console.log(`  ✓ Clusters are close enough and size is acceptable, merging...`);
                     
                     // Merge the clusters
@@ -686,108 +686,66 @@ class LocationClusteringService {
      * @param {Array} tickets - Array of tickets
      * @returns {Array} - Array of ticket clusters
      */
-    mapClustersToTickets(clusters, tickets) {
+    /**
+     * Map location clusters back to tickets - assigns ALL tickets at each location to their respective cluster
+     * @param {Array} locationClusters - Array of location-based clusters
+     * @param {Array} tickets - Array of all tickets
+     * @returns {Array} - Array of ticket clusters with all tickets assigned
+     */
+    mapLocationClustersToTickets(locationClusters, tickets) {
         const ticketClusters = [];
-        const assignedTicketIds = new Set(); // Track which tickets have been assigned
-        const assignedAddressIds = new Set(); // Track which addresses have been assigned
         
-        console.log(`Mapping ${clusters.length} clusters to ${tickets.length} tickets`);
+        console.log(`Mapping ${locationClusters.length} location clusters to ${tickets.length} tickets`);
         
-        for (const cluster of clusters) {
+        for (const cluster of locationClusters) {
             const clusterTickets = [];
+            const clusterAddresses = cluster.locations.map(loc => loc.address);
             
-            // For each location in the cluster, find tickets that have this address and haven't been assigned yet
-            for (const location of cluster.locations) {
-                // Skip if this address has already been assigned to another cluster
-                if (assignedAddressIds.has(location.addressId)) {
-                    console.log(`Skipping already assigned address: ${location.address} (ID: ${location.addressId})`);
-                    continue;
-                }
+            console.log(`Processing cluster ${cluster.clusterId} with ${cluster.locations.length} unique locations`);
+            
+            // Find ALL tickets that have addresses in this cluster
+            for (const ticket of tickets) {
+                const ticketAddress = ticket.address;
                 
-                const matchingTickets = tickets.filter(ticket => 
-                    ticket.address === location.address && 
-                    !assignedTicketIds.has(ticket.ticketid)
-                );
-                
-                // Assign these tickets to this cluster
-                for (const ticket of matchingTickets) {
+                // Check if this ticket's address is in this cluster
+                if (clusterAddresses.includes(ticketAddress)) {
                     clusterTickets.push(ticket);
-                    assignedTicketIds.add(ticket.ticketid); // Mark as assigned
                 }
-                
-                // Mark this address as assigned
-                assignedAddressIds.add(location.addressId);
             }
             
-            if (clusterTickets.length > 0) {
-                ticketClusters.push({
-                    clusterId: cluster.clusterId,
-                    centerLat: cluster.centerLat,
-                    centerLng: cluster.centerLng,
-                    tickets: clusterTickets,
-                    locationCount: cluster.locations.length,
-                    ticketCount: clusterTickets.length,
-                    uniqueAddresses: cluster.locations.map(loc => loc.address)
-                });
-                
-                console.log(`Cluster ${cluster.clusterId}: ${clusterTickets.length} tickets assigned`);
-            }
+            console.log(`Cluster ${cluster.clusterId}: ${cluster.locations.length} unique locations → ${clusterTickets.length} tickets`);
+            
+            ticketClusters.push({
+                clusterId: cluster.clusterId,
+                centerLat: cluster.centerLat,
+                centerLng: cluster.centerLng,
+                locations: cluster.locations,
+                uniqueAddresses: clusterAddresses,
+                tickets: clusterTickets,
+                ticketCount: clusterTickets.length,
+                addressCount: cluster.locations.length,
+                // Add summary for debugging
+                summary: {
+                    uniqueLocations: cluster.locations.length,
+                    totalTickets: clusterTickets.length,
+                    locationToTicketRatio: clusterTickets.length / cluster.locations.length
+                }
+            });
         }
         
-                    // Log unassigned tickets for debugging
-            const unassignedTickets = tickets.filter(ticket => !assignedTicketIds.has(ticket.ticketid));
-            if (unassignedTickets.length > 0) {
-                console.log(`Warning: ${unassignedTickets.length} tickets were not assigned to any cluster:`, 
-                    unassignedTickets.map(t => `${t.ticketid} (${t.address})`));
-                
-                // Only create fallback cluster for tickets WITH coordinates
-                const ticketsWithCoords = unassignedTickets.filter(t => t.latitude && t.longitude);
-                if (ticketsWithCoords.length > 0) {
-                    console.log(`Creating fallback cluster for ${ticketsWithCoords.length} unassigned tickets with coordinates`);
-                    
-                    const totalLat = ticketsWithCoords.reduce((sum, t) => sum + parseFloat(t.latitude), 0);
-                    const totalLng = ticketsWithCoords.reduce((sum, t) => sum + parseFloat(t.longitude), 0);
-                    const centerLat = totalLat / ticketsWithCoords.length;
-                    const centerLng = totalLng / ticketsWithCoords.length;
-                    
-                    const fallbackCluster = {
-                        clusterId: Date.now() + Math.random(),
-                        centerLat: centerLat,
-                        centerLng: centerLng,
-                        tickets: ticketsWithCoords, // Only include tickets with coordinates
-                        locationCount: ticketsWithCoords.length,
-                        ticketCount: ticketsWithCoords.length,
-                        uniqueAddresses: [...new Set(ticketsWithCoords.map(t => t.address).filter(addr => addr && addr.trim() !== ''))]
-                    };
-                    
-                    ticketClusters.push(fallbackCluster);
-                    console.log(`Created fallback cluster with ${ticketsWithCoords.length} tickets`);
-                }
-                
-                // Log tickets without coordinates that will be excluded
-                const ticketsWithoutCoords = unassignedTickets.filter(t => !t.latitude || !t.longitude);
-                if (ticketsWithoutCoords.length > 0) {
-                    console.log(`Excluding ${ticketsWithoutCoords.length} tickets without coordinates from clustering:`, 
-                        ticketsWithoutCoords.map(t => `${t.ticketid} (${t.address})`));
-                }
-            }
-            
-            // Log summary statistics
-            const totalAssignedTickets = assignedTicketIds.size;
-            const totalUnassignedTickets = unassignedTickets.length;
-            const totalProcessedTickets = totalAssignedTickets + totalUnassignedTickets;
-            
-            console.log(`=== CLUSTERING SUMMARY ===`);
-            console.log(`Total tickets processed: ${totalProcessedTickets}`);
-            console.log(`Total tickets assigned: ${totalAssignedTickets}`);
-            console.log(`Total tickets unassigned: ${totalUnassignedTickets}`);
-            console.log(`Total clusters created: ${ticketClusters.length}`);
-            console.log(`Expected tickets: ${tickets.length}`);
-            console.log(`Difference: ${totalProcessedTickets - tickets.length} (should be 0)`);
-            
-            if (totalProcessedTickets !== tickets.length) {
-                console.log(`ERROR: Ticket count mismatch! Expected ${tickets.length}, got ${totalProcessedTickets}`);
-            }
+        // Log summary
+        const totalTicketsAssigned = ticketClusters.reduce((sum, cluster) => sum + cluster.ticketCount, 0);
+        const totalUniqueLocations = ticketClusters.reduce((sum, cluster) => sum + cluster.addressCount, 0);
+        
+        console.log(`=== CLUSTERING SUMMARY ===`);
+        console.log(`Total location clusters: ${ticketClusters.length}`);
+        console.log(`Total unique locations: ${totalUniqueLocations}`);
+        console.log(`Total tickets assigned: ${totalTicketsAssigned}`);
+        console.log(`Average tickets per location: ${(totalTicketsAssigned / totalUniqueLocations).toFixed(2)}`);
+        
+        ticketClusters.forEach((cluster, index) => {
+            console.log(`Cluster ${index + 1}: ${cluster.addressCount} locations, ${cluster.ticketCount} tickets`);
+        });
         
         return ticketClusters;
     }
