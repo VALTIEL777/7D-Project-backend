@@ -387,7 +387,7 @@ class RouteOptimizationService {
                         routeCode: clusterRouteCode,
                         type: type || 'default',
                         startDate: startDate || new Date(),
-                        endDate: endDate || new Date(),
+                        endDate: endDate || null, // Set to null for new routes (active routes)
                         encodedPolyline: optimizedRouteResult.encodedPolyline,
                         totalDistance: optimizedRouteResult.totalDistance,
                         totalDuration: optimizedRouteResult.totalDuration,
@@ -658,7 +658,7 @@ class RouteOptimizationService {
                 routeCode: routeCode || await this.generateRouteCode(type),
                 type: type || 'default',
                 startDate: startDate || new Date(),
-                endDate: endDate || new Date(),
+                endDate: endDate || null, // Set to null for new routes (active routes)
                 encodedPolyline: optimizedRouteResult.encodedPolyline,
                 totalDistance: optimizedRouteResult.totalDistance,
                 totalDuration: optimizedRouteResult.totalDuration,
