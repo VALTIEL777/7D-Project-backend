@@ -92,7 +92,7 @@ class Routes {
     return route;
   }
 
-  // Get routes by type with their tickets and addresses, only active (endDate is null or empty)
+  // Get routes by type with their tickets and addresses, only active routes
   static async findByTypeWithTickets(type) {
     try {
       const res = await db.query(`
@@ -107,7 +107,12 @@ class Routes {
         FROM Routes r
         LEFT JOIN RouteTickets rt ON r.routeId = rt.routeId AND rt.deletedAt IS NULL
         LEFT JOIN Tickets t ON rt.ticketId = t.ticketId AND t.deletedAt IS NULL
-        WHERE r.type = $1 AND r.deletedAt IS NULL
+        WHERE r.type = $1 
+          AND r.deletedAt IS NULL
+          AND (
+            r.endDate IS NULL 
+            OR r.endDate > CURRENT_DATE
+          )
         ORDER BY r.createdAt DESC, rt.queue ASC
       `, [type]);
       
@@ -174,6 +179,96 @@ class Routes {
       return Array.from(routesMap.values());
     } catch (error) {
       console.error('Error in findByTypeWithTickets:', error);
+      throw error;
+    }
+  }
+
+  // Get completed routes by type with their tickets and addresses
+  // A route is considered completed if it has an endDate set
+  static async findCompletedByTypeWithTickets(type) {
+    try {
+      const res = await db.query(`
+        SELECT 
+          r.*,
+          rt.ticketId,
+          rt.address,
+          rt.queue,
+          t.ticketCode,
+          t.quantity,
+          t.amountToPay
+        FROM Routes r
+        LEFT JOIN RouteTickets rt ON r.routeId = rt.routeId AND rt.deletedAt IS NULL
+        LEFT JOIN Tickets t ON rt.ticketId = t.ticketId AND t.deletedAt IS NULL
+        WHERE r.type = $1 
+          AND r.deletedAt IS NULL
+          AND r.endDate IS NOT NULL
+          AND r.endDate <= CURRENT_DATE
+        ORDER BY r.endDate DESC, r.createdAt DESC, rt.queue ASC
+      `, [type]);
+      
+      if (res.rows.length === 0) return [];
+      
+      // Group routes with their tickets
+      const routesMap = new Map();
+      
+      res.rows.forEach(row => {
+        const routeId = row.routeid;
+        
+        if (!routesMap.has(routeId)) {
+          // Parse JSONB fields safely
+          let optimizedOrder = null;
+          let optimizationMetadata = null;
+          
+          try {
+            optimizedOrder = row.optimizedorder ? JSON.parse(row.optimizedorder) : null;
+          } catch (e) {
+            console.warn(`Failed to parse optimizedOrder for route ${routeId}:`, e.message);
+          }
+          
+          try {
+            optimizationMetadata = row.optimizationmetadata ? JSON.parse(row.optimizationmetadata) : null;
+          } catch (e) {
+            console.warn(`Failed to parse optimizationMetadata for route ${routeId}:`, e.message);
+          }
+          
+          // Create route object without ticket-specific fields
+          const route = {
+            routeId: row.routeid,
+            routeCode: row.routecode,
+            type: row.type,
+            startDate: row.startdate,
+            endDate: row.enddate,
+            encodedPolyline: row.encodedpolyline,
+            totalDistance: row.totaldistance,
+            totalDuration: row.totalduration,
+            optimizedOrder: optimizedOrder,
+            optimizationMetadata: optimizationMetadata,
+            createdAt: row.createdat,
+            updatedAt: row.updatedat,
+            createdBy: row.createdby,
+            updatedBy: row.updatedby,
+            tickets: []
+          };
+          routesMap.set(routeId, route);
+        }
+        
+        // Add ticket if it exists
+        if (row.ticketid) {
+          const ticket = {
+            ticketId: row.ticketid,
+            ticketCode: row.ticketcode,
+            address: row.address,
+            queue: row.queue,
+            quantity: row.quantity,
+            amountToPay: row.amounttopay
+          };
+          routesMap.get(routeId).tickets.push(ticket);
+        }
+      });
+      
+      return Array.from(routesMap.values());
+    } catch (error) {
+      console.error('Error in findCompletedByTypeWithTickets:', error);
       throw error;
     }
   }

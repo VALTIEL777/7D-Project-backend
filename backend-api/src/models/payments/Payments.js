@@ -31,6 +31,28 @@ class Payments {
     const res = await db.query('UPDATE Payments SET deletedAt = CURRENT_TIMESTAMP WHERE checkId = $1 AND deletedAt IS NULL RETURNING *;', [checkId]);
     return res.rows[0];
   }
+
+  static async getPaymentInvoiceTicketInfo() {
+    const query = `
+      SELECT 
+        p.paymentNumber,
+        p.amountPaid,
+        i.invoiceNumber,
+        i.amountRequested,
+        t.amountToPay,
+        t.calculatedCost,
+        t.ticketCode
+      FROM Payments p
+      LEFT JOIN Tickets t ON p.checkId = t.paymentId
+      LEFT JOIN Invoices i ON t.ticketId = i.ticketId
+      WHERE p.deletedAt IS NULL 
+        AND (t.deletedAt IS NULL OR t.deletedAt IS NULL)
+        AND (i.deletedAt IS NULL OR i.deletedAt IS NULL)
+      ORDER BY p.checkId, t.ticketId, i.invoiceId;
+    `;
+    const res = await db.query(query);
+    return res.rows;
+  }
 }
 
 module.exports = Payments; 

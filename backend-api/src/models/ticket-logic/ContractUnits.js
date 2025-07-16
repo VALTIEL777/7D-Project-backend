@@ -36,6 +36,18 @@ class ContractUnits {
     const res = await db.query('UPDATE ContractUnits SET deletedAt = CURRENT_TIMESTAMP WHERE contractUnitId = $1 AND deletedAt IS NULL RETURNING *;', [contractUnitId]);
     return res.rows[0];
   }
+
+  // Find contract unit by item code
+  static async findByItemCode(itemCode) {
+    const res = await db.query('SELECT * FROM ContractUnits WHERE itemCode = $1 AND deletedAt IS NULL;', [itemCode]);
+    return res.rows[0];
+  }
+
+  // Get all available item codes
+  static async getAllItemCodes() {
+    const res = await db.query('SELECT itemCode, name FROM ContractUnits WHERE deletedAt IS NULL ORDER BY itemCode;');
+    return res.rows;
+  }
 }
 
 module.exports = ContractUnits; 

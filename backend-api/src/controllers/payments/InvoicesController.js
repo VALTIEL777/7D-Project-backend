@@ -7,6 +7,7 @@ const normalizeInvoice = (dbRecord) => {
   return {
     invoiceId: dbRecord.invoiceid,
     ticketId: dbRecord.ticketid ? Number(dbRecord.ticketid) : null,
+    ticketCode: dbRecord.ticketcode,
     invoiceNumber: dbRecord.invoicenumber,
     invoiceDateRequested: dbRecord.invoicedaterequested,
     amountRequested: dbRecord.amountrequested ? Number(dbRecord.amountrequested) : null,
