@@ -9,6 +9,16 @@ class TicketStatus {
     return res.rows[0];
   }
 
+  static async findByTicket(ticketId) {
+    const query = `
+      SELECT * FROM TicketStatus
+      WHERE ticketId = $1 AND deletedAt IS NULL;
+    `;
+    const { rows } = await db.query(query, [ticketId]);
+    return rows;
+  }
+
+
   static async findById(taskStatusId, ticketId) {
     const res = await db.query(
       'SELECT * FROM TicketStatus WHERE taskStatusId = $1 AND ticketId = $2 AND deletedAt IS NULL;',

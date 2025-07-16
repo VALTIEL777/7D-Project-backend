@@ -1,18 +1,16 @@
 const PhotoEvidence = require('../../models/route/PhotoEvidence');
 const NotificationService = require('../../services/NotificationService');
 const Tickets = require('../../models/ticket-logic/Tickets');
-const minioClient = require('../../config/minio');
+const { getMinioClient } = require('../../config/minio');  // <-- Cambio aquí
 const path = require('path');
 const exif = require('exif-parser');
 
 function parseExifDate(exifValue) {
   if (!exifValue) return null;
   if (typeof exifValue === 'number') {
-    // UNIX timestamp (seconds)
     return new Date(exifValue * 1000).toISOString();
   }
   if (typeof exifValue === 'string') {
-    // Format: 'YYYY:MM:DD HH:MM:SS[.sss]'
     const match = exifValue.match(/^([0-9]{4}):([0-9]{2}):([0-9]{2}) ([0-9]{2}):([0-9]{2}):([0-9]{2})(?:\.(\d+))?$/);
     if (match) {
       const [ , year, month, day, hour, min, sec, ms ] = match;
@@ -29,76 +27,86 @@ function parseExifDate(exifValue) {
 }
 
 const PhotoEvidenceController = {
-  async createPhotoEvidence(req, res) {
+ async createPhotoEvidence(req, res) {
+  try {
+    const minioClient = getMinioClient(); // <-- Obtienes instancia válida
+
+    const bucket = 'uploads';
+    const folder = 'photo-evidence';
+    const originalName = req.file.originalname;
+    const timestamp = Date.now();
+    const objectName = `${folder}/${timestamp}-${originalName}`;
+
+    // Verificar bucket
+    let bucketExists = false;
     try {
-      // 1. Save image to MinIO
-      const bucket = 'uploads';
-      const folder = 'photo-evidence';
-      const originalName = req.file.originalname;
-      const timestamp = Date.now();
-      const ext = path.extname(originalName);
-      const objectName = `${folder}/${timestamp}-${originalName}`;
-
-      // Ensure bucket exists
-      const bucketExists = await minioClient.bucketExists(bucket).catch(() => false);
-      if (!bucketExists) {
-        await minioClient.makeBucket(bucket);
-      }
-
-      await minioClient.putObject(bucket, objectName, req.file.buffer);
-
-      // 2. Construct the file URL
-      const fileUrl = `http://${process.env.MINIO_ENDPOINT?.split(':')[0] || 'localhost'}:9000/${bucket}/${objectName}`;
-
-      // 3. Extract EXIF metadata
-      let latitude = req.body.latitude;
-      let longitude = req.body.longitude;
-      let name = req.body.name;
-      let date = req.body.date;
-      try {
-        const parser = exif.create(req.file.buffer);
-        const result = parser.parse();
-        if (result.tags.GPSLatitude && result.tags.GPSLongitude) {
-          latitude = result.tags.GPSLatitude;
-          longitude = result.tags.GPSLongitude;
-        }
-        if (result.tags.ImageDescription) {
-          name = result.tags.ImageDescription;
-        }
-        let exifDate = parseExifDate(result.tags.DateTimeOriginal) || parseExifDate(result.tags.CreateDate);
-        if (exifDate) {
-          date = exifDate;
-        }
-      } catch (exifErr) {
-        console.warn('No EXIF data or failed to parse:', exifErr.message);
-      }
-
-      // 4. Save photo evidence with photoURL and extracted metadata
-      const { ticketStatusId, ticketId, photo, comment, createdBy, updatedBy } = req.body;
-      const newPhotoEvidence = await PhotoEvidence.create(
-        ticketStatusId, ticketId, name, latitude, longitude, photo, date, comment, fileUrl, createdBy, updatedBy
-      );
-      
-      // 5. Create notification for photo upload
-      if (ticketId) {
-        const ticket = await Tickets.findById(ticketId);
-        if (ticket) {
-          const userIds = await NotificationService.getTicketNotificationUsers(ticketId);
-          await NotificationService.notifyPhotoUploaded(
-            ticketId,
-            ticket.ticketCode,
-            createdBy,
-            userIds
-          );
-        }
-      }
-      
-      res.status(201).json(newPhotoEvidence);
-    } catch (error) {
-      console.error('Error creating PhotoEvidence:', error);
-      res.status(500).json({ message: 'Error creating PhotoEvidence', error: error.message });
+      bucketExists = await minioClient.bucketExists(bucket);
+    } catch (err) {
+      console.warn(`Error checking bucket existence: ${err.message}`);
     }
-  },
+
+    if (!bucketExists) {
+      console.log(`Bucket "${bucket}" does not exist. Creating...`);
+      await minioClient.makeBucket(bucket);
+    }
+
+    // Subir archivo
+    await minioClient.putObject(bucket, objectName, req.file.buffer);
+
+    //const fileUrl = `http://${process.env.MINIO_ENDPOINT?.split(':')[0] || 'localhost'}:9000/${bucket}/${objectName}`;
+    const minioHost = process.env.MINIO_ENDPOINT ? process.env.MINIO_ENDPOINT.split(':')[0] : 'localhost';
+const fileUrl = `http://${minioHost === 'minio' ? 'localhost' : minioHost}:9000/${bucket}/${objectName}`;
+
+
+    // Extraer EXIF (opcional)
+    let latitude = req.body.latitude;
+    let longitude = req.body.longitude;
+    let name = req.body.name;
+    let date = req.body.date;
+
+    try {
+      const parser = exif.create(req.file.buffer);
+      const result = parser.parse();
+
+      if (result.tags.GPSLatitude && result.tags.GPSLongitude) {
+        latitude = result.tags.GPSLatitude;
+        longitude = result.tags.GPSLongitude;
+      }
+      if (result.tags.ImageDescription) {
+        name = result.tags.ImageDescription;
+      }
+      const exifDate = parseExifDate(result.tags.DateTimeOriginal) || parseExifDate(result.tags.CreateDate);
+      if (exifDate) {
+        date = exifDate;
+      }
+    } catch (exifErr) {
+      console.warn('No EXIF data or failed to parse:', exifErr.message);
+    }
+
+    const { ticketStatusId, ticketId, photo, comment, createdBy, updatedBy } = req.body;
+
+    // Guardar en base de datos
+    const newPhotoEvidence = await PhotoEvidence.create(
+      ticketStatusId,
+      ticketId,
+      name,
+      latitude,
+      longitude,
+      photo,
+      date,
+      comment,
+      fileUrl,
+      createdBy,
+      updatedBy
+    );
+
+    res.status(201).json(newPhotoEvidence);
+  } catch (error) {
+    console.error('Error creating PhotoEvidence:', error);
+    res.status(500).json({ message: 'Error creating PhotoEvidence', error: error.message });
+  }
+},
+
 
   async getPhotoEvidenceById(req, res) {
     try {
