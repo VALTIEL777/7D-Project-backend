@@ -2342,6 +2342,249 @@ class RouteOptimizationService {
     }
 
     /**
+     * Cancel a spotting route - soft delete route and reset SPOTTING status
+     * @param {number} routeId - Route ID
+     * @param {Array<number>} ticketIds - Array of ticket IDs in the route
+     * @param {number} updatedBy - User ID
+     * @returns {Promise<Object>} - Result of the cancellation operation
+     */
+    async cancelSpottingRoute(routeId, ticketIds, updatedBy = 1) {
+        try {
+            console.log(`Canceling spotting route ${routeId} with ${ticketIds.length} tickets`);
+
+            // Start a transaction
+            const client = await db.pool.connect();
+            
+            try {
+                await client.query('BEGIN');
+
+                // 1. Reset SPOTTING status endingDate to NULL for all tickets
+                const spottingStatusResult = await client.query(`
+                    UPDATE TicketStatus 
+                    SET endingDate = NULL, 
+                        updatedAt = CURRENT_TIMESTAMP, 
+                        updatedBy = $1 
+                    WHERE ticketId = ANY($2) 
+                        AND taskStatusId = (SELECT taskStatusId FROM TaskStatus WHERE name = 'Spotting' AND deletedAt IS NULL)
+                        AND deletedAt IS NULL
+                    RETURNING taskStatusId, ticketId, endingDate
+                `, [updatedBy, ticketIds]);
+
+                const updatedSpottingStatuses = spottingStatusResult.rows.length;
+
+                // 2. Soft delete the route
+                const routeResult = await client.query(`
+                    UPDATE Routes 
+                    SET deletedAt = CURRENT_TIMESTAMP, 
+                        updatedAt = CURRENT_TIMESTAMP, 
+                        updatedBy = $1 
+                    WHERE routeId = $2 
+                        AND type = 'SPOTTER'
+                        AND deletedAt IS NULL
+                    RETURNING routeId, deletedAt
+                `, [updatedBy, routeId]);
+
+                // 3. Soft delete all RouteTickets associations
+                const routeTicketsResult = await client.query(`
+                    UPDATE RouteTickets 
+                    SET deletedAt = CURRENT_TIMESTAMP, 
+                        updatedAt = CURRENT_TIMESTAMP, 
+                        updatedBy = $1 
+                    WHERE routeId = $2 
+                        AND deletedAt IS NULL
+                    RETURNING routeId, ticketId, deletedAt
+                `, [updatedBy, routeId]);
+
+                await client.query('COMMIT');
+
+                console.log(`Canceled spotting route ${routeId}: ${updatedSpottingStatuses} SPOTTING statuses reset, route soft deleted`);
+
+                return {
+                    routeId: routeId,
+                    message: `Spotting route canceled successfully. Reset ${updatedSpottingStatuses} SPOTTING statuses and soft deleted route.`,
+                    updatedSpottingStatuses: updatedSpottingStatuses,
+                    totalTickets: ticketIds.length,
+                    routeSoftDeleted: routeResult.rows.length > 0,
+                    routeTicketsSoftDeleted: routeTicketsResult.rows.length,
+                    timestamp: new Date().toISOString()
+                };
+
+            } catch (error) {
+                await client.query('ROLLBACK');
+                throw error;
+            } finally {
+                client.release();
+            }
+
+        } catch (error) {
+            console.error('Failed to cancel spotting route:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Cancel a concrete route - soft delete route and reset SAWCUT status
+     * @param {number} routeId - Route ID
+     * @param {Array<number>} ticketIds - Array of ticket IDs in the route
+     * @param {number} updatedBy - User ID
+     * @returns {Promise<Object>} - Result of the cancellation operation
+     */
+    async cancelConcreteRoute(routeId, ticketIds, updatedBy = 1) {
+        try {
+            console.log(`Canceling concrete route ${routeId} with ${ticketIds.length} tickets`);
+
+            // Start a transaction
+            const client = await db.pool.connect();
+            
+            try {
+                await client.query('BEGIN');
+
+                // 1. Reset SAWCUT status endingDate to NULL for all tickets
+                const sawcutStatusResult = await client.query(`
+                    UPDATE TicketStatus 
+                    SET endingDate = NULL, 
+                        updatedAt = CURRENT_TIMESTAMP, 
+                        updatedBy = $1 
+                    WHERE ticketId = ANY($2) 
+                        AND taskStatusId = (SELECT taskStatusId FROM TaskStatus WHERE name = 'Sawcut' AND deletedAt IS NULL)
+                        AND deletedAt IS NULL
+                    RETURNING taskStatusId, ticketId, endingDate
+                `, [updatedBy, ticketIds]);
+
+                const updatedSawcutStatuses = sawcutStatusResult.rows.length;
+
+                // 2. Soft delete the route
+                const routeResult = await client.query(`
+                    UPDATE Routes 
+                    SET deletedAt = CURRENT_TIMESTAMP, 
+                        updatedAt = CURRENT_TIMESTAMP, 
+                        updatedBy = $1 
+                    WHERE routeId = $2 
+                        AND type = 'CONCRETE'
+                        AND deletedAt IS NULL
+                    RETURNING routeId, deletedAt
+                `, [updatedBy, routeId]);
+
+                // 3. Soft delete all RouteTickets associations
+                const routeTicketsResult = await client.query(`
+                    UPDATE RouteTickets 
+                    SET deletedAt = CURRENT_TIMESTAMP, 
+                        updatedAt = CURRENT_TIMESTAMP, 
+                        updatedBy = $1 
+                    WHERE routeId = $2 
+                        AND deletedAt IS NULL
+                    RETURNING routeId, ticketId, deletedAt
+                `, [updatedBy, routeId]);
+
+                await client.query('COMMIT');
+
+                console.log(`Canceled concrete route ${routeId}: ${updatedSawcutStatuses} SAWCUT statuses reset, route soft deleted`);
+
+                return {
+                    routeId: routeId,
+                    message: `Concrete route canceled successfully. Reset ${updatedSawcutStatuses} SAWCUT statuses and soft deleted route.`,
+                    updatedSawcutStatuses: updatedSawcutStatuses,
+                    totalTickets: ticketIds.length,
+                    routeSoftDeleted: routeResult.rows.length > 0,
+                    routeTicketsSoftDeleted: routeTicketsResult.rows.length,
+                    timestamp: new Date().toISOString()
+                };
+
+            } catch (error) {
+                await client.query('ROLLBACK');
+                throw error;
+            } finally {
+                client.release();
+            }
+
+        } catch (error) {
+            console.error('Failed to cancel concrete route:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Cancel an asphalt route - soft delete route and reset FRAMING status
+     * @param {number} routeId - Route ID
+     * @param {Array<number>} ticketIds - Array of ticket IDs in the route
+     * @param {number} updatedBy - User ID
+     * @returns {Promise<Object>} - Result of the cancellation operation
+     */
+    async cancelAsphaltRoute(routeId, ticketIds, updatedBy = 1) {
+        try {
+            console.log(`Canceling asphalt route ${routeId} with ${ticketIds.length} tickets`);
+
+            // Start a transaction
+            const client = await db.pool.connect();
+            
+            try {
+                await client.query('BEGIN');
+
+                // 1. Reset FRAMING status endingDate to NULL for all tickets
+                const framingStatusResult = await client.query(`
+                    UPDATE TicketStatus 
+                    SET endingDate = NULL, 
+                        updatedAt = CURRENT_TIMESTAMP, 
+                        updatedBy = $1 
+                    WHERE ticketId = ANY($2) 
+                        AND taskStatusId = (SELECT taskStatusId FROM TaskStatus WHERE name = 'Framing' AND deletedAt IS NULL)
+                        AND deletedAt IS NULL
+                    RETURNING taskStatusId, ticketId, endingDate
+                `, [updatedBy, ticketIds]);
+
+                const updatedFramingStatuses = framingStatusResult.rows.length;
+
+                // 2. Soft delete the route
+                const routeResult = await client.query(`
+                    UPDATE Routes 
+                    SET deletedAt = CURRENT_TIMESTAMP, 
+                        updatedAt = CURRENT_TIMESTAMP, 
+                        updatedBy = $1 
+                    WHERE routeId = $2 
+                        AND type = 'ASPHALT'
+                        AND deletedAt IS NULL
+                    RETURNING routeId, deletedAt
+                `, [updatedBy, routeId]);
+
+                // 3. Soft delete all RouteTickets associations
+                const routeTicketsResult = await client.query(`
+                    UPDATE RouteTickets 
+                    SET deletedAt = CURRENT_TIMESTAMP, 
+                        updatedAt = CURRENT_TIMESTAMP, 
+                        updatedBy = $1 
+                    WHERE routeId = $2 
+                        AND deletedAt IS NULL
+                    RETURNING routeId, ticketId, deletedAt
+                `, [updatedBy, routeId]);
+
+                await client.query('COMMIT');
+
+                console.log(`Canceled asphalt route ${routeId}: ${updatedFramingStatuses} FRAMING statuses reset, route soft deleted`);
+
+                return {
+                    routeId: routeId,
+                    message: `Asphalt route canceled successfully. Reset ${updatedFramingStatuses} FRAMING statuses and soft deleted route.`,
+                    updatedFramingStatuses: updatedFramingStatuses,
+                    totalTickets: ticketIds.length,
+                    routeSoftDeleted: routeResult.rows.length > 0,
+                    routeTicketsSoftDeleted: routeTicketsResult.rows.length,
+                    timestamp: new Date().toISOString()
+                };
+
+            } catch (error) {
+                await client.query('ROLLBACK');
+                throw error;
+            } finally {
+                client.release();
+            }
+
+        } catch (error) {
+            console.error('Failed to cancel asphalt route:', error);
+            throw error;
+        }
+    }
+
+    /**
      * Complete a route by setting endingDate to current timestamp for all ticket statuses
      * @param {number} routeId - Route ID
      * @param {Array<number>} ticketIds - Array of ticket IDs in the route
