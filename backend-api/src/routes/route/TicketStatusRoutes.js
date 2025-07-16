@@ -87,6 +87,61 @@ router.post('/', TicketStatusController.createTicketStatus);
 
 /**
  * @swagger
+ * /ticketstatus/ticket/{ticketId}/crew/{crewId}:
+ *   get:
+ *     summary: Get a ticket status entry by ticket ID and crew ID
+ *     tags: [Ticket Status]
+ *     parameters:
+ *       - in: path
+ *         name: ticketId
+ *         schema:
+ *           type: integer
+ *         required: true
+ *         description: The ID of the ticket.
+ *       - in: path
+ *         name: crewId
+ *         schema:
+ *           type: integer
+ *         required: true
+ *         description: The ID of the crew.
+ *     responses:
+ *       200:
+ *         description: Ticket status entry found.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 taskStatusId:
+ *                   type: integer
+ *                   example: 1
+ *                 ticketId:
+ *                   type: integer
+ *                   example: 1
+ *                 crewId:
+ *                   type: integer
+ *                   example: 1
+ *                 startingDate:
+ *                   type: string
+ *                   format: date-time
+ *                 endingDate:
+ *                   type: string
+ *                   format: date-time
+ *                 observation:
+ *                   type: string
+ *                 createdBy:
+ *                   type: integer
+ *                 updatedBy:
+ *                   type: integer
+ *       404:
+ *         description: Ticket status entry not found
+ *       500:
+ *         description: Server error
+ */
+router.get('/ticket/:ticketId/crew/:crewId', TicketStatusController.getTicketStatusByTicketAndCrew);
+
+/**
+ * @swagger
  * /ticketstatus/{taskStatusId}/{ticketId}:
  *   get:
  *     summary: Get a ticket status entry by task status ID and ticket ID
@@ -151,6 +206,59 @@ router.get('/:taskStatusId/:ticketId', TicketStatusController.getTicketStatusByI
  *         description: Server error
  */
 router.get('/', TicketStatusController.getAllTicketStatuses);
+
+/**
+ * @swagger
+ * /api/ticketstatus/completed:
+ *   get:
+ *     summary: Get all completed tickets with endingDate
+ *     tags: [TicketStatus]
+ *     responses:
+ *       200:
+ *         description: List of completed tickets with location info
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   ticketid:
+ *                     type: integer
+ *                     example: 5
+ *                   taskstatusid:
+ *                     type: integer
+ *                     example: 2
+ *                   crewid:
+ *                     type: integer
+ *                     example: 3
+ *                   startingdate:
+ *                     type: string
+ *                     format: date-time
+ *                     example: 2025-07-01T00:00:00.000Z
+ *                   endingdate:
+ *                     type: string
+ *                     format: date-time
+ *                     example: 2025-07-02T00:00:00.000Z
+ *                   observation:
+ *                     type: string
+ *                     example: Completed successfully
+ *                   fromaddressstreet:
+ *                     type: string
+ *                     example: 1327 W Addison St
+ *                   toaddressstreet:
+ *                     type: string
+ *                     example: 1329 W Addison St
+ *                   fromaddresscardinal:
+ *                     type: string
+ *                     example: N
+ *                   fromaddresssuffix:
+ *                     type: string
+ *                     example: Ave
+ *       500:
+ *         description: Error fetching completed tickets
+ */
+router.get('/completed', TicketStatusController.getCompletedTickets);
 
 /**
  * @swagger

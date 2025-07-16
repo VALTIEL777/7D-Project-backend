@@ -3,8 +3,8 @@ const ContractUnitsPhases = require('../../models/ticket-logic/ContractUnitsPhas
 const ContractUnitsPhasesController = {
   async createContractUnitsPhases(req, res) {
     try {
-      const { contractUnitId, necessaryPhaseId, createdBy, updatedBy } = req.body;
-      const newContractUnitsPhases = await ContractUnitsPhases.create(contractUnitId, necessaryPhaseId, createdBy, updatedBy);
+      const { contractUnitId, taskStatusId, createdBy, updatedBy } = req.body;
+      const newContractUnitsPhases = await ContractUnitsPhases.create(contractUnitId, taskStatusId, createdBy, updatedBy);
       res.status(201).json(newContractUnitsPhases);
     } catch (error) {
       console.error('Error creating ContractUnitsPhases:', error);
@@ -14,8 +14,8 @@ const ContractUnitsPhasesController = {
 
   async getContractUnitsPhasesById(req, res) {
     try {
-      const { contractUnitId, necessaryPhaseId } = req.params;
-      const contractUnitsPhases = await ContractUnitsPhases.findById(contractUnitId, necessaryPhaseId);
+      const { contractUnitId, taskStatusId } = req.params;
+      const contractUnitsPhases = await ContractUnitsPhases.findById(contractUnitId, taskStatusId);
       if (!contractUnitsPhases) {
         return res.status(404).json({ message: 'ContractUnitsPhases not found' });
       }
@@ -23,6 +23,20 @@ const ContractUnitsPhasesController = {
     } catch (error) {
       console.error('Error fetching ContractUnitsPhases by ID:', error);
       res.status(500).json({ message: 'Error fetching ContractUnitsPhases', error: error.message });
+    }
+  },
+
+  async getPhasesByContractUnitId(req, res) {
+    try {
+      const { contractUnitId } = req.params;
+      const phases = await ContractUnitsPhases.findByContractUnitId(contractUnitId);
+      if (!phases || phases.length === 0) {
+        return res.status(404).json({ message: 'No task statuses found for this contract unit' });
+      }
+      res.status(200).json(phases);
+    } catch (error) {
+      console.error('Error retrieving task statuses by contractUnitId:', error);
+      res.status(500).json({ message: 'Error retrieving task statuses', error: error.message });
     }
   },
 
@@ -38,9 +52,9 @@ const ContractUnitsPhasesController = {
 
   async updateContractUnitsPhases(req, res) {
     try {
-      const { contractUnitId, necessaryPhaseId } = req.params;
+      const { contractUnitId, taskStatusId } = req.params;
       const { updatedBy } = req.body;
-      const updatedContractUnitsPhases = await ContractUnitsPhases.update(contractUnitId, necessaryPhaseId, updatedBy);
+      const updatedContractUnitsPhases = await ContractUnitsPhases.update(contractUnitId, taskStatusId, updatedBy);
       if (!updatedContractUnitsPhases) {
         return res.status(404).json({ message: 'ContractUnitsPhases not found' });
       }
@@ -53,8 +67,8 @@ const ContractUnitsPhasesController = {
 
   async deleteContractUnitsPhases(req, res) {
     try {
-      const { contractUnitId, necessaryPhaseId } = req.params;
-      const deletedContractUnitsPhases = await ContractUnitsPhases.delete(contractUnitId, necessaryPhaseId);
+      const { contractUnitId, taskStatusId } = req.params;
+      const deletedContractUnitsPhases = await ContractUnitsPhases.delete(contractUnitId, taskStatusId);
       if (!deletedContractUnitsPhases) {
         return res.status(404).json({ message: 'ContractUnitsPhases not found' });
       }
@@ -66,4 +80,4 @@ const ContractUnitsPhasesController = {
   },
 };
 
-module.exports = ContractUnitsPhasesController; 
+module.exports = ContractUnitsPhasesController;

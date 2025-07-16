@@ -706,9 +706,11 @@ WHERE comment7d IS NULL AND deletedAt IS NULL;
 CREATE INDEX idx_address_ticket_join ON TicketAddresses(addressId, ticketId) 
 WHERE deletedAt IS NULL;
 
+ALTER TABLE Crews
+ADD COLUMN routeId INTEGER REFERENCES Routes(routeId);
 
-INSERT INTO Users (UserId, username, password)
-VALUES (1, 'testuser', 'securepassword123')
+INSERT INTO Users ( username, password)
+VALUES ('testuser', 'securepassword123')
 ON CONFLICT (UserId) DO NOTHING;
 
 -- Supervisors
@@ -751,7 +753,3 @@ VALUES
     ('Install Signs', 'Installing road or traffic control signs at designated locations'),
     ('Steel Plate Pick Up', 'Removing previously installed steel plates from the roadway'),
     ('Asphalt', 'Laying down or repairing asphalt pavement surfaces');
-
-
-
-

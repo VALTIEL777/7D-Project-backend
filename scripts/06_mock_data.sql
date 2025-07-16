@@ -1,11 +1,12 @@
 -- Mock data for Users
-INSERT INTO Users (UserId, username, password) VALUES
-  (2, 'Agustin', 'Agustin'),
-  (3, 'Iris', 'Iris'),
-  (4, 'Erick', 'Erick'),
-  (5, 'Christian', 'Christian'),
-  (6, 'Elian', 'Elian'),
-  (7, 'Eva', 'Eva');
+INSERT INTO Users ( username, password) VALUES
+  ('Agustin', 'Agustin'),
+  ('Iris', 'Iris'),
+  ('Erick', 'Erick'),
+  ('Christian', 'Christian'),
+  ('Elian', 'Elian'),
+  ('Eva', 'Eva'),
+  ('Laura', 'laura123');
 
 
 -- Mock data for People
@@ -13,9 +14,11 @@ INSERT INTO People ( UserId, firstname, lastname, role, phone, email, createdBy,
   ( 2, 'Agustin', 'Landa', 'admin', '1234567890', 'Agustin@example.com', 1, 1),
   ( 3, 'Iris', 'Landa', 'admin', '2345678901', 'Iris@example.com', 1, 1),
   ( 4, 'Erick', 'Flores', 'admin', '3456789012', 'Erick@example.com', 1, 1),
-  ( 5, 'Christian', 'Barragan', 'admin', '3456789012', 'Christian@example.com', 1, 1),
+  ( 5, 'Christian', 'Barragan', 'operator', '3456789012', 'Christian@example.com', 1, 1),
   ( 6, 'Elian', 'Medina', 'admin', '3456789012', 'Elian@example.com', 1, 1),
-  ( 7, 'Eva', 'Landa', 'admin', '3456789012', 'Eva@example.com', 1, 1);
+  ( 7, 'Eva', 'Landa', 'admin', '3456789012', 'Eva@example.com', 1, 1),
+   ( 8, 'Laura', 'Mcqueen', 'operator', '3456789012', 'Eva@example.com', 1, 1);
+
 
 -- Mock data for Payments
 INSERT INTO Payments (checkId, paymentNumber, datePaid, amountPaid, status, paymentURL, createdBy, updatedBy) VALUES
@@ -28,20 +31,5 @@ INSERT INTO Payments (checkId, paymentNumber, datePaid, amountPaid, status, paym
 INSERT INTO Skills (skillId, name, description, createdBy, updatedBy) VALUES
   (1, 'Welding', 'Welding skills', 1, 1),
   (2, 'Plumbing', 'Plumbing skills', 2, 2);
-
--- Mock data for EmployeeSkills
-INSERT INTO EmployeeSkills (employeeId, skillId, proficiencyLevel, createdBy, updatedBy) VALUES
-  (1, 1, 5, 1, 1),
-  (2, 2, 4, 2, 2);
-
--- Mock data for Crews
-INSERT INTO Crews (crewId, type, photo, workedHours, createdBy, updatedBy) VALUES
-  (1, 'Repair', 'crew1.jpg', 100.0, 1, 1),
-  (2, 'Paving', 'crew2.jpg', 200.0, 2, 2);
-
--- Mock data for CrewEmployees
-INSERT INTO CrewEmployees (crewId, employeeId, crewLeader, createdBy, updatedBy) VALUES
-  (1, 1, true, 1, 1),
-  (2, 2, false, 2, 2);
 
 
