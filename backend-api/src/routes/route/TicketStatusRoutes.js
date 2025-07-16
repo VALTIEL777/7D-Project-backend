@@ -12,6 +12,53 @@ const router = express.Router();
 
 /**
  * @swagger
+ * /ticketstatus/ticket/{ticketId}:
+ *   get:
+ *     summary: Get all ticket statuses for a given ticket ID (ignoring crew)
+ *     tags: [Ticket Status]
+ *     parameters:
+ *       - in: path
+ *         name: ticketId
+ *         schema:
+ *           type: integer
+ *         required: true
+ *         description: The ID of the ticket.
+ *     responses:
+ *       200:
+ *         description: List of ticket status entries for the ticket.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   taskStatusId:
+ *                     type: integer
+ *                   ticketId:
+ *                     type: integer
+ *                   crewId:
+ *                     type: integer
+ *                   startingDate:
+ *                     type: string
+ *                     format: date-time
+ *                   endingDate:
+ *                     type: string
+ *                     format: date-time
+ *                   observation:
+ *                     type: string
+ *                   createdBy:
+ *                     type: integer
+ *                   updatedBy:
+ *                     type: integer
+ *       500:
+ *         description: Server error
+ */
+router.get('/ticket/:ticketId', TicketStatusController.getTicketStatusesByTicket);
+
+
+/**
+ * @swagger
  * /ticketstatus:
  *   post:
  *     summary: Create a new ticket status entry
