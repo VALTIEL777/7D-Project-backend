@@ -460,6 +460,38 @@ const TicketsController = {
         error: error.message 
       });
     }
+  },
+
+  // Get ticket information with related payment and invoice data
+  async getTicketPaymentInvoiceInfo(req, res) {
+    try {
+      const ticketData = await Tickets.getTicketPaymentInvoiceInfo();
+      
+      // Normalize the data to camelCase
+      const normalizedData = ticketData.map(row => ({
+        ticketCode: row.ticketcode,
+        amountToPay: row.amounttopay ? Number(row.amounttopay) : null,
+        calculatedCost: row.calculatedcost ? Number(row.calculatedcost) : null,
+        invoiceNumber: row.invoicenumber,
+        amountRequested: row.amountrequested ? Number(row.amountrequested) : null,
+        amountPaid: row.amountpaid ? Number(row.amountpaid) : null,
+        statusPaid: row.statuspaid
+      }));
+      
+      res.status(200).json({
+        success: true,
+        message: 'Ticket payment and invoice information retrieved successfully',
+        count: normalizedData.length,
+        data: normalizedData
+      });
+    } catch (error) {
+      console.error('Error fetching ticket payment and invoice information:', error);
+      res.status(500).json({ 
+        success: false,
+        message: 'Error fetching ticket payment and invoice information', 
+        error: error.message 
+      });
+    }
   }
 };
 

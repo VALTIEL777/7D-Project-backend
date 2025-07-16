@@ -65,6 +65,20 @@ class Tickets {
     return result.rows[0];
   }
 
+  // Find ticket by code (alias for findByTicketCode)
+  static async findByCode(ticketCode) {
+    return this.findByTicketCode(ticketCode);
+  }
+
+  // Update contract number for a ticket
+  static async updateContractNumber(ticketId, contractNumber) {
+    const result = await db.query(
+      'UPDATE Tickets SET contractNumber = $1, updatedAt = CURRENT_TIMESTAMP WHERE ticketId = $2 AND deletedAt IS NULL RETURNING *',
+      [contractNumber, ticketId]
+    );
+    return result.rows[0];
+  }
+
   // Find tickets expiring in specific number of days
   static async findExpiringInDays(days) {
     const result = await db.query(`
@@ -386,6 +400,26 @@ class Tickets {
         AND tks.observation != ''
         AND tks.observation != ' '
     `, [ticketIds]);
+    return result.rows;
+  }
+
+  // Get ticket information with related payment and invoice data
+  static async getTicketPaymentInvoiceInfo() {
+    const result = await db.query(`
+      SELECT 
+        t.ticketCode,
+        t.amountToPay,
+        t.calculatedCost,
+        i.invoiceNumber,
+        i.amountRequested,
+        p.amountPaid,
+        p.status as statusPaid
+      FROM Tickets t
+      LEFT JOIN Invoices i ON t.ticketId = i.ticketId AND i.deletedAt IS NULL
+      LEFT JOIN Payments p ON t.paymentId = p.checkId AND p.deletedAt IS NULL
+      WHERE t.deletedAt IS NULL
+      ORDER BY t.ticketId ASC
+    `);
     return result.rows;
   }
 }

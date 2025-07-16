@@ -73,6 +73,27 @@ router.post('/suggest-addresses-batch', RouteOptimizationController.suggestAddre
 router.post('/route/:routeId/cancel', RouteOptimizationController.cancelRoute);
 
 /**
+ * @route POST /api/route-optimization/route/:routeId/cancel-spotting
+ * @desc Cancel a spotting route by soft deleting it and resetting SPOTTING statuses
+ * @access Private (assuming you have auth middleware)
+ */
+router.post('/route/:routeId/cancel-spotting', RouteOptimizationController.cancelSpottingRoute);
+
+/**
+ * @route POST /api/route-optimization/route/:routeId/cancel-concrete
+ * @desc Cancel a concrete route by soft deleting it and resetting SAWCUT statuses
+ * @access Private (assuming you have auth middleware)
+ */
+router.post('/route/:routeId/cancel-concrete', RouteOptimizationController.cancelConcreteRoute);
+
+/**
+ * @route POST /api/route-optimization/route/:routeId/cancel-asphalt
+ * @desc Cancel an asphalt route by soft deleting it and resetting FRAMING statuses
+ * @access Private (assuming you have auth middleware)
+ */
+router.post('/route/:routeId/cancel-asphalt', RouteOptimizationController.cancelAsphaltRoute);
+
+/**
  * @route POST /api/route-optimization/route/:routeId/complete
  * @desc Complete a route by setting endingDate to current timestamp for all ticket statuses
  * @access Private (assuming you have auth middleware)
