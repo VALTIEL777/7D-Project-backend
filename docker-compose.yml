@@ -101,8 +101,7 @@ services:
     networks:
       - app-network
     restart: unless-stopped
-    env_file:
-      - .env
+
 
 
 networks:
