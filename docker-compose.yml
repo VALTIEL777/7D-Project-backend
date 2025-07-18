@@ -1,17 +1,34 @@
 services:
-  api:
-    build:
-      context: ./backend-api
-      dockerfile: dockerfile
+  nginx:
+    image: nginx:alpine
     ports:
-      - "3000:3000"
+      - "8080:80"
+      - "8443:443"  # For future HTTPS support
     volumes:
-      - ./backend-api:/usr/src/app
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro  # For future SSL certificates
+    depends_on:
+      - api
+      - compass
+      - minio
+    networks:
+      - app-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  api:
+    build: ./backend-api
+    expose:
+      - "3000"  # Only expose internally, not to host
+    volumes:
       - /usr/src/app/node_modules
-      - ./gcloud-credentials:/root/.config/gcloud
     environment:
       - NODE_ENV=${NODE_ENV}
-      - DB_HOST=${DB_HOST}
+      - DB_HOST=postgres
       - DB_PORT=${DB_PORT}
       - DB_USER=${DB_USER}
       - DB_PASSWORD=${DB_PASSWORD}
@@ -20,7 +37,7 @@ services:
       - MINIO_PORT=9000
       - MINIO_ACCESS_KEY=minioadmin
       - MINIO_SECRET_KEY=miniosecretkey
-      - MINIO_PUBLIC_HOST=localhost
+      - MINIO_PUBLIC_HOST=minio
       - GOOGLE_CLOUD_PROJECT=burguer-menu-fbb80
       - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY}
       - JWT_SECRET=${JWT_SECRET}
@@ -32,11 +49,16 @@ services:
     networks:
       - app-network
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   postgres:
     image: postgis/postgis:15-3.3
-    ports:
-      - "5432:5432"
+    expose:
+      - "5432"  # Only expose internally
     volumes:
       - kc_pgdata:/var/lib/postgresql/data
       - ./scripts:/docker-entrypoint-initdb.d
@@ -57,30 +79,10 @@ services:
   minio:
     image: minio/minio:latest
     command: server /data --console-address ":9001"
-    ports:
-      - "9000:9000"  # MinIO API port
-      - "9001:9001"  # MinIO Console port
+    expose:
+      - "9000"  # Only expose internally
+      - "9001"  # Only expose internally
     environment:
-      # ================================================================================
-      # MINIO ENVIRONMENT VARIABLES - DEPLOYMENT GUIDE
-      # ================================================================================
-      # 
-      # LOCAL DEVELOPMENT (current settings):
-      # - MINIO_ROOT_USER=minioadmin (default admin user)
-      # - MINIO_ROOT_PASSWORD=miniosecretkey (default password)
-      #
-      # SERVER DEPLOYMENT - Change these variables in .env file:
-      # - MINIO_ROOT_USER=your-secure-admin-user (change from default)
-      # - MINIO_ROOT_PASSWORD=your-secure-admin-password (change from default)
-      #
-      # IMPORTANT: These must match the MINIO_ACCESS_KEY and MINIO_SECRET_KEY
-      # in the API service environment variables above!
-      #
-      # Example for server deployment in .env file:
-      # - MINIO_ROOT_USER=your-production-admin
-      # - MINIO_ROOT_PASSWORD=your-secure-production-password
-      #
-      # ================================================================================
       - MINIO_ROOT_USER=minioadmin
       - MINIO_ROOT_PASSWORD=miniosecretkey
     volumes:
@@ -95,14 +97,17 @@ services:
     restart: unless-stopped
 
   compass:
-    image: christba/7d-compass:latest
-    ports:
-      - "3005:3005"  # This is now correct!
+    image: christba/7dcompass-frontend:latest
+    expose:
+      - "3005"  # Only expose internally
     networks:
       - app-network
     restart: unless-stopped
-
-
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3005"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
 networks:
   app-network:
