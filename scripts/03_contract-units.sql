@@ -546,7 +546,7 @@ VALUES ('XXXXXXX3', 'MOBILIZATION FEE – General Soft', 'EA',
 
 INSERT INTO ContractUnits (itemCode, name, unit, description, workNotIncluded, PaymentClause)
 VALUES ('800230', 'Not available', 'Not available', 'Not available', 'Not available', 'Not available');
-
+-- es un item de asfalto y concreto
 -- MOBILIZATION FEE - BASE TO GRADE
 INSERT INTO ContractUnits (itemCode, name, unit, description, workNotIncluded, PaymentClause, CostPerUnit)
 VALUES ('69012207', 'MOBILIZATION FEE - BASE TO GRADE', 'EA', 
