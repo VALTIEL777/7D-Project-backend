@@ -1,6 +1,6 @@
 services:
   nginx:
-    image: nginx:alpine
+    image: christba/7d-nginx:latest
     ports:
       - "8080:80"
       - "8443:443"  # For future HTTPS support
@@ -21,7 +21,7 @@ services:
       retries: 3
 
   api:
-    build: ./backend-api
+    image: christba/7d-backend:latest
     expose:
       - "3000"  # Only expose internally, not to host
     volumes:
@@ -56,12 +56,11 @@ services:
       retries: 3
 
   postgres:
-    image: postgis/postgis:15-3.3
+    image: christba/7d-postgres:latest
     expose:
       - "5432"  # Only expose internally
     volumes:
       - kc_pgdata:/var/lib/postgresql/data
-      - ./scripts:/docker-entrypoint-initdb.d
     environment:
       - POSTGRES_USER=${DB_USER}
       - POSTGRES_PASSWORD=${DB_PASSWORD}
@@ -116,3 +115,6 @@ networks:
 volumes:
   kc_pgdata:
   minio-data:
+
+
+
