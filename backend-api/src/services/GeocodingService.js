@@ -1,7 +1,36 @@
-const RouteOptimizationService = require('./src/services/RouteOptimizationService');
-const db = require('./src/config/db');
+const RouteOptimizationService = require('./RouteOptimizationService');
+const db = require('../config/db');
 
-async function geocodeAllAddresses() {
+/**
+ * GeocodingService - Address Geocoding Utility
+ * 
+ * This service populates the Addresses table with geographic coordinates
+ * using Google Maps Geocoding API. It's essential for route optimization
+ * and clustering functionality.
+ * 
+ * Features:
+ * - Batch processing with rate limiting
+ * - Error handling and reporting
+ * - Progress tracking and statistics
+ * - Database verification
+ * 
+ * Usage:
+ * - Run once after database setup
+ * - Run when adding new addresses without coordinates
+ * - Required before using route optimization with clustering
+ * 
+ * Requirements:
+ * - GOOGLE_MAPS_API_KEY environment variable
+ * - Database connection
+ * - Addresses table with address data
+ */
+
+class GeocodingService {
+    /**
+     * Geocode all addresses in the database that don't have coordinates
+     * @returns {Promise<void>}
+     */
+    static async geocodeAllAddresses() {
     try {
         console.log('🗺️  Starting address geocoding process...\n');
 
@@ -149,15 +178,29 @@ async function geocodeAllAddresses() {
             console.log('\n⚠️  No addresses were successfully geocoded. Please check your Google Maps API key.');
         }
 
-    } catch (error) {
-        console.error('❌ Error during geocoding process:', error);
-        console.log('\n🔧 Troubleshooting:');
-        console.log('   - Check your GOOGLE_MAPS_API_KEY environment variable');
-        console.log('   - Ensure the API key has Geocoding API enabled');
-        console.log('   - Check your API quota and billing');
+        } catch (error) {
+            console.error('❌ Error during geocoding process:', error);
+            console.log('\n🔧 Troubleshooting:');
+            console.log('   - Check your GOOGLE_MAPS_API_KEY environment variable');
+            console.log('   - Ensure the API key has Geocoding API enabled');
+            console.log('   - Check your API quota and billing');
+        }
+    }
+
+    /**
+     * Run the geocoding process (standalone execution)
+     * This method can be called directly to run the geocoding process
+     */
+    static async run() {
+        console.log('🚀 Starting Address Geocoding Process...\n');
+        await this.geocodeAllAddresses();
     }
 }
 
-// Run the geocoding process
-console.log('🚀 Starting Address Geocoding Process...\n');
-geocodeAllAddresses(); 
+// Export the service
+module.exports = GeocodingService;
+
+// If this file is run directly, execute the geocoding process
+if (require.main === module) {
+    GeocodingService.run().catch(console.error);
+} 
