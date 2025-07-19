@@ -2183,7 +2183,7 @@ class RouteOptimizationService {
     /**
      * Generate a proper route code with sequential numbering
      * @param {string} type - Route type (e.g., 'SPOTTER', 'CONCRETE', 'ASPHALT', 'default')
-     * @returns {Promise<string>} - Generated route code like 'ROUTE-001', 'SPOTTER-2024-001', etc.
+     * @returns {Promise<string>} - Generated route code like 'ROUTE-001', 'SPOT-2024-001', etc.
      */
     async generateRouteCode(type = 'default') {
         try {
@@ -2196,13 +2196,13 @@ class RouteOptimizationService {
             // Format the number with leading zeros (3 digits)
             const formattedNumber = nextNumber.toString().padStart(3, '0');
             
-            // Generate route code based on type
+            // Generate route code based on type using abbreviated codes
             if (type.toUpperCase() === 'SPOTTER') {
-                return `SPOTTER-${currentYear}-${formattedNumber}`;
+                return `SPOT-${currentYear}-${formattedNumber}`;
             } else if (type.toUpperCase() === 'CONCRETE') {
-                return `CONCRETE-${currentYear}-${formattedNumber}`;
+                return `CONC-${currentYear}-${formattedNumber}`;
             } else if (type.toUpperCase() === 'ASPHALT') {
-                return `ASPHALT-${currentYear}-${formattedNumber}`;
+                return `ASP-${currentYear}-${formattedNumber}`;
             } else {
                 return `ROUTE-${formattedNumber}`;
             }

@@ -23,12 +23,22 @@ const allowedOrigins = [
   'http://localhost:9000',
   'http://localhost:9001',
   'http://localhost:5432',
+  'http://localhost:8080',  // Added for Nginx proxy
   'http://127.0.0.1:3000',
   'http://127.0.0.1:3001',
   'http://127.0.0.1:3002',
   'http://127.0.0.1:3003',
   'http://127.0.0.1:3004',
-  'http://127.0.0.1:3005'
+  'http://127.0.0.1:3005',
+  'http://127.0.0.1:8080',  // Added for Nginx proxy
+  // Container-to-container communication
+  'http://compass:3005',
+  'http://api:3000',
+  'http://api:3000/api',
+  'http://compass:3005/api',
+  // Additional localhost variations for browser testing
+  'http://localhost',
+  'http://127.0.0.1'
 ];
 
 app.use(cors({

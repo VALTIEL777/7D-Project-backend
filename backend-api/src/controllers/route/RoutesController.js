@@ -169,7 +169,7 @@ const RoutesController = {
 
       const optimizedRoute = await RouteOptimizationService.optimizeAndSaveRoute(
         ticketIds,
-        routeCode || `SPOTTER-${Date.now()}`,
+        routeCode || `SPOT-${Date.now()}`,
         'SPOTTER',
         startDate,
         endDate,
@@ -240,7 +240,7 @@ const RoutesController = {
 
       const optimizedRoute = await RouteOptimizationService.optimizeAndSaveRoute(
         ticketIds,
-        routeCode || `CONCRETE-${Date.now()}`,
+        routeCode || `CONC-${Date.now()}`,
         'CONCRETE',
         startDate,
         endDate,
@@ -311,7 +311,7 @@ const RoutesController = {
 
       const optimizedRoute = await RouteOptimizationService.optimizeAndSaveRoute(
         ticketIds,
-        routeCode || `ASPHALT-${Date.now()}`,
+        routeCode || `ASP-${Date.now()}`,
         'ASPHALT',
         startDate,
         endDate,
