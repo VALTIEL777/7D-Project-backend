@@ -298,6 +298,8 @@ class RouteOptimizationService {
                         continue;
                     }
                     
+
+                    
                     // Optimize this cluster using only unique addresses
                     const optimizedRouteResult = await this.optimizeRoute(
                         originAddress,
@@ -901,17 +903,14 @@ class RouteOptimizationService {
                         OR t.comment7d = '' 
                         OR t.comment7d = 'TK - PERMIT EXTENDED'
                     )
-                    AND (
-                        -- SPOTTING status exists but has no endingDate (not completed)
-                        EXISTS (
-                            SELECT 1 FROM TicketStatus tks2 
-                            JOIN TaskStatus ts2 ON tks2.taskStatusId = ts2.taskStatusId 
-                            WHERE tks2.ticketId = t.ticketId 
-                                AND ts2.name = 'Spotting'
-                                AND tks2.endingdate IS NULL
-                                AND tks2.deletedAt IS NULL
-                                AND ts2.deletedAt IS NULL
-                        )
+                    AND EXISTS (
+                        SELECT 1 FROM TicketStatus tks2 
+                        JOIN TaskStatus ts2 ON tks2.taskStatusId = ts2.taskStatusId 
+                        WHERE tks2.ticketId = t.ticketId 
+                            AND ts2.name = 'Spotting'
+                            AND tks2.endingdate IS NULL
+                            AND tks2.deletedAt IS NULL
+                            AND ts2.deletedAt IS NULL
                     )
                     AND NOT EXISTS (
                         -- Exclude tickets already assigned to an active spotting route

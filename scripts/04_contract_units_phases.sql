@@ -1,6 +1,7 @@
 INSERT INTO ContractUnitsPhases (contractUnitId, taskStatusId, createdBy, updatedBy)
 VALUES
 -- Spotting (8) 5 photos
+-- Spotting (8) 5 photos
 (1,8,1,1),(2,8,1,1),(3,8,1,1),(4,8,1,1),(5,8,1,1),
 (10,8,1,1),(11,8,1,1),(13,8,1,1),(14,8,1,1),(16,8,1,1),
 (17,8,1,1),(18,8,1,1),(21,8,1,1),(22,8,1,1),(23,8,1,1),
@@ -67,9 +68,15 @@ VALUES
 
 -- Crack Seal (9)
 --decide si se necesita install signs, stripping, plate pickup
+--decide si se necesita install signs, stripping, plate pickup
 (6,9,1,1),(7,9,1,1),(8,9,1,1),(9,9,1,1),(12,9,1,1),
 (15,9,1,1),(19,9,1,1),(20,9,1,1),(31,9,1,1),(32,9,1,1),
 
+-- Stripping (7) opcionales
+(6,7,1,1),(7,7,1,1),(8,7,1,1),(9,7,1,1),(12,7,1,1),
+(15,7,1,1),(19,7,1,1),(20,7,1,1),(31,7,1,1),(32,7,1,1),
+
+-- Install Signs (10) opcional 
 -- Stripping (7) opcionales
 (6,7,1,1),(7,7,1,1),(8,7,1,1),(9,7,1,1),(12,7,1,1),
 (15,7,1,1),(19,7,1,1),(20,7,1,1),(31,7,1,1),(32,7,1,1),

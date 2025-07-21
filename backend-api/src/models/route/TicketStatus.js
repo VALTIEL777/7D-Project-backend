@@ -40,28 +40,35 @@ class TicketStatus {
     return res.rows;
   }
 
-static async findCompletedTickets() {
-  const query = `
-    SELECT 
-      ts.*, 
-      w.fromaddressstreet, 
-      w.toaddressstreet, 
-      w.fromaddresscardinal, 
-      w.fromaddresssuffix,
-      w.width,
-      w.length,
-      w.surfacetotal
-    FROM TicketStatus ts
-    JOIN tickets t ON t.ticketid = ts.ticketid
-    LEFT JOIN wayfinding w ON w.wayfindingid = t.wayfindingid
-    WHERE ts.endingdate IS NOT NULL
-    ORDER BY ts.endingdate DESC;
-  `;
-  
-  const result = await db.query(query);
-  return result.rows;
-}
-
+  static async findCompletedTickets() {
+    const query = `
+      SELECT 
+        ts.*, 
+        w.fromaddressstreet, 
+        w.toaddressstreet, 
+        w.fromaddresscardinal, 
+        w.fromaddresssuffix,
+        w.width,
+        w.length,
+        w.surfacetotal,
+        -- Campos de addresses
+        addr.addressnumber,
+        addr.addresscardinal,
+        addr.addressstreet,
+        addr.addresssuffix
+      FROM TicketStatus ts
+      JOIN tickets t ON t.ticketid = ts.ticketid
+      LEFT JOIN wayfinding w ON w.wayfindingid = t.wayfindingid
+      -- JOIN a ticketaddresses y addresses
+      LEFT JOIN ticketaddresses taddr ON t.ticketid = taddr.ticketid
+      LEFT JOIN addresses addr ON addr.addressid = taddr.addressid
+      WHERE ts.endingdate IS NOT NULL
+      ORDER BY ts.endingdate DESC;
+    `;
+    
+    const result = await db.query(query);
+    return result.rows;
+  }
 
   static async update(taskStatusId, ticketId, crewId, startingDate, endingDate, observation, updatedBy) {
   const existing = await db.query(
