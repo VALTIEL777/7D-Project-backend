@@ -15,7 +15,13 @@ class Invoices {
   }
 
   static async findAll() {
-    const res = await db.query('SELECT * FROM Invoices WHERE deletedAt IS NULL;');
+    const res = await db.query(`
+      SELECT i.*, t.ticketCode 
+      FROM Invoices i
+      LEFT JOIN Tickets t ON i.ticketId = t.ticketId AND t.deletedAt IS NULL
+      WHERE i.deletedAt IS NULL
+      ORDER BY i.invoiceId ASC;
+    `);
     return res.rows;
   }
 
@@ -29,6 +35,12 @@ class Invoices {
 
   static async delete(invoiceId) {
     const res = await db.query('UPDATE Invoices SET deletedAt = CURRENT_TIMESTAMP WHERE invoiceId = $1 AND deletedAt IS NULL RETURNING *;', [invoiceId]);
+    return res.rows[0];
+  }
+
+  // Find invoice by ticket ID
+  static async findByTicketId(ticketId) {
+    const res = await db.query('SELECT * FROM Invoices WHERE ticketId = $1 AND deletedAt IS NULL;', [ticketId]);
     return res.rows[0];
   }
 }

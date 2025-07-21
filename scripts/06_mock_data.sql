@@ -15,6 +15,7 @@ INSERT INTO People ( UserId, firstname, lastname, role, phone, email, createdBy,
   ( 3, 'Iris', 'Landa', 'admin', '2345678901', 'Iris@example.com', 1, 1),
   ( 4, 'Erick', 'Flores', 'admin', '3456789012', 'Erick@example.com', 1, 1),
   ( 5, 'Christian', 'Barragan', 'operator', '3456789012', 'Christian@example.com', 1, 1),
+  ( 5, 'Christian', 'Barragan', 'operator', '3456789012', 'Christian@example.com', 1, 1),
   ( 6, 'Elian', 'Medina', 'admin', '3456789012', 'Elian@example.com', 1, 1),
   ( 7, 'Eva', 'Landa', 'admin', '3456789012', 'Eva@example.com', 1, 1),
    ( 8, 'Laura', 'Mcqueen', 'operator', '3456789012', 'Eva@example.com', 1, 1);
@@ -35,6 +36,7 @@ INSERT INTO Skills (skillId, name, description, createdBy, updatedBy) VALUES
   (4, 'Tool', 'Proficiency in using construction tools', 1, 1),
   (5, 'Machine', 'Operating heavy machinery', 2, 2),
   (6, 'Measure', 'Measurement and leveling skills', 2, 2);
+
 
 -- Mock data for EmployeeSkills con nuevos employeeId
 INSERT INTO EmployeeSkills (employeeId, skillId, proficiencyLevel, createdBy, updatedBy) VALUES

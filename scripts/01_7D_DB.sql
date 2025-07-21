@@ -128,6 +128,7 @@ CREATE TABLE Tickets (
     PartnerSupervisorComment VARCHAR(255),
     contractNumber VARCHAR(128),
     amountToPay DECIMAL,
+    calculatedCost DECIMAL,
     ticketType VARCHAR(64), -- mobilization, regular
     createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

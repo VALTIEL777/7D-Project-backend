@@ -1,6 +1,7 @@
 const RouteOptimizationService = require('../../services/RouteOptimizationService');
 const Tickets = require('../../models/ticket-logic/Tickets');
 const Crews = require('../../models/human-resources/Crews');
+const RouteTickets = require('../../models/route/RouteTickets');
 
 const RouteOptimizationController = {
   /**
@@ -469,6 +470,261 @@ const RouteOptimizationController = {
       res.status(500).json({
         success: false,
         error: 'Failed to suggest addresses in batch',
+        details: error.message
+      });
+    }
+  },
+
+  /**
+   * Complete a route by setting endingDate to current timestamp for all related ticket statuses
+   * @route POST /api/route-optimization/route/{routeId}/complete
+   * @desc Complete a route by setting endingDate to current timestamp for all ticket statuses for tickets in the route
+   * @access Private
+   */
+  async completeRoute(req, res) {
+    try {
+      const { routeId } = req.params;
+      const updatedBy = req.user?.id || 1;
+
+      console.log(`Completing route ${routeId}`);
+
+      // Get all tickets in the route
+      const routeTickets = await RouteTickets.findByRouteId(parseInt(routeId));
+      
+      if (routeTickets.length === 0) {
+        return res.status(404).json({
+          success: false,
+          error: `No tickets found for route ${routeId}`
+        });
+      }
+
+      const ticketIds = routeTickets.map(rt => rt.ticketid);
+      console.log(`Found ${ticketIds.length} tickets in route ${routeId}`);
+
+      // Update all ticket statuses to set endingDate to current timestamp
+      const result = await RouteOptimizationService.completeRoute(parseInt(routeId), ticketIds, updatedBy);
+
+      res.status(200).json({
+        success: true,
+        message: 'Route completed successfully',
+        data: result
+      });
+
+    } catch (error) {
+      console.error('Failed to complete route:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to complete route',
+        details: error.message
+      });
+    }
+  },
+
+  /**
+   * Get detailed information about tickets in a route for debugging
+   * @route GET /api/route-optimization/route/{routeId}/details
+   * @desc Get detailed information about tickets in a route including their status
+   * @access Private
+   */
+  async getRouteDetails(req, res) {
+    try {
+      const { routeId } = req.params;
+
+      console.log(`Getting detailed information for route ${routeId}`);
+
+      const result = await RouteOptimizationService.getRouteTicketDetails(parseInt(routeId));
+
+      res.status(200).json({
+        success: true,
+        message: 'Route details retrieved successfully',
+        data: result
+      });
+
+    } catch (error) {
+      console.error('Failed to get route details:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to get route details',
+        details: error.message
+      });
+    }
+  },
+
+  /**
+   * Cancel a route by removing the endingDate from all related ticket statuses
+   * @route POST /api/route-optimization/route/{routeId}/cancel
+   * @desc Cancel a route by removing endingDate from all ticket statuses for tickets in the route
+   * @access Private
+   */
+  async cancelRoute(req, res) {
+    try {
+      const { routeId } = req.params;
+      const updatedBy = req.user?.id || 1;
+
+      console.log(`Canceling route ${routeId}`);
+
+      // Get all tickets in the route
+      const routeTickets = await RouteTickets.findByRouteId(parseInt(routeId));
+      
+      if (routeTickets.length === 0) {
+        return res.status(404).json({
+          success: false,
+          error: `No tickets found for route ${routeId}`
+        });
+      }
+
+      const ticketIds = routeTickets.map(rt => rt.ticketid);
+      console.log(`Found ${ticketIds.length} tickets in route ${routeId}`);
+
+      // Update all ticket statuses to remove endingDate (set to NULL)
+      const result = await RouteOptimizationService.cancelRoute(parseInt(routeId), ticketIds, updatedBy);
+
+      res.status(200).json({
+        success: true,
+        message: 'Route canceled successfully',
+        data: result
+      });
+
+    } catch (error) {
+      console.error('Failed to cancel route:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to cancel route',
+        details: error.message
+      });
+    }
+  },
+
+  /**
+   * Cancel a spotting route - soft delete route and reset SPOTTING status
+   * @route POST /api/route-optimization/route/{routeId}/cancel-spotting
+   * @desc Cancel a spotting route by soft deleting it and resetting SPOTTING statuses
+   * @access Private
+   */
+  async cancelSpottingRoute(req, res) {
+    try {
+      const { routeId } = req.params;
+      const updatedBy = req.user?.id || 1;
+
+      console.log(`Canceling spotting route ${routeId}`);
+
+      // Get all tickets in the route
+      const routeTickets = await RouteTickets.findByRouteId(parseInt(routeId));
+      
+      if (routeTickets.length === 0) {
+        return res.status(404).json({
+          success: false,
+          error: `No tickets found for route ${routeId}`
+        });
+      }
+
+      const ticketIds = routeTickets.map(rt => rt.ticketid);
+      console.log(`Found ${ticketIds.length} tickets in spotting route ${routeId}`);
+
+      // Cancel the spotting route
+      const result = await RouteOptimizationService.cancelSpottingRoute(parseInt(routeId), ticketIds, updatedBy);
+
+      res.status(200).json({
+        success: true,
+        message: 'Spotting route canceled successfully',
+        data: result
+      });
+
+    } catch (error) {
+      console.error('Failed to cancel spotting route:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to cancel spotting route',
+        details: error.message
+      });
+    }
+  },
+
+  /**
+   * Cancel a concrete route - soft delete route and reset SAWCUT status
+   * @route POST /api/route-optimization/route/{routeId}/cancel-concrete
+   * @desc Cancel a concrete route by soft deleting it and resetting SAWCUT statuses
+   * @access Private
+   */
+  async cancelConcreteRoute(req, res) {
+    try {
+      const { routeId } = req.params;
+      const updatedBy = req.user?.id || 1;
+
+      console.log(`Canceling concrete route ${routeId}`);
+
+      // Get all tickets in the route
+      const routeTickets = await RouteTickets.findByRouteId(parseInt(routeId));
+      
+      if (routeTickets.length === 0) {
+        return res.status(404).json({
+          success: false,
+          error: `No tickets found for route ${routeId}`
+        });
+      }
+
+      const ticketIds = routeTickets.map(rt => rt.ticketid);
+      console.log(`Found ${ticketIds.length} tickets in concrete route ${routeId}`);
+
+      // Cancel the concrete route
+      const result = await RouteOptimizationService.cancelConcreteRoute(parseInt(routeId), ticketIds, updatedBy);
+
+      res.status(200).json({
+        success: true,
+        message: 'Concrete route canceled successfully',
+        data: result
+      });
+
+    } catch (error) {
+      console.error('Failed to cancel concrete route:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to cancel concrete route',
+        details: error.message
+      });
+    }
+  },
+
+  /**
+   * Cancel an asphalt route - soft delete route and reset FRAMING status
+   * @route POST /api/route-optimization/route/{routeId}/cancel-asphalt
+   * @desc Cancel an asphalt route by soft deleting it and resetting FRAMING statuses
+   * @access Private
+   */
+  async cancelAsphaltRoute(req, res) {
+    try {
+      const { routeId } = req.params;
+      const updatedBy = req.user?.id || 1;
+
+      console.log(`Canceling asphalt route ${routeId}`);
+
+      // Get all tickets in the route
+      const routeTickets = await RouteTickets.findByRouteId(parseInt(routeId));
+      
+      if (routeTickets.length === 0) {
+        return res.status(404).json({
+          success: false,
+          error: `No tickets found for route ${routeId}`
+        });
+      }
+
+      const ticketIds = routeTickets.map(rt => rt.ticketid);
+      console.log(`Found ${ticketIds.length} tickets in asphalt route ${routeId}`);
+
+      // Cancel the asphalt route
+      const result = await RouteOptimizationService.cancelAsphaltRoute(parseInt(routeId), ticketIds, updatedBy);
+
+      res.status(200).json({
+        success: true,
+        message: 'Asphalt route canceled successfully',
+        data: result
+      });
+
+    } catch (error) {
+      console.error('Failed to cancel asphalt route:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to cancel asphalt route',
         details: error.message
       });
     }

@@ -65,6 +65,48 @@ router.post('/suggest-addresses', RouteOptimizationController.suggestAddresses);
  */
 router.post('/suggest-addresses-batch', RouteOptimizationController.suggestAddressesBatch);
 
+/**
+ * @route POST /api/route-optimization/route/:routeId/cancel
+ * @desc Cancel a route by removing endingDate from all ticket statuses
+ * @access Private (assuming you have auth middleware)
+ */
+router.post('/route/:routeId/cancel', RouteOptimizationController.cancelRoute);
+
+/**
+ * @route POST /api/route-optimization/route/:routeId/cancel-spotting
+ * @desc Cancel a spotting route by soft deleting it and resetting SPOTTING statuses
+ * @access Private (assuming you have auth middleware)
+ */
+router.post('/route/:routeId/cancel-spotting', RouteOptimizationController.cancelSpottingRoute);
+
+/**
+ * @route POST /api/route-optimization/route/:routeId/cancel-concrete
+ * @desc Cancel a concrete route by soft deleting it and resetting SAWCUT statuses
+ * @access Private (assuming you have auth middleware)
+ */
+router.post('/route/:routeId/cancel-concrete', RouteOptimizationController.cancelConcreteRoute);
+
+/**
+ * @route POST /api/route-optimization/route/:routeId/cancel-asphalt
+ * @desc Cancel an asphalt route by soft deleting it and resetting FRAMING statuses
+ * @access Private (assuming you have auth middleware)
+ */
+router.post('/route/:routeId/cancel-asphalt', RouteOptimizationController.cancelAsphaltRoute);
+
+/**
+ * @route POST /api/route-optimization/route/:routeId/complete
+ * @desc Complete a route by setting endingDate to current timestamp for all ticket statuses
+ * @access Private (assuming you have auth middleware)
+ */
+router.post('/route/:routeId/complete', RouteOptimizationController.completeRoute);
+
+/**
+ * @route GET /api/route-optimization/route/:routeId/details
+ * @desc Get detailed information about tickets in a route including their status
+ * @access Private (assuming you have auth middleware)
+ */
+router.get('/route/:routeId/details', RouteOptimizationController.getRouteDetails);
+
 // Removed the /optimize-latlng route as it's no longer needed.
 // The main /optimize endpoint now handles address-based input with internal geocoding.
 

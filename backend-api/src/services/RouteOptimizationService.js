@@ -232,7 +232,8 @@ class RouteOptimizationService {
 
             const { maxDistance = 30000, maxLocationsPerCluster = 25, minLocationsPerCluster = 20 } = options;
 
-            console.log(`Starting clustered route optimization for ${ticketIds.length} tickets`);
+            console.log(`Starting location-based clustered route optimization for ${ticketIds.length} tickets`);
+            console.log(`Clustering by unique locations (max ${maxLocationsPerCluster} locations per cluster)`);
 
             // Step 1: Get all ticket addresses in one database query (reuse from parent method)
             const ticketsWithAddresses = await this.getTicketsWithAddressesBatch(ticketIds, {
@@ -244,7 +245,7 @@ class RouteOptimizationService {
                 throw new Error('No valid tickets found for clustering');
             }
 
-            // Step 2: Cluster locations using PostGIS (pass pre-fetched tickets to avoid double geocoding)
+            // Step 2: Cluster by unique locations using PostGIS (max 25 unique locations per cluster)
             const clusteringService = new LocationClusteringService();
             const clusters = await clusteringService.clusterLocations(ticketsWithAddresses, { 
                 maxDistance,
@@ -252,7 +253,8 @@ class RouteOptimizationService {
                 minLocationsPerCluster
             });
             
-            console.log(`Created ${clusters.length} clusters for optimization`);
+            console.log(`Created ${clusters.length} location-based clusters for optimization`);
+            console.log(`Each cluster contains max ${maxLocationsPerCluster} unique locations with all their associated tickets`);
 
             // Step 2: Optimize each cluster separately
             const optimizedRoutes = [];
@@ -265,10 +267,11 @@ class RouteOptimizationService {
                 const cluster = clusters[i];
                 const clusterRouteCode = `${routeCode}-CLUSTER-${i + 1}`;
                 
-                console.log(`\n--- Processing Cluster ${i + 1}/${clusters.length} ---`);
+                console.log(`\n--- Processing Location Cluster ${i + 1}/${clusters.length} ---`);
                 console.log(`Cluster ID: ${cluster.clusterId}`);
                 console.log(`Route Code: ${clusterRouteCode}`);
-                console.log(`Tickets in cluster: ${cluster.tickets.length}`);
+                console.log(`Unique locations in cluster: ${cluster.addressCount}`);
+                console.log(`Total tickets in cluster: ${cluster.tickets.length}`);
                 console.log(`Cluster center: ${cluster.centerLat}, ${cluster.centerLng}`);
                 
                 try {
@@ -389,7 +392,7 @@ class RouteOptimizationService {
                         routeCode: clusterRouteCode,
                         type: type || 'default',
                         startDate: startDate || new Date(),
-                        endDate: endDate || new Date(),
+                        endDate: endDate || null, // Set to null for new routes (active routes)
                         encodedPolyline: optimizedRouteResult.encodedPolyline,
                         totalDistance: optimizedRouteResult.totalDistance,
                         totalDuration: optimizedRouteResult.totalDuration,
@@ -586,9 +589,10 @@ class RouteOptimizationService {
             console.log(`Deduplicated ${ticketsWithAddresses.length} tickets into ${uniqueAddresses.length} unique addresses`);
             console.log('Unique addresses for optimization:', uniqueAddresses);
 
-            // Step 2.5: Check if we need to use clustering (more than 25 unique addresses)
+            // Step 2.5: Check if we need to use clustering (more than 25 unique locations)
             if (uniqueAddresses.length > 25) {
-                console.log(`More than 25 unique addresses (${uniqueAddresses.length}) detected. Using clustering approach.`);
+                console.log(`More than 25 unique locations (${uniqueAddresses.length}) detected. Using location-based clustering approach.`);
+                console.log(`This will create clusters with max 25 unique locations each, then assign all tickets at those locations.`);
                 return await this.optimizeRouteWithClustering(
                     ticketIds,
                     routeCode,
@@ -660,7 +664,7 @@ class RouteOptimizationService {
                 routeCode: routeCode || await this.generateRouteCode(type),
                 type: type || 'default',
                 startDate: startDate || new Date(),
-                endDate: endDate || new Date(),
+                endDate: endDate || null, // Set to null for new routes (active routes)
                 encodedPolyline: optimizedRouteResult.encodedPolyline,
                 totalDistance: optimizedRouteResult.totalDistance,
                 totalDuration: optimizedRouteResult.totalDuration,
@@ -2266,6 +2270,506 @@ class RouteOptimizationService {
         } catch (error) {
             console.error('Error getting next route number:', error);
             return 1; // Fallback to 1 if there's an error
+        }
+    }
+
+    /**
+     * Cancel a route by removing endingDate from all ticket statuses
+     * @param {number} routeId - Route ID
+     * @param {Array<number>} ticketIds - Array of ticket IDs in the route
+     * @param {number} updatedBy - User ID
+     * @returns {Promise<Object>} - Result of the cancellation operation
+     */
+    async cancelRoute(routeId, ticketIds, updatedBy = 1) {
+        try {
+            console.log(`Canceling route ${routeId} with ${ticketIds.length} tickets`);
+
+            // Start a transaction
+            const client = await db.pool.connect();
+            
+            try {
+                await client.query('BEGIN');
+
+                // 1. Update all ticket statuses to remove endingDate (set to NULL)
+                const ticketStatusResult = await client.query(`
+                    UPDATE TicketStatus 
+                    SET endingDate = NULL, 
+                        updatedAt = CURRENT_TIMESTAMP, 
+                        updatedBy = $1 
+                    WHERE ticketId = ANY($2) 
+                        AND deletedAt IS NULL
+                    RETURNING taskStatusId, ticketId, endingDate
+                `, [updatedBy, ticketIds]);
+
+                const updatedTicketStatuses = ticketStatusResult.rows.length;
+
+                // 2. Update the route's endDate to NULL (mark as not completed)
+                const routeResult = await client.query(`
+                    UPDATE Routes 
+                    SET endDate = NULL, 
+                        updatedAt = CURRENT_TIMESTAMP, 
+                        updatedBy = $1 
+                    WHERE routeId = $2 
+                        AND deletedAt IS NULL
+                    RETURNING routeId, endDate
+                `, [updatedBy, routeId]);
+
+                await client.query('COMMIT');
+
+                console.log(`Updated ${updatedTicketStatuses} ticket statuses and route ${routeId} for cancellation`);
+
+                return {
+                    routeId: routeId,
+                    message: `Route canceled successfully. Updated ${updatedTicketStatuses} ticket statuses.`,
+                    updatedTicketStatuses: updatedTicketStatuses,
+                    totalTickets: ticketIds.length,
+                    routeUpdated: routeResult.rows.length > 0,
+                    timestamp: new Date().toISOString()
+                };
+
+            } catch (error) {
+                await client.query('ROLLBACK');
+                throw error;
+            } finally {
+                client.release();
+            }
+
+        } catch (error) {
+            console.error('Failed to cancel route:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Cancel a spotting route - soft delete route and reset SPOTTING status
+     * @param {number} routeId - Route ID
+     * @param {Array<number>} ticketIds - Array of ticket IDs in the route
+     * @param {number} updatedBy - User ID
+     * @returns {Promise<Object>} - Result of the cancellation operation
+     */
+    async cancelSpottingRoute(routeId, ticketIds, updatedBy = 1) {
+        try {
+            console.log(`Canceling spotting route ${routeId} with ${ticketIds.length} tickets`);
+
+            // Start a transaction
+            const client = await db.pool.connect();
+            
+            try {
+                await client.query('BEGIN');
+
+                // 1. Reset SPOTTING status endingDate to NULL for all tickets
+                const spottingStatusResult = await client.query(`
+                    UPDATE TicketStatus 
+                    SET endingDate = NULL, 
+                        updatedAt = CURRENT_TIMESTAMP, 
+                        updatedBy = $1 
+                    WHERE ticketId = ANY($2) 
+                        AND taskStatusId = (SELECT taskStatusId FROM TaskStatus WHERE name = 'Spotting' AND deletedAt IS NULL)
+                        AND deletedAt IS NULL
+                    RETURNING taskStatusId, ticketId, endingDate
+                `, [updatedBy, ticketIds]);
+
+                const updatedSpottingStatuses = spottingStatusResult.rows.length;
+
+                // 2. Soft delete the route
+                const routeResult = await client.query(`
+                    UPDATE Routes 
+                    SET deletedAt = CURRENT_TIMESTAMP, 
+                        updatedAt = CURRENT_TIMESTAMP, 
+                        updatedBy = $1 
+                    WHERE routeId = $2 
+                        AND type = 'SPOTTER'
+                        AND deletedAt IS NULL
+                    RETURNING routeId, deletedAt
+                `, [updatedBy, routeId]);
+
+                // 3. Soft delete all RouteTickets associations
+                const routeTicketsResult = await client.query(`
+                    UPDATE RouteTickets 
+                    SET deletedAt = CURRENT_TIMESTAMP, 
+                        updatedAt = CURRENT_TIMESTAMP, 
+                        updatedBy = $1 
+                    WHERE routeId = $2 
+                        AND deletedAt IS NULL
+                    RETURNING routeId, ticketId, deletedAt
+                `, [updatedBy, routeId]);
+
+                await client.query('COMMIT');
+
+                console.log(`Canceled spotting route ${routeId}: ${updatedSpottingStatuses} SPOTTING statuses reset, route soft deleted`);
+
+                return {
+                    routeId: routeId,
+                    message: `Spotting route canceled successfully. Reset ${updatedSpottingStatuses} SPOTTING statuses and soft deleted route.`,
+                    updatedSpottingStatuses: updatedSpottingStatuses,
+                    totalTickets: ticketIds.length,
+                    routeSoftDeleted: routeResult.rows.length > 0,
+                    routeTicketsSoftDeleted: routeTicketsResult.rows.length,
+                    timestamp: new Date().toISOString()
+                };
+
+            } catch (error) {
+                await client.query('ROLLBACK');
+                throw error;
+            } finally {
+                client.release();
+            }
+
+        } catch (error) {
+            console.error('Failed to cancel spotting route:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Cancel a concrete route - soft delete route and reset SAWCUT status
+     * @param {number} routeId - Route ID
+     * @param {Array<number>} ticketIds - Array of ticket IDs in the route
+     * @param {number} updatedBy - User ID
+     * @returns {Promise<Object>} - Result of the cancellation operation
+     */
+    async cancelConcreteRoute(routeId, ticketIds, updatedBy = 1) {
+        try {
+            console.log(`Canceling concrete route ${routeId} with ${ticketIds.length} tickets`);
+
+            // Start a transaction
+            const client = await db.pool.connect();
+            
+            try {
+                await client.query('BEGIN');
+
+                // 1. Reset SAWCUT status endingDate to NULL for all tickets
+                const sawcutStatusResult = await client.query(`
+                    UPDATE TicketStatus 
+                    SET endingDate = NULL, 
+                        updatedAt = CURRENT_TIMESTAMP, 
+                        updatedBy = $1 
+                    WHERE ticketId = ANY($2) 
+                        AND taskStatusId = (SELECT taskStatusId FROM TaskStatus WHERE name = 'Sawcut' AND deletedAt IS NULL)
+                        AND deletedAt IS NULL
+                    RETURNING taskStatusId, ticketId, endingDate
+                `, [updatedBy, ticketIds]);
+
+                const updatedSawcutStatuses = sawcutStatusResult.rows.length;
+
+                // 2. Soft delete the route
+                const routeResult = await client.query(`
+                    UPDATE Routes 
+                    SET deletedAt = CURRENT_TIMESTAMP, 
+                        updatedAt = CURRENT_TIMESTAMP, 
+                        updatedBy = $1 
+                    WHERE routeId = $2 
+                        AND type = 'CONCRETE'
+                        AND deletedAt IS NULL
+                    RETURNING routeId, deletedAt
+                `, [updatedBy, routeId]);
+
+                // 3. Soft delete all RouteTickets associations
+                const routeTicketsResult = await client.query(`
+                    UPDATE RouteTickets 
+                    SET deletedAt = CURRENT_TIMESTAMP, 
+                        updatedAt = CURRENT_TIMESTAMP, 
+                        updatedBy = $1 
+                    WHERE routeId = $2 
+                        AND deletedAt IS NULL
+                    RETURNING routeId, ticketId, deletedAt
+                `, [updatedBy, routeId]);
+
+                await client.query('COMMIT');
+
+                console.log(`Canceled concrete route ${routeId}: ${updatedSawcutStatuses} SAWCUT statuses reset, route soft deleted`);
+
+                return {
+                    routeId: routeId,
+                    message: `Concrete route canceled successfully. Reset ${updatedSawcutStatuses} SAWCUT statuses and soft deleted route.`,
+                    updatedSawcutStatuses: updatedSawcutStatuses,
+                    totalTickets: ticketIds.length,
+                    routeSoftDeleted: routeResult.rows.length > 0,
+                    routeTicketsSoftDeleted: routeTicketsResult.rows.length,
+                    timestamp: new Date().toISOString()
+                };
+
+            } catch (error) {
+                await client.query('ROLLBACK');
+                throw error;
+            } finally {
+                client.release();
+            }
+
+        } catch (error) {
+            console.error('Failed to cancel concrete route:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Cancel an asphalt route - soft delete route and reset FRAMING status
+     * @param {number} routeId - Route ID
+     * @param {Array<number>} ticketIds - Array of ticket IDs in the route
+     * @param {number} updatedBy - User ID
+     * @returns {Promise<Object>} - Result of the cancellation operation
+     */
+    async cancelAsphaltRoute(routeId, ticketIds, updatedBy = 1) {
+        try {
+            console.log(`Canceling asphalt route ${routeId} with ${ticketIds.length} tickets`);
+
+            // Start a transaction
+            const client = await db.pool.connect();
+            
+            try {
+                await client.query('BEGIN');
+
+                // 1. Reset FRAMING status endingDate to NULL for all tickets
+                const framingStatusResult = await client.query(`
+                    UPDATE TicketStatus 
+                    SET endingDate = NULL, 
+                        updatedAt = CURRENT_TIMESTAMP, 
+                        updatedBy = $1 
+                    WHERE ticketId = ANY($2) 
+                        AND taskStatusId = (SELECT taskStatusId FROM TaskStatus WHERE name = 'Framing' AND deletedAt IS NULL)
+                        AND deletedAt IS NULL
+                    RETURNING taskStatusId, ticketId, endingDate
+                `, [updatedBy, ticketIds]);
+
+                const updatedFramingStatuses = framingStatusResult.rows.length;
+
+                // 2. Soft delete the route
+                const routeResult = await client.query(`
+                    UPDATE Routes 
+                    SET deletedAt = CURRENT_TIMESTAMP, 
+                        updatedAt = CURRENT_TIMESTAMP, 
+                        updatedBy = $1 
+                    WHERE routeId = $2 
+                        AND type = 'ASPHALT'
+                        AND deletedAt IS NULL
+                    RETURNING routeId, deletedAt
+                `, [updatedBy, routeId]);
+
+                // 3. Soft delete all RouteTickets associations
+                const routeTicketsResult = await client.query(`
+                    UPDATE RouteTickets 
+                    SET deletedAt = CURRENT_TIMESTAMP, 
+                        updatedAt = CURRENT_TIMESTAMP, 
+                        updatedBy = $1 
+                    WHERE routeId = $2 
+                        AND deletedAt IS NULL
+                    RETURNING routeId, ticketId, deletedAt
+                `, [updatedBy, routeId]);
+
+                await client.query('COMMIT');
+
+                console.log(`Canceled asphalt route ${routeId}: ${updatedFramingStatuses} FRAMING statuses reset, route soft deleted`);
+
+                return {
+                    routeId: routeId,
+                    message: `Asphalt route canceled successfully. Reset ${updatedFramingStatuses} FRAMING statuses and soft deleted route.`,
+                    updatedFramingStatuses: updatedFramingStatuses,
+                    totalTickets: ticketIds.length,
+                    routeSoftDeleted: routeResult.rows.length > 0,
+                    routeTicketsSoftDeleted: routeTicketsResult.rows.length,
+                    timestamp: new Date().toISOString()
+                };
+
+            } catch (error) {
+                await client.query('ROLLBACK');
+                throw error;
+            } finally {
+                client.release();
+            }
+
+        } catch (error) {
+            console.error('Failed to cancel asphalt route:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Complete a route by setting endingDate to current timestamp for all ticket statuses
+     * @param {number} routeId - Route ID
+     * @param {Array<number>} ticketIds - Array of ticket IDs in the route
+     * @param {number} updatedBy - User ID
+     * @returns {Promise<Object>} - Result of the completion operation
+     */
+    async completeRoute(routeId, ticketIds, updatedBy = 1) {
+        try {
+            console.log(`Completing route ${routeId} with ${ticketIds.length} tickets`);
+
+            // Start a transaction
+            const client = await db.pool.connect();
+            
+            try {
+                await client.query('BEGIN');
+
+                // 1. Update all ticket statuses to set endingDate to current timestamp
+                const ticketStatusResult = await client.query(`
+                    UPDATE TicketStatus 
+                    SET endingDate = CURRENT_TIMESTAMP, 
+                        updatedAt = CURRENT_TIMESTAMP, 
+                        updatedBy = $1 
+                    WHERE ticketId = ANY($2) 
+                        AND deletedAt IS NULL
+                    RETURNING taskStatusId, ticketId, endingDate
+                `, [updatedBy, ticketIds]);
+
+                const updatedTicketStatuses = ticketStatusResult.rows.length;
+
+                // 2. Update the route's endDate to current timestamp (mark as completed)
+                const routeResult = await client.query(`
+                    UPDATE Routes 
+                    SET endDate = CURRENT_DATE, 
+                        updatedAt = CURRENT_TIMESTAMP, 
+                        updatedBy = $1 
+                    WHERE routeId = $2 
+                        AND deletedAt IS NULL
+                    RETURNING routeId, endDate
+                `, [updatedBy, routeId]);
+
+                await client.query('COMMIT');
+
+                console.log(`Updated ${updatedTicketStatuses} ticket statuses and route ${routeId} for completion`);
+
+                return {
+                    routeId: routeId,
+                    message: `Route completed successfully. Updated ${updatedTicketStatuses} ticket statuses.`,
+                    updatedTicketStatuses: updatedTicketStatuses,
+                    totalTickets: ticketIds.length,
+                    routeUpdated: routeResult.rows.length > 0,
+                    completionTimestamp: new Date().toISOString()
+                };
+
+            } catch (error) {
+                await client.query('ROLLBACK');
+                throw error;
+            } finally {
+                client.release();
+            }
+
+        } catch (error) {
+            console.error('Failed to complete route:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Get detailed information about tickets in a route including their status
+     * @param {number} routeId - Route ID
+     * @returns {Promise<Object>} - Detailed route and ticket information
+     */
+    async getRouteTicketDetails(routeId) {
+        try {
+            console.log(`Getting detailed information for route ${routeId}`);
+
+            // Get route information
+            const routeResult = await db.query(`
+                SELECT routeId, routeCode, type, startDate, endDate, createdAt, updatedAt
+                FROM Routes 
+                WHERE routeId = $1 AND deletedAt IS NULL
+            `, [routeId]);
+
+            if (routeResult.rows.length === 0) {
+                throw new Error(`Route ${routeId} not found`);
+            }
+
+            const route = routeResult.rows[0];
+
+            // Get tickets in the route with their status information
+            const ticketsResult = await db.query(`
+                SELECT 
+                    rt.ticketId,
+                    rt.address,
+                    rt.queue,
+                    t.ticketCode,
+                    t.comment7d,
+                    -- Get all task statuses for this ticket
+                    COALESCE(
+                        JSON_AGG(
+                            JSONB_BUILD_OBJECT(
+                                'taskStatusId', ts.taskStatusId,
+                                'taskName', ts.name,
+                                'startingDate', tks.startingDate,
+                                'endingDate', tks.endingDate,
+                                'observation', tks.observation,
+                                'crewId', tks.crewId
+                            )
+                        ) FILTER (WHERE ts.taskStatusId IS NOT NULL),
+                        '[]'::json
+                    ) as taskStatuses
+                FROM RouteTickets rt
+                JOIN Tickets t ON rt.ticketId = t.ticketId AND t.deletedAt IS NULL
+                LEFT JOIN TicketStatus tks ON t.ticketId = tks.ticketId AND tks.deletedAt IS NULL
+                LEFT JOIN TaskStatus ts ON tks.taskStatusId = ts.taskStatusId AND ts.deletedAt IS NULL
+                WHERE rt.routeId = $1 AND rt.deletedAt IS NULL
+                GROUP BY rt.ticketId, rt.address, rt.queue, t.ticketCode, t.comment7d
+                ORDER BY rt.queue ASC
+            `, [routeId]);
+
+            const tickets = ticketsResult.rows;
+
+            // Check which tickets would appear in getSpottingTickets
+            const spottingEligibleTickets = tickets.filter(ticket => {
+                const taskStatuses = ticket.taskstatuses || [];
+                
+                // Check if ticket has SPOTTING status with NULL endingDate
+                const hasSpottingInProgress = taskStatuses.some(status => 
+                    status.taskName === 'Spotting' && status.endingDate === null
+                );
+
+                // Check if ticket meets comment7d criteria
+                const hasValidComment = !ticket.comment7d || 
+                                       ticket.comment7d === '' || 
+                                       ticket.comment7d === 'TK - PERMIT EXTENDED';
+
+                return hasSpottingInProgress && hasValidComment;
+            });
+
+            return {
+                route: {
+                    routeId: route.routeid,
+                    routeCode: route.routecode,
+                    type: route.type,
+                    startDate: route.startdate,
+                    endDate: route.enddate,
+                    createdAt: route.createdat,
+                    updatedAt: route.updatedat
+                },
+                tickets: {
+                    total: tickets.length,
+                    details: tickets.map(ticket => ({
+                        ticketId: ticket.ticketid,
+                        ticketCode: ticket.ticketcode,
+                        address: ticket.address,
+                        queue: ticket.queue,
+                        comment7d: ticket.comment7d,
+                        taskStatuses: ticket.taskstatuses || []
+                    }))
+                },
+                analysis: {
+                    spottingEligibleCount: spottingEligibleTickets.length,
+                    spottingEligibleTickets: spottingEligibleTickets.map(ticket => ({
+                        ticketId: ticket.ticketid,
+                        ticketCode: ticket.ticketcode,
+                        reason: 'Has SPOTTING status with NULL endingDate and valid comment7d'
+                    })),
+                    summary: {
+                        routeType: route.type,
+                        routeEndDate: route.enddate,
+                        totalTickets: tickets.length,
+                        ticketsWithSpottingStatus: tickets.filter(t => 
+                            (t.taskstatuses || []).some(s => s.taskName === 'Spotting')
+                        ).length,
+                        ticketsWithCompletedSpotting: tickets.filter(t => 
+                            (t.taskstatuses || []).some(s => s.taskName === 'Spotting' && s.endingDate !== null)
+                        ).length,
+                        ticketsWithInProgressSpotting: tickets.filter(t => 
+                            (t.taskstatuses || []).some(s => s.taskName === 'Spotting' && s.endingDate === null)
+                        ).length
+                    }
+                }
+            };
+
+        } catch (error) {
+            console.error('Failed to get route ticket details:', error);
+            throw error;
         }
     }
 }

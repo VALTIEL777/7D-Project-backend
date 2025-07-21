@@ -1,5 +1,8 @@
 const express = require('express');
 const InvoicesController = require('../../controllers/payments/InvoicesController');
+const InvoicesExcelController = require('../../controllers/payments/InvoicesExcelController');
+const multer = require('multer');
+const upload = multer({ storage: multer.memoryStorage() });
 
 const router = express.Router();
 
@@ -247,5 +250,46 @@ router.put('/:invoiceId', InvoicesController.updateInvoice);
  *         description: Server error
  */
 router.delete('/:invoiceId', InvoicesController.deleteInvoice);
+
+// Excel analysis and upload endpoints
+router.post('/excel/analyze', upload.single('file'), InvoicesExcelController.analyzeExcel);
+router.post('/excel/upload', upload.single('file'), InvoicesExcelController.uploadExcel);
+
+/**
+ * @swagger
+ * /invoices/excel/item-codes:
+ *   get:
+ *     summary: Get all available payline item codes
+ *     tags: [Invoices]
+ *     description: Retrieve all available payline item codes from ContractUnits for reference
+ *     responses:
+ *       200:
+ *         description: List of available item codes
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 itemCodes:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       itemCode:
+ *                         type: string
+ *                         example: "123456"
+ *                       name:
+ *                         type: string
+ *                         example: "Concrete Repair"
+ *                 count:
+ *                   type: integer
+ *                   example: 150
+ *       500:
+ *         description: Server error
+ */
+router.get('/excel/item-codes', InvoicesExcelController.getAvailableItemCodes);
 
 module.exports = router; 

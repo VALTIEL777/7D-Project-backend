@@ -239,4 +239,58 @@ router.put('/:checkId', PaymentsController.updatePayment);
  */
 router.delete('/:checkId', PaymentsController.deletePayment);
 
+/**
+ * @swagger
+ * /payments/info/payment-invoice-ticket:
+ *   get:
+ *     summary: Get payment, invoice, and ticket information
+ *     tags: [Payments]
+ *     description: Retrieves a combined view of payment numbers, amounts paid, invoice numbers, amounts requested, ticket amounts to pay, and ticket codes
+ *     responses:
+ *       200:
+ *         description: A list of payment-invoice-ticket information records.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   paymentNumber:
+ *                     type: string
+ *                     description: The payment number from the Payments table
+ *                     example: 'PAY001'
+ *                   amountPaid:
+ *                     type: number
+ *                     format: float
+ *                     description: The amount paid from the Payments table
+ *                     example: 1000.00
+ *                   invoiceNumber:
+ *                     type: string
+ *                     description: The invoice number from the Invoices table
+ *                     example: 'INV001'
+ *                   amountRequested:
+ *                     type: number
+ *                     format: float
+ *                     description: The amount requested from the Invoices table
+ *                     example: 950.00
+ *                   amountToPay:
+ *                     type: number
+ *                     format: float
+ *                     description: The amount to pay from the Tickets table
+ *                     example: 1000.00
+ *                   calculatedCost:
+ *                     type: number
+ *                     format: float
+ *                     description: The calculated cost from the Tickets table
+ *                     example: 950.00
+ *                   ticketCode:
+ *                     type: string
+ *                     description: The ticket code from the Tickets table
+ *                     example: 'TKT001'
+ *       500:
+ *         description: Server error
+ */
+router.get('/info/payment-invoice-ticket', PaymentsController.getPaymentInvoiceTicketInfo);
+
 module.exports = router; 
