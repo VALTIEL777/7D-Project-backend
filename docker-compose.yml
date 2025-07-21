@@ -97,7 +97,7 @@ services:
   compass:
     image: christba/7d-compass:latest
     expose:
-      - "3005"  # Only expose internally
+      - "3005"
     networks:
       - app-network
     restart: unless-stopped
@@ -107,6 +107,46 @@ services:
       timeout: 10s
       retries: 3
 
+  osrm:
+    image: christba/7d-osrm:latest
+    volumes:
+      - osrm-data:/data
+    expose:
+      - "5000"
+    networks:
+      - app-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 10 bash -c 'cat < /dev/null > /dev/tcp/127.0.0.1/5000'"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  vroom:
+    image: vroomvrp/vroom-docker:v1.10.0
+    platform: linux/amd64
+    environment:
+      - VROOM_ROUTER=osrm
+    volumes:
+      - ./vroom-conf:/conf
+    depends_on:
+      osrm:
+        condition: service_healthy
+    expose:
+      - "3000"
+    ports:
+      - "3000:3000"   # publica el puerto para acceso externo
+    networks:
+      - app-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    
 networks:
   app-network:
     driver: bridge
@@ -114,3 +154,4 @@ networks:
 volumes:
   kc_pgdata:
   minio-data:
+  osrm-data:

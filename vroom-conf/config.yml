@@ -1,0 +1,16 @@
+cliArgs:
+  baseurl: "http://localhost:3000"
+  logdir: "/conf"
+  logsize: "10M"
+  port: 3000
+  router: osrm
+
+routingServers:
+  osrm:
+    car:
+      host: "osrm"
+      port: "5000"
+
+
+server:
+  port: 3000

@@ -10,12 +10,14 @@ const LocationClusteringService = require('./LocationClusteringService');
 
 class RouteOptimizationService {
     constructor() {
-        // Use Google Maps Platform Routes API (v2) for route optimization
-        this.routesApiUrl = 'https://routes.googleapis.com/directions/v2:computeRoutes';
-        // Base URL for the Google Maps Platform Geocoding API
+        // Use OSRM for routing instead of Google Maps
+        this.osrmBaseUrl = process.env.OSRM_BASE_URL || 'http://osrm:5000';
+        // Use VROOM for waypoint optimization
+        this.vroomBaseUrl = process.env.VROOM_BASE_URL || 'http://vroom:3000';
+        // Keep Google Maps for geocoding (address to coordinates)
         this.geocodingApiUrl = 'https://maps.googleapis.com/maps/api/geocode/json';
         this.googleMapsApiKey = process.env.GOOGLE_MAPS_API_KEY;
-        this.projectId = process.env.GOOGLE_CLOUD_PROJECT_ID || 'burguer-menu-fbb80'; // Project ID is not directly used by Maps Platform APIs with API Key
+        this.projectId = process.env.GOOGLE_CLOUD_PROJECT_ID || 'burguer-menu-fbb80';
 
         if (!this.googleMapsApiKey) {
             console.warn('GOOGLE_MAPS_API_KEY not found in environment variables');
@@ -106,8 +108,8 @@ class RouteOptimizationService {
     }
 
     /**
-     * Optimizes a single route for one vehicle using the Google Maps Platform Routes API (ComputeRoutes).
-     * This method handles the full process: geocoding addresses, calling the Routes API for optimization,
+     * Optimizes a single route for one vehicle using OSRM for routing and Google Maps for geocoding.
+     * This method handles the full process: geocoding addresses, calling OSRM for optimization,
      * and parsing the relevant response data including the encoded polyline and optimized waypoint order.
      *
      * @param {string} originAddress - The starting address (e.g., your business location).
@@ -118,89 +120,116 @@ class RouteOptimizationService {
      */
     async optimizeRoute(originAddress, destinationAddress, intermediateAddresses) {
         if (!this.googleMapsApiKey) {
-            throw new Error('API Key is not configured for RouteOptimizationService. Please set GOOGLE_MAPS_API_KEY.');
+            throw new Error('API Key is not configured for RouteOptimizationService. Please set GOOGLE_MAPS_API_KEY for geocoding.');
         }
 
-        // Routes API Pro tier supports up to 158 intermediate waypoints (160 total including origin/destination).
-        if (intermediateAddresses.length > 158) {
-            throw new Error(`Waypoint limit exceeded: Routes API Pro supports a maximum of 158 intermediate waypoints for optimization. You provided ${intermediateAddresses.length}.`);
+        // OSRM supports up to 100 waypoints per request
+        if (intermediateAddresses.length > 100) {
+            throw new Error(`Waypoint limit exceeded: OSRM supports a maximum of 100 intermediate waypoints for optimization. You provided ${intermediateAddresses.length}.`);
         }
 
-        console.log(`Starting route optimization process for ${intermediateAddresses.length} intermediate stops.`);
+        console.log(`Starting VROOM route optimization process for ${intermediateAddresses.length} intermediate stops.`);
 
-        // --- STEP 1: Geocode all addresses (origin, destination, and intermediates) ---
-        // We use Promise.all to geocode concurrently for better performance.
-        const [originGeo, destinationGeo, ...geocodedIntermediates] = await Promise.all([
+        // --- STEP 1: Geocode all addresses (origin and intermediates) ---
+        // Only geocode origin and intermediates (no destination)
+        const [originGeo, ...geocodedIntermediates] = await Promise.all([
             this.geocodeAddress(originAddress),
-            this.geocodeAddress(destinationAddress),
             ...intermediateAddresses.map(address => this.geocodeAddress(address))
         ]);
 
-        // Extract just the LatLng objects for the API call, as Routes API v2 requires them for intermediates.
-        const originLatLng = { latitude: originGeo.latitude, longitude: originGeo.longitude };
-        const destinationLatLng = { latitude: destinationGeo.latitude, longitude: destinationGeo.longitude };
-        const intermediateLatLngs = geocodedIntermediates.map(geo => ({ latitude: geo.latitude, longitude: geo.longitude }));
-
-        // --- STEP 2: Build the Routes API v2 (ComputeRoutes) request body ---
-        const requestBody = {
-            origin: {
-                location: {
-                    latLng: originLatLng // Origin can be latLng or address
-                }
-            },
-            destination: {
-                location: {
-                    latLng: destinationLatLng // Destination can be latLng or address
-                }
-            },
-            intermediates: intermediateLatLngs.map(ll => ({ location: { latLng: ll } })), // Intermediates MUST be latLng
-            travelMode: 'DRIVE',
-            optimizeWaypointOrder: true, // THIS IS THE KEY FOR OPTIMIZATION!
-            languageCode: 'es', // Request directions in Spanish
-            units: 'METRIC', // Request distances in meters, durations in seconds
-            // You can add other route modifiers here if needed, e.g.:
-            // routeModifiers: {
-            //   avoidTolls: true,
-            //   avoidHighways: false
-            // }
-        };
-
-        const headers = {
-            'Content-Type': 'application/json',
-            // X-Goog-FieldMask is crucial to specify what data you want back,
-            // which helps control cost and response size.
-            // We request polyline, distance, duration, and the optimized order.
-            'X-Goog-FieldMask': 'routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline,routes.optimizedIntermediateWaypointIndex'
-        };
-
+        // --- STEP 2: Use VROOM for waypoint optimization ---
         try {
-            console.log('Calling Google Maps Platform Routes API (ComputeRoutes) for optimization...');
-            const response = await axios.post(
-                `${this.routesApiUrl}?key=${this.googleMapsApiKey}`, // API Key passed as query parameter
-                requestBody,
-                { headers: headers }
-            );
+            console.log('Calling VROOM for waypoint optimization...');
+            // Prepare VROOM request (minimal structure)
+            const vroomRequest = {
+                vehicles: [
+                    {
+                        id: 1,
+                        start: [originGeo.longitude, originGeo.latitude]
+                    }
+                ],
+                jobs: geocodedIntermediates.map((geo, index) => ({
+                    id: index + 1,
+                    location: [geo.longitude, geo.latitude]
+                }))
+            };
 
-            if (!response.data.routes || response.data.routes.length === 0) {
-                throw new Error('No routes found in Routes API response. This might happen if locations are unreachable, too far apart, or API limits are hit.');
+            console.log('VROOM request:', JSON.stringify(vroomRequest, null, 2));
+
+            // Call VROOM API with multiple algorithms
+            const vroomResponse = await this.tryMultipleVroomAlgorithms(vroomRequest);
+
+            console.log('VROOM response received with best algorithm');
+
+            if (vroomResponse.code !== 0) {
+                throw new Error(`VROOM optimization failed: ${vroomResponse.error || 'Unknown error'}`);
             }
 
-            const route = response.data.routes[0]; // The Routes API returns an array of routes; the first one is the optimized one.
+            // Extract optimized order from VROOM response
+            const vroomRoute = vroomResponse.data.routes[0];
+            const optimizedOrder = vroomRoute.steps
+                .filter(step => step.type === 'job')
+                .map(step => step.job - 1); // VROOM job IDs are 1-based, convert to 0-based
 
-            console.log('Route optimization successful. Total distance:', route.distanceMeters, 'meters.');
+            console.log('VROOM optimized order:', optimizedOrder);
 
-            // The Routes API v2 directly returns the encoded polyline and optimized order.
+            // --- STEP 3: Build coordinates string for OSRM with optimized order ---
+            // Only use origin and jobs (no destination)
+            const optimizedCoordinates = [
+                `${originGeo.longitude},${originGeo.latitude}`,
+                ...optimizedOrder.map(index => {
+                    const geo = geocodedIntermediates[index];
+                    return `${geo.longitude},${geo.latitude}`;
+                })
+            ];
+            const coordinatesString = optimizedCoordinates.join(';');
+            console.log(`OSRM coordinates string (optimized): ${coordinatesString}`);
+
+            // --- STEP 4: Call OSRM for route calculation with optimized waypoints ---
+            console.log('Calling OSRM for route calculation with optimized waypoints...');
+            const osrmUrl = `${this.osrmBaseUrl}/route/v1/driving/${coordinatesString}?overview=full&steps=true&annotations=true&alternatives=true&continue_straight=true&geometries=polyline`;
+            const osrmResponse = await axios.get(osrmUrl);
+
+            if (!osrmResponse.data.routes || osrmResponse.data.routes.length === 0) {
+                throw new Error('No routes found in OSRM response. This might happen if locations are unreachable or too far apart.');
+            }
+
+            const route = osrmResponse.data.routes[0];
+            console.log('OSRM route calculation successful. Total distance:', route.distance, 'meters.');
+
             return {
-                encodedPolyline: route.polyline.encodedPolyline,
-                optimizedOrder: route.optimizedIntermediateWaypointIndex || [], // Ensure it's an array, even if empty
-                totalDistance: route.distanceMeters,
-                totalDuration: parseFloat(route.duration.replace('s', '')), // Convert duration string (e.g., "1800s") to seconds
-                apiResponse: response.data // Store the full API response for debugging/metadata
+                encodedPolyline: route.geometry, // OSRM returns polyline-encoded geometry
+                optimizedOrder: optimizedOrder, // VROOM-optimized order
+                totalDistance: route.distance, // OSRM returns distance in meters
+                totalDuration: route.duration, // OSRM returns duration in seconds
+                apiResponse: {
+                    vroom: vroomResponse.data,
+                    osrm: osrmResponse.data
+                } // Store both API responses for debugging/metadata
             };
 
         } catch (error) {
-            console.error('Routes API Call Error:', error.response?.data || error.message);
-            throw new Error(`Route optimization failed: ${error.response?.data?.error?.message || error.message}`);
+            console.error('Route optimization error:', error.response?.data || error.message);
+            // Fallback to sequential order if VROOM fails
+            console.log('Falling back to sequential order due to optimization error');
+            const fallbackOrder = Array.from({ length: intermediateAddresses.length }, (_, i) => i);
+            // Build coordinates string for OSRM with fallback order
+            const fallbackCoordinates = [
+                `${originGeo.longitude},${originGeo.latitude}`,
+                ...geocodedIntermediates.map(geo => `${geo.longitude},${geo.latitude}`)
+            ];
+            const coordinatesString = fallbackCoordinates.join(';');
+            const osrmUrl = `${this.osrmBaseUrl}/route/v1/driving/${coordinatesString}?overview=full&steps=true&annotations=true`;
+            const osrmResponse = await axios.get(osrmUrl);
+            const route = osrmResponse.data.routes[0];
+            return {
+                encodedPolyline: route.geometry,
+                optimizedOrder: fallbackOrder,
+                totalDistance: route.distance,
+                totalDuration: route.duration,
+                apiResponse: { osrm: osrmResponse.data },
+                optimizationNote: 'Used fallback sequential order due to VROOM error'
+            };
         }
     }
 
@@ -230,10 +259,10 @@ class RouteOptimizationService {
                 throw new Error('originAddress and destinationAddress are required');
             }
 
-            const { maxDistance = 30000, maxLocationsPerCluster = 25, minLocationsPerCluster = 20 } = options;
+            const { maxDistance = 30000, maxLocationsPerCluster = 100, minLocationsPerCluster = 50 } = options;
 
             console.log(`Starting location-based clustered route optimization for ${ticketIds.length} tickets`);
-            console.log(`Clustering by unique locations (max ${maxLocationsPerCluster} locations per cluster)`);
+            console.log(`Clustering by unique locations (max ${maxLocationsPerCluster} locations per cluster - OSRM limit)`);
 
             // Step 1: Get all ticket addresses in one database query (reuse from parent method)
             const ticketsWithAddresses = await this.getTicketsWithAddressesBatch(ticketIds, {
@@ -254,7 +283,7 @@ class RouteOptimizationService {
             });
             
             console.log(`Created ${clusters.length} location-based clusters for optimization`);
-            console.log(`Each cluster contains max ${maxLocationsPerCluster} unique locations with all their associated tickets`);
+            console.log(`Each cluster contains max ${maxLocationsPerCluster} unique locations with all their associated tickets (OSRM limit)`);
 
             // Step 2: Optimize each cluster separately
             const optimizedRoutes = [];
@@ -587,10 +616,10 @@ class RouteOptimizationService {
             console.log(`Deduplicated ${ticketsWithAddresses.length} tickets into ${uniqueAddresses.length} unique addresses`);
             console.log('Unique addresses for optimization:', uniqueAddresses);
 
-            // Step 2.5: Check if we need to use clustering (more than 25 unique locations)
-            if (uniqueAddresses.length > 25) {
-                console.log(`More than 25 unique locations (${uniqueAddresses.length}) detected. Using location-based clustering approach.`);
-                console.log(`This will create clusters with max 25 unique locations each, then assign all tickets at those locations.`);
+            // Step 2.5: Check if we need to use clustering (more than 100 unique locations - OSRM limit)
+            if (uniqueAddresses.length > 100) {
+                console.log(`More than 100 unique locations (${uniqueAddresses.length}) detected. Using location-based clustering approach.`);
+                console.log(`This will create clusters with max 100 unique locations each, then assign all tickets at those locations.`);
                 return await this.optimizeRouteWithClustering(
                     ticketIds,
                     routeCode,
@@ -2772,6 +2801,62 @@ class RouteOptimizationService {
             console.error('Failed to get route ticket details:', error);
             throw error;
         }
+    }
+
+    /**
+     * Try multiple VROOM algorithms and select the best result
+     * @param {Object} vroomRequest - The VROOM request object
+     * @returns {Promise<Object>} - Best VROOM response
+     */
+    async tryMultipleVroomAlgorithms(vroomRequest) {
+        const algorithms = [
+            { name: 'local_search', options: { exploration_level: 5, timeout: 10000 } },
+            { name: 'genetic', options: { timeout: 15000 } },
+            { name: 'simulated_annealing', options: { timeout: 12000 } }
+        ];
+
+        let bestResult = null;
+        let bestCost = Infinity;
+
+        for (const algo of algorithms) {
+            try {
+                console.log(`Trying VROOM algorithm: ${algo.name}`);
+                
+                const requestWithAlgo = {
+                    ...vroomRequest,
+                    options: {
+                        ...vroomRequest.options,
+                        algo: algo.name,
+                        ...algo.options
+                    }
+                };
+
+                const response = await axios.post(`${this.vroomBaseUrl}/`, requestWithAlgo, {
+                    headers: { 'Content-Type': 'application/json' },
+                    timeout: 20000
+                });
+
+                if (response.data.code === 0 && response.data.routes.length > 0) {
+                    const cost = response.data.routes[0].cost || 0;
+                    console.log(`${algo.name} algorithm cost: ${cost}`);
+                    
+                    if (cost < bestCost) {
+                        bestCost = cost;
+                        bestResult = response.data;
+                        console.log(`New best result with ${algo.name} algorithm`);
+                    }
+                }
+            } catch (error) {
+                console.warn(`Algorithm ${algo.name} failed:`, error.message);
+            }
+        }
+
+        if (!bestResult) {
+            throw new Error('All VROOM algorithms failed');
+        }
+
+        console.log(`Selected best result with cost: ${bestCost}`);
+        return bestResult;
     }
 }
 
