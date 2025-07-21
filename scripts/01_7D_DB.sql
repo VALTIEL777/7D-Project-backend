@@ -751,4 +751,5 @@ VALUES
     ('Crack Seal', 'Sealing cracks in asphalt to prevent water penetration and pavement degradation'),
     ('Install Signs', 'Installing road or traffic control signs at designated locations'),
     ('Steel Plate Pick Up', 'Removing previously installed steel plates from the roadway'),
-    ('Asphalt', 'Laying down or repairing asphalt pavement surfaces');
+    ('Asphalt', 'Laying down or repairing asphalt pavement surfaces'),
+    ('Removal', 'Removing materials, debris, or temporary installations from the work site');

@@ -64,7 +64,7 @@ const router = express.Router();
  *       500:
  *         description: Error creating PhotoEvidence
  */
-router.post('/', upload.single('file'), PhotoEvidenceController.createPhotoEvidence);
+router.post('/',  upload.array('file', 5), PhotoEvidenceController.createPhotoEvidence);
 
 /**
  * @swagger
