@@ -113,6 +113,8 @@ services:
       - osrm-data:/data
     expose:
       - "5000"
+    ports:
+      - "5000:5000"
     networks:
       - app-network
     restart: unless-stopped
@@ -124,19 +126,55 @@ services:
       start_period: 60s
 
   vroom:
-    image: vroomvrp/vroom-docker:v1.10.0
+    image: ghcr.io/vroom-project/vroom-docker:v1.14.0
     platform: linux/amd64
     environment:
       - VROOM_ROUTER=osrm
-    volumes:
-      - ./vroom-conf:/conf
+      - VROOM_LOG_LEVEL=debug
+      - NODE_ENV=development
     depends_on:
       osrm:
         condition: service_healthy
+    tmpfs:
+      - /conf
+    # Use entrypoint to create config from embedded content
+    entrypoint: >
+      sh -c "
+      cat > /conf/config.yml << 'EOF'
+      cliArgs:
+        geometry: false
+        planmode: false
+        threads: 4
+        explore: 5
+        limit: '1mb'
+        logdir: '/..'
+        logsize: '100M'
+        maxlocations: 1000
+        maxvehicles: 200
+        override: true
+        path: ''
+        port: 3000
+        router: 'osrm'
+        timeout: 300000
+        baseurl: '/'
+      routingServers:
+        osrm:
+          car:
+            host: 'osrm'
+            port: '5000'
+          bike:
+            host: 'osrm'
+            port: '5001'
+          foot:
+            host: 'osrm'
+            port: '5002'
+      EOF
+      exec /usr/local/bin/docker-entrypoint.sh
+      "
     expose:
       - "3000"
     ports:
-      - "3000:3000"   # publica el puerto para acceso externo
+      - "3000:3000"
     networks:
       - app-network
     restart: unless-stopped
@@ -146,6 +184,8 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
+
+
     
 networks:
   app-network:

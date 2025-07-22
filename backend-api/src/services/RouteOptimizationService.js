@@ -1,4 +1,5 @@
 const axios = require('axios');
+const http = require('http');
 // Removed: const {RouteOptimizationClient} = require('@googlemaps/routeoptimization').v1;
 // This client is for the Google Cloud Route Optimization API, which is NOT what we need for this use case.
 
@@ -166,7 +167,7 @@ class RouteOptimizationService {
             }
 
             // Extract optimized order from VROOM response
-            const vroomRoute = vroomResponse.data.routes[0];
+            const vroomRoute = vroomResponse.routes[0];
             const optimizedOrder = vroomRoute.steps
                 .filter(step => step.type === 'job')
                 .map(step => step.job - 1); // VROOM job IDs are 1-based, convert to 0-based
@@ -203,7 +204,7 @@ class RouteOptimizationService {
                 totalDistance: route.distance, // OSRM returns distance in meters
                 totalDuration: route.duration, // OSRM returns duration in seconds
                 apiResponse: {
-                    vroom: vroomResponse.data,
+                    vroom: vroomResponse,
                     osrm: osrmResponse.data
                 } // Store both API responses for debugging/metadata
             };
@@ -2809,54 +2810,134 @@ class RouteOptimizationService {
      * @returns {Promise<Object>} - Best VROOM response
      */
     async tryMultipleVroomAlgorithms(vroomRequest) {
-        const algorithms = [
-            { name: 'local_search', options: { exploration_level: 5, timeout: 10000 } },
-            { name: 'genetic', options: { timeout: 15000 } },
-            { name: 'simulated_annealing', options: { timeout: 12000 } }
-        ];
+        try {
+            const requestConfig = {
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'User-Agent': 'NodeJS-API/1.0'
+                },
+                timeout: 20000
+            };
 
-        let bestResult = null;
-        let bestCost = Infinity;
+            console.log('=== VROOM REQUEST DEBUG ===');
+            console.log('URL:', `${this.vroomBaseUrl}/`);
+            console.log('Headers:', requestConfig.headers);
+            console.log('Body (stringified):', JSON.stringify(vroomRequest));
+            console.log('Body length:', JSON.stringify(vroomRequest).length);
+            console.log('================================');
 
-        for (const algo of algorithms) {
-            try {
-                console.log(`Trying VROOM algorithm: ${algo.name}`);
-                
-                const requestWithAlgo = {
-                    ...vroomRequest,
-                    options: {
-                        ...vroomRequest.options,
-                        algo: algo.name,
-                        ...algo.options
-                    }
-                };
+            const response = await axios.post(`${this.vroomBaseUrl}/`, vroomRequest, requestConfig);
+            return response.data;
+        } catch (error) {
+            console.error('Full error object:', {
+                message: error.message,
+                status: error.response?.status,
+                statusText: error.response?.statusText,
+                headers: error.response?.headers,
+                data: error.response?.data
+            });
+            throw new Error('VROOM request failed: ' + (error.response?.data?.error || error.message));
+        }
+    }
 
-                const response = await axios.post(`${this.vroomBaseUrl}/`, requestWithAlgo, {
-                    headers: { 'Content-Type': 'application/json' },
-                    timeout: 20000
-                });
-
-                if (response.data.code === 0 && response.data.routes.length > 0) {
-                    const cost = response.data.routes[0].cost || 0;
-                    console.log(`${algo.name} algorithm cost: ${cost}`);
-                    
-                    if (cost < bestCost) {
-                        bestCost = cost;
-                        bestResult = response.data;
-                        console.log(`New best result with ${algo.name} algorithm`);
-                    }
+    /**
+     * Alternative VROOM request using raw HTTP instead of axios
+     * @param {Object} vroomRequest - The VROOM request object
+     * @returns {Promise<Object>} - VROOM response
+     */
+    async testRawHTTP(vroomRequest) {
+        return new Promise((resolve, reject) => {
+            const postData = JSON.stringify(vroomRequest);
+            
+            const options = {
+                hostname: 'vroom',
+                port: 3000,
+                path: '/',
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Content-Length': Buffer.byteLength(postData)
                 }
-            } catch (error) {
-                console.warn(`Algorithm ${algo.name} failed:`, error.message);
-            }
+            };
+
+            console.log('=== RAW HTTP REQUEST DEBUG ===');
+            console.log('Raw HTTP request options:', options);
+            console.log('Raw HTTP post data:', postData);
+            console.log('================================');
+
+            const req = http.request(options, (res) => {
+                let data = '';
+                
+                console.log('Response status:', res.statusCode);
+                console.log('Response headers:', res.headers);
+                
+                res.on('data', (chunk) => {
+                    data += chunk;
+                });
+                
+                res.on('end', () => {
+                    console.log('Response body:', data);
+                    if (res.statusCode === 200) {
+                        resolve(JSON.parse(data));
+                    } else {
+                        reject(new Error(`HTTP ${res.statusCode}: ${data}`));
+                    }
+                });
+            });
+
+            req.on('error', (error) => {
+                console.error('Request error:', error);
+                reject(error);
+            });
+
+            req.write(postData);
+            req.end();
+        });
+    }
+
+    /**
+     * Test both axios and raw HTTP methods for VROOM communication
+     * @param {Object} vroomRequest - The VROOM request object
+     * @returns {Promise<Object>} - Test results
+     */
+    async testVroomCommunication(vroomRequest) {
+        console.log('=== VROOM COMMUNICATION TEST ===');
+        
+        const results = {
+            axios: null,
+            rawHttp: null,
+            success: false
+        };
+
+        // Test axios method
+        try {
+            console.log('\n--- Testing Axios Method ---');
+            results.axios = await this.tryMultipleVroomAlgorithms(vroomRequest);
+            console.log('✅ Axios method SUCCESS');
+        } catch (error) {
+            console.log('❌ Axios method FAILED:', error.message);
+            results.axios = { error: error.message };
         }
 
-        if (!bestResult) {
-            throw new Error('All VROOM algorithms failed');
+        // Test raw HTTP method
+        try {
+            console.log('\n--- Testing Raw HTTP Method ---');
+            results.rawHttp = await this.testRawHTTP(vroomRequest);
+            console.log('✅ Raw HTTP method SUCCESS');
+        } catch (error) {
+            console.log('❌ Raw HTTP method FAILED:', error.message);
+            results.rawHttp = { error: error.message };
         }
 
-        console.log(`Selected best result with cost: ${bestCost}`);
-        return bestResult;
+        // Determine overall success
+        results.success = results.axios && !results.axios.error || results.rawHttp && !results.rawHttp.error;
+        
+        console.log('\n=== TEST RESULTS ===');
+        console.log('Overall success:', results.success);
+        console.log('========================\n');
+        
+        return results;
     }
 }
 
