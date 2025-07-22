@@ -5,45 +5,28 @@ const Tickets = require('../../models/ticket-logic/Tickets');
 
 const TicketStatusController = {
   async createTicketStatus(req, res) {
-    try {
-      const { taskStatusId, ticketId, crewId, startingDate, endingDate, observation, createdBy, updatedBy } = req.body;
-      const newTicketStatus = await TicketStatus.create(taskStatusId, ticketId, crewId, startingDate, endingDate, observation, createdBy, updatedBy);
-      
-      // Get task status name for notification
-      const taskStatus = await TaskStatus.findById(taskStatusId);
-      const ticket = await Tickets.findById(ticketId);
-      
-      if (taskStatus && ticket) {
-        // Get users to notify
-        const userIds = await NotificationService.getTicketNotificationUsers(ticketId);
-        
-        // Create notification for status update
-        await NotificationService.notifyTicketStatusUpdate(
-          ticketId,
-          ticket.ticketCode,
-          'New',
-          taskStatus.name,
-          createdBy,
-          userIds
-        );
-        
-        // Check if ticket is completed
-        if (taskStatus.name.toLowerCase().includes('completed') || taskStatus.name.toLowerCase().includes('finished')) {
-          await NotificationService.notifyTicketCompleted(
-            ticketId,
-            ticket.ticketCode,
-            createdBy,
-            userIds
-          );
-        }
-      }
-      
-      res.status(201).json(newTicketStatus);
-    } catch (error) {
-      console.error('Error creating TicketStatus:', error);
-      res.status(500).json({ message: 'Error creating TicketStatus', error: error.message });
-    }
-  },
+  try {
+    const { taskStatusId, ticketId, crewId, startingDate, endingDate, observation, createdBy, updatedBy } = req.body;
+    const newTicketStatus = await TicketStatus.create(taskStatusId, ticketId, crewId, startingDate, endingDate, observation, createdBy, updatedBy);
+
+    res.status(201).json(newTicketStatus);
+  } catch (error) {
+    console.error('Error creating TicketStatus:', error);
+    res.status(500).json({ message: 'Error creating TicketStatus', error: error.message });
+  }
+},
+
+async  getTicketStatusesByTicket(req, res) {
+  const { ticketId } = req.params;
+  try {
+    const ticketStatuses = await TicketStatus.findByTicket(ticketId); // método del modelo que crearemos
+    res.status(200).json(ticketStatuses);
+  } catch (error) {
+    console.error('Error fetching ticket statuses by ticket:', error);
+    res.status(500).json({ message: 'Error fetching ticket statuses by ticket' });
+  }
+},
+
 
   async getTicketStatusById(req, res) {
     try {
@@ -95,55 +78,24 @@ async getCompletedTickets(req, res) {
 },
 
 
-  async updateTicketStatus(req, res) {
-    try {
-      const { taskStatusId, ticketId } = req.params;
-      const { crewId, startingDate, endingDate, observation, updatedBy } = req.body;
-      
-      // Get current status before update
-      const currentStatus = await TicketStatus.findById(taskStatusId, ticketId);
-      const currentTaskStatus = currentStatus ? await TaskStatus.findById(taskStatusId) : null;
-      
-      const updatedTicketStatus = await TicketStatus.update(taskStatusId, ticketId, crewId, startingDate, endingDate, observation, updatedBy);
-      if (!updatedTicketStatus) {
-        return res.status(404).json({ message: 'TicketStatus not found' });
-      }
-      
-      // Get new task status and ticket info
-      const newTaskStatus = await TaskStatus.findById(taskStatusId);
-      const ticket = await Tickets.findById(ticketId);
-      
-      if (currentTaskStatus && newTaskStatus && ticket) {
-        // Get users to notify
-        const userIds = await NotificationService.getTicketNotificationUsers(ticketId);
-        
-        // Create notification for status update
-        await NotificationService.notifyTicketStatusUpdate(
-          ticketId,
-          ticket.ticketCode,
-          currentTaskStatus.name,
-          newTaskStatus.name,
-          updatedBy,
-          userIds
-        );
-        
-        // Check if ticket is completed
-        if (newTaskStatus.name.toLowerCase().includes('completed') || newTaskStatus.name.toLowerCase().includes('finished')) {
-          await NotificationService.notifyTicketCompleted(
-            ticketId,
-            ticket.ticketCode,
-            updatedBy,
-            userIds
-          );
-        }
-      }
-      
-      res.status(200).json(updatedTicketStatus);
-    } catch (error) {
-      console.error('Error updating TicketStatus:', error);
-      res.status(500).json({ message: 'Error updating TicketStatus', error: error.message });
+ async updateTicketStatus(req, res) {
+  try {
+    const { taskStatusId, ticketId } = req.params;
+    const { crewId, startingDate, endingDate, observation, updatedBy } = req.body;
+    
+    const updatedTicketStatus = await TicketStatus.update(taskStatusId, ticketId, crewId, startingDate, endingDate, observation, updatedBy);
+    
+    if (!updatedTicketStatus) {
+      return res.status(404).json({ message: 'TicketStatus not found' });
     }
-  },
+
+    res.status(200).json(updatedTicketStatus);
+  } catch (error) {
+    console.error('Error updating TicketStatus:', error);
+    res.status(500).json({ message: 'Error updating TicketStatus', error: error.message });
+  }
+},
+
 
   async deleteTicketStatus(req, res) {
     try {

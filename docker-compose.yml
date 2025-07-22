@@ -36,7 +36,7 @@ services:
       - MINIO_PORT=9000
       - MINIO_ACCESS_KEY=minioadmin
       - MINIO_SECRET_KEY=miniosecretkey
-      - MINIO_PUBLIC_HOST=minio
+      - MINIO_PUBLIC_HOST=christba.com
       - GOOGLE_CLOUD_PROJECT=burguer-menu-fbb80
       - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY}
       - JWT_SECRET=${JWT_SECRET}
