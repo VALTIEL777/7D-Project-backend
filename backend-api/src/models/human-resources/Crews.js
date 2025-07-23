@@ -72,7 +72,7 @@ static async getCrewDetailsById(crewId) {
       addr.addresssuffix,
 
       -- 🧭 Wayfinding
-       w.location,
+      w.location,
       w.fromaddressnumber,
       w.fromaddresscardinal,
       w.fromaddressstreet,
