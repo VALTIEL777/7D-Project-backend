@@ -96,7 +96,7 @@ services:
     restart: unless-stopped
 
   compass:
-    image: christba/7dcompass-frontend:latest
+    image: christba/7d-compass:latest
     expose:
       - "3005"  # Only expose internally
     networks:
@@ -161,6 +161,7 @@ networks:
 volumes:
   kc_pgdata:
   minio-data:
+  osrm-data:
 
 
 
