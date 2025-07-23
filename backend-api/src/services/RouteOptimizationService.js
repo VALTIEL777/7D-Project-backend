@@ -230,7 +230,7 @@ class RouteOptimizationService {
                 throw new Error('originAddress and destinationAddress are required');
             }
 
-            const { maxDistance = 30000, maxLocationsPerCluster = 25, minLocationsPerCluster = 20 } = options;
+            const { maxDistance = 30000, maxLocationsPerCluster = 150, minLocationsPerCluster = 20 } = options;
 
             console.log(`Starting location-based clustered route optimization for ${ticketIds.length} tickets`);
             console.log(`Clustering by unique locations (max ${maxLocationsPerCluster} locations per cluster)`);
@@ -245,7 +245,7 @@ class RouteOptimizationService {
                 throw new Error('No valid tickets found for clustering');
             }
 
-            // Step 2: Cluster by unique locations using PostGIS (max 25 unique locations per cluster)
+            // Step 2: Cluster by unique locations using PostGIS (max 150 unique locations per cluster)
             const clusteringService = new LocationClusteringService();
             const clusters = await clusteringService.clusterLocations(ticketsWithAddresses, { 
                 maxDistance,
@@ -590,9 +590,9 @@ class RouteOptimizationService {
             console.log('Unique addresses for optimization:', uniqueAddresses);
 
             // Step 2.5: Check if we need to use clustering (more than 25 unique locations)
-            if (uniqueAddresses.length > 25) {
-                console.log(`More than 25 unique locations (${uniqueAddresses.length}) detected. Using location-based clustering approach.`);
-                console.log(`This will create clusters with max 25 unique locations each, then assign all tickets at those locations.`);
+            if (uniqueAddresses.length > 150) {
+                console.log(`More than 150 unique locations (${uniqueAddresses.length}) detected. Using location-based clustering approach.`);
+                console.log(`This will create clusters with max 150 unique locations each, then assign all tickets at those locations.`);
                 return await this.optimizeRouteWithClustering(
                     ticketIds,
                     routeCode,
