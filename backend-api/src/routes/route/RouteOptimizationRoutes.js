@@ -46,7 +46,7 @@ router.post('/route/:routeId/reoptimize', RouteOptimizationController.reoptimize
 
 /**
  * @route POST /api/route-optimization/optimize-clustered
- * @desc Optimize routes by clustering locations into groups of max 25 locations each
+ * @desc Optimize routes by clustering locations into groups of max 100 locations each
  * @access Private (assuming you have auth middleware)
  */
 router.post('/optimize-clustered', RouteOptimizationController.optimizeClustered);

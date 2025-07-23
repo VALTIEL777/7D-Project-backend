@@ -293,7 +293,7 @@ const RouteOptimizationController = {
   /**
    * Optimize routes using clustering for large numbers of locations
    * @route POST /api/route-optimization/optimize-clustered
-   * @desc Optimize routes by clustering locations into groups of max 25 locations each
+   * @desc Optimize routes by clustering locations into groups of max 100 locations each
    * @access Private
    */
   async optimizeClustered(req, res) {

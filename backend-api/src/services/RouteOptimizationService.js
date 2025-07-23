@@ -235,7 +235,7 @@ class RouteOptimizationService {
     }
 
     /**
-     * Optimizes routes for large numbers of locations by clustering them into groups of maximum 25 locations each.
+     * Optimizes routes for large numbers of locations by clustering them into groups of maximum 100 locations each.
      * This method uses PostGIS spatial clustering to group nearby locations and then optimizes each cluster separately.
      * 
      * @param {Array<number>} ticketIds - Array of ticket IDs to optimize
@@ -260,7 +260,7 @@ class RouteOptimizationService {
                 throw new Error('originAddress and destinationAddress are required');
             }
 
-            const { maxDistance = 30000, maxLocationsPerCluster = 150, minLocationsPerCluster = 20 } = options;
+            const { maxDistance = 30000, maxLocationsPerCluster = 100, minLocationsPerCluster = 20 } = options;
 
             console.log(`Starting location-based clustered route optimization for ${ticketIds.length} tickets`);
             console.log(`Clustering by unique locations (max ${maxLocationsPerCluster} locations per cluster)`);
@@ -275,7 +275,7 @@ class RouteOptimizationService {
                 throw new Error('No valid tickets found for clustering');
             }
 
-            // Step 2: Cluster by unique locations using PostGIS (max 150 unique locations per cluster)
+            // Step 2: Cluster by unique locations using PostGIS (max 100 unique locations per cluster)
             const clusteringService = new LocationClusteringService();
             const clusters = await clusteringService.clusterLocations(ticketsWithAddresses, { 
                 maxDistance,
@@ -619,10 +619,10 @@ class RouteOptimizationService {
             console.log(`Deduplicated ${ticketsWithAddresses.length} tickets into ${uniqueAddresses.length} unique addresses`);
             console.log('Unique addresses for optimization:', uniqueAddresses);
 
-            // Step 2.5: Check if we need to use clustering (more than 25 unique locations)
-            if (uniqueAddresses.length > 150) {
-                console.log(`More than 150 unique locations (${uniqueAddresses.length}) detected. Using location-based clustering approach.`);
-                console.log(`This will create clusters with max 150 unique locations each, then assign all tickets at those locations.`);
+            // Step 2.5: Check if we need to use clustering (more than 100 unique locations)
+            if (uniqueAddresses.length > 100) {
+                console.log(`More than 100 unique locations (${uniqueAddresses.length}) detected. Using location-based clustering approach.`);
+                console.log(`This will create clusters with max 100 unique locations each, then assign all tickets at those locations.`);
                 return await this.optimizeRouteWithClustering(
                     ticketIds,
                     routeCode,
