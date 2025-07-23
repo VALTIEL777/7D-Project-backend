@@ -41,15 +41,34 @@ async function initializeMinioClient() {
       minioClient = new Minio.Client(minioConfig);
     }
 
-    // Test bucket existence
-    const bucketExists = await minioClient.bucketExists('uploads');
+    const bucketName = 'uploads';
+    const bucketExists = await minioClient.bucketExists(bucketName);
     console.log('=== MinIO Connection Test ===');
     console.log('Connection successful:', bucketExists ? 'Bucket exists' : 'Bucket does not exist');
 
     if (!bucketExists) {
       console.log('Creating uploads bucket...');
-      await minioClient.makeBucket('uploads');
+      await minioClient.makeBucket(bucketName);
       console.log('Uploads bucket created successfully');
+    }
+
+    // Asignar política pública de solo lectura
+    const publicPolicy = {
+      Version: "2012-10-17",
+      Statement: [
+        {
+          Action: ["s3:GetObject"],
+          Effect: "Allow",
+          Principal: ["*"],
+          Resource: [`arn:aws:s3:::${bucketName}/*`]
+        }
+      ]
+    };
+    try {
+      await minioClient.setBucketPolicy(bucketName, JSON.stringify(publicPolicy));
+      console.log('Política pública asignada correctamente al bucket:', bucketName);
+    } catch (err) {
+      console.error('Error asignando política pública al bucket:', err.message);
     }
 
     console.log('MinIO client initialized successfully');

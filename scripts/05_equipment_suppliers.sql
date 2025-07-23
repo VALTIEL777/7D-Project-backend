@@ -37,7 +37,33 @@ VALUES (
     8,  -- 8 hour minimum
     '8 hour minimum rental', 
     1, 1
-);
+),(
+    1, 
+    'F-250 Pickup', 
+    'VCNA Prairie Materials', 
+    'vehicle', 
+    33.30, 
+    8,  -- 8 hour minimum
+    '8 hour minimum rental', 
+    1, 1
+),(
+    1, 
+    'F-450 Pickup', 
+    'VCNA Prairie Materials', 
+    'vehicle', 
+    33.30, 
+    8,  -- 8 hour minimum
+    '8 hour minimum rental', 
+    1, 1
+), 
+(1, 'IR185 Comp.', NULL, NULL, 49.33, 8.0, '8 hour minimum rental', 1, 1),
+(1, 'Trailer', NULL, NULL, 5.12, 8.0, '8 hour minimum rental', 1, 1),
+(1, 'Semi - Trailer', NULL, NULL, 42.04, 8.0, '8 hour minimum rental', 1, 1),
+(1, 'Flatbed', NULL, NULL, 71.90, 8.0, '8 hour minimum rental', 1, 1),
+(1, 'EB3000 Generator', NULL, NULL, 10.46, 8.0, '8 hour minimum rental', 1, 1),
+(1, 'Traffic Control', NULL, NULL, 500.00, 8.0, '8 hour minimum rental', 1, 1),
+(1, 'Skidsteering (Bobcat)', NULL, NULL, 78.54, 8.0, '8 hour minimum rental', 1, 1),
+(1, 'Six Wheeler', NULL, NULL, 90.32, 8.0, '8 hour minimum rental', 1, 1);;
 -----------------------------------------------------------------------------------------------------------
 INSERT INTO Suppliers (name, phone, email, address, createdBy, updatedBy)
 VALUES (
