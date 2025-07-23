@@ -83,6 +83,7 @@ const crewEmployeesRoutes = require('./routes/human-resources/CrewEmployeesRoute
 const peopleRoutes = require('./routes/human-resources/PeopleRoutes');
 const quadrantSupervisorRoutes = require('./routes/human-resources/QuadrantSupervisorRoutes');
 const skillsRoutes = require('./routes/human-resources/SkillsRoutes');
+const employeeSkillsRoutes = require('./routes/human-resources/EmployeeSkillsRoutes');
 const addressesRoutes = require('./routes/location/AddressesRoutes');
 const quadrantsRoutes = require('./routes/location/QuadrantsRoutes');
 const ticketAddressesRoutes = require('./routes/location/TicketAddressesRoutes');
@@ -136,6 +137,7 @@ app.use('/api/crewemployees', crewEmployeesRoutes);
 app.use('/api/people', peopleRoutes);
 app.use('/api/quadrantsupervisors', quadrantSupervisorRoutes);
 app.use('/api/skills', skillsRoutes);
+app.use('/api/employee-skills', employeeSkillsRoutes);
 app.use('/api/addresses', addressesRoutes);
 app.use('/api/quadrants', quadrantsRoutes);
 app.use('/api/ticketaddresses', ticketAddressesRoutes);
