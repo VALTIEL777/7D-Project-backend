@@ -108,6 +108,52 @@ services:
       timeout: 10s
       retries: 3
 
+  osrm:
+    image: christba/7d-osrm:latest
+    volumes:
+      - osrm-data:/data
+    expose:
+      - "5000"
+    ports:
+      - "5000:5000"
+    networks:
+      - app-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 10 bash -c 'cat < /dev/null > /dev/tcp/127.0.0.1/5000'"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  vroom:
+    image: ghcr.io/vroom-project/vroom-docker:v1.14.0
+    platform: linux/amd64
+    environment:
+      - VROOM_ROUTER=osrm
+      - VROOM_LOG_LEVEL=debug
+      - NODE_ENV=development
+    depends_on:
+      osrm:
+        condition: service_healthy
+    tmpfs:
+      - /conf
+    volumes:
+      - ./vroom-conf/config.yml:/conf/config.yml:ro
+    expose:
+      - "3000"
+    ports:
+      - "3000:3000"
+    networks:
+      - app-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
 networks:
   app-network:
     driver: bridge
