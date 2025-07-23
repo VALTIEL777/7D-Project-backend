@@ -1035,6 +1035,22 @@ function getDatabaseFieldMapping(excelField) {
   return fieldMappings[excelField] || null;
 }
 
+// Helper function to map database field names back to Excel field names
+function getExcelFieldMapping(dbField) {
+  const reverseMappings = {
+    'ticketCode': 'TASK_WO_NUM',
+    'partnercomment': 'PGL ComD:Wments',
+    'comment7d': 'Contractor Comments',
+    'partnersupervisorcomment': 'NOTES2_RES',
+    'quantity': 'SQ_MI',
+    'earliestRptDate': 'Earliest_Rpt_Dt',
+    'address': 'ADDRESS',
+    'sapItemNum': 'SAP_ITEM_NUM'
+  };
+  
+  return reverseMappings[dbField] || null;
+}
+
 // Helper function to update ticket with final data
 async function updateTicketWithData(ticketId, finalData, updatedBy) {
   try {
@@ -1427,7 +1443,7 @@ exports.validateStepperData = async (req, res) => {
         if (!ticketValidation.isValid) {
           validation.isValid = false;
           validation.errors.push({
-            ticketCode: ticket.ticketCode,
+            ticketCode: ticket.ticketCode || (ticket.excelData && (ticket.excelData.TASK_WO_NUM || ticket.excelData.RESTN_WO_NUM)) || 'UNKNOWN',
             errors: ticketValidation.errors
           });
           validation.summary.invalidTickets++;
@@ -1441,13 +1457,51 @@ exports.validateStepperData = async (req, res) => {
     // Validate inconsistent tickets with decisions
     if (inconsistentTickets && Array.isArray(inconsistentTickets)) {
       for (const ticket of inconsistentTickets) {
-        const finalData = applyUserDecisions(ticket.excelData, ticket.databaseData, decisions[ticket.ticketId] || {});
+        // Get ticket identifier for matching
+        const ticketCode = ticket.ticketCode || ticket.taskWoNum || (ticket.excelData && (ticket.excelData.TASK_WO_NUM || ticket.excelData.RESTN_WO_NUM)) || 'UNKNOWN';
+        
+        // Start with the original Excel data as base
+        let finalData = { ...ticket.excelData };
+        
+        // Apply user decisions to Excel data (keep Excel field names for validation)
+        if (decisions && ticket.ticketId && decisions[ticket.ticketId]) {
+          for (const [field, choice] of Object.entries(decisions[ticket.ticketId])) {
+            if (choice === 'database' && ticket.databaseData) {
+              // Map database field back to Excel field name
+              const excelField = getExcelFieldMapping(field);
+              if (excelField && ticket.databaseData[field] !== undefined) {
+                finalData[excelField] = ticket.databaseData[field];
+              }
+            }
+            // If choice is 'excel', keep the Excel value (already in finalData)
+          }
+        }
+        
+        // Merge any missing info that was filled in for this ticket
+        if (missingInfoFilled && Array.isArray(missingInfoFilled)) {
+          const filledInfo = missingInfoFilled.find(info => 
+            info.ticketCode === ticketCode || 
+            info.ticketCode === ticket.taskWoNum ||
+            (info.data && (info.data.TASK_WO_NUM === ticket.excelData?.TASK_WO_NUM || info.data.RESTN_WO_NUM === ticket.excelData?.RESTN_WO_NUM))
+          );
+          
+          if (filledInfo && filledInfo.data) {
+            // Merge the filled missing info with the final data
+            finalData = { ...finalData, ...filledInfo.data };
+          }
+        }
+        
+        // Also merge with original parsed ticket data if available
+        if (req.body.originalParsedTickets && req.body.originalParsedTickets[ticketCode]) {
+          finalData = { ...req.body.originalParsedTickets[ticketCode], ...finalData };
+        }
+        
         const ticketValidation = validateTicketData(finalData);
         if (!ticketValidation.isValid) {
           validation.isValid = false;
           validation.errors.push({
+            ticketCode: ticketCode,
             ticketId: ticket.ticketId,
-            ticketCode: ticket.ticketCode,
             errors: ticketValidation.errors
           });
           validation.summary.invalidTickets++;
@@ -1461,11 +1515,18 @@ exports.validateStepperData = async (req, res) => {
     // Validate filled missing information
     if (missingInfoFilled && Array.isArray(missingInfoFilled)) {
       for (const filledInfo of missingInfoFilled) {
-        const ticketValidation = validateTicketData(filledInfo.data);
+        let finalData = { ...filledInfo.data };
+        
+        // Merge with original parsed ticket data if available
+        if (req.body.originalParsedTickets && req.body.originalParsedTickets[filledInfo.ticketCode]) {
+          finalData = { ...req.body.originalParsedTickets[filledInfo.ticketCode], ...finalData };
+        }
+        
+        const ticketValidation = validateTicketData(finalData);
         if (!ticketValidation.isValid) {
           validation.isValid = false;
           validation.errors.push({
-            ticketCode: filledInfo.ticketCode,
+            ticketCode: filledInfo.ticketCode || (filledInfo.data && (filledInfo.data.TASK_WO_NUM || filledInfo.data.RESTN_WO_NUM)) || 'UNKNOWN',
             errors: ticketValidation.errors
           });
           validation.summary.invalidTickets++;
@@ -1646,22 +1707,61 @@ exports.saveStepperData = async (req, res) => {
       for (let i = 0; i < inconsistentTickets.length; i++) {
         const ticketData = inconsistentTickets[i];
         
+        // Get ticket identifier for matching (moved outside try block for scope)
+        const ticketCode = ticketData.ticketCode || ticketData.taskWoNum || (ticketData.excelData && (ticketData.excelData.TASK_WO_NUM || ticketData.excelData.RESTN_WO_NUM)) || 'UNKNOWN';
+        
+        // Get ticketId from databaseData or decisions key
+        const ticketId = ticketData.ticketId || ticketData.databaseData?.ticketid || 
+                        (decisions && Object.keys(decisions).find(key => 
+                          decisions[key] && Object.keys(decisions[key]).length > 0
+                        ));
+        
+        if (!ticketId) {
+          console.error(`No ticketId found for ticket ${ticketCode}`);
+          results.errors.push({
+            ticketCode: ticketCode,
+            error: 'No ticketId found for inconsistent ticket'
+          });
+          results.summary.failed++;
+          results.summary.total++;
+          continue;
+        }
+        
         try {
-          const finalData = applyUserDecisions(ticketData.excelData, ticketData.databaseData, decisions[ticketData.ticketId] || {});
+          let finalData = applyUserDecisions(ticketData.excelData, ticketData.databaseData, decisions[ticketId] || {});
           
-          const result = await updateTicketWithData(ticketData.ticketId, finalData, updatedBy || 1);
+          // Merge any missing info that was filled in for this ticket
+          if (missingInfoFilled && Array.isArray(missingInfoFilled)) {
+            const filledInfo = missingInfoFilled.find(info => 
+              info.ticketCode === ticketCode || 
+              info.ticketCode === ticketData.taskWoNum ||
+              (info.data && (info.data.TASK_WO_NUM === ticketData.excelData?.TASK_WO_NUM || info.data.RESTN_WO_NUM === ticketData.excelData?.RESTN_WO_NUM))
+            );
+            
+            if (filledInfo && filledInfo.data) {
+              // Merge the filled missing info with the final data
+              finalData = { ...finalData, ...filledInfo.data };
+            }
+          }
+          
+          // Also merge with original parsed ticket data if available
+          if (req.body.originalParsedTickets && req.body.originalParsedTickets[ticketCode]) {
+            finalData = { ...req.body.originalParsedTickets[ticketCode], ...finalData };
+          }
+          
+          const result = await updateTicketWithData(ticketId, finalData, updatedBy || 1);
           
           results.ticketsUpdated.push({
-            ticketId: ticketData.ticketId,
-            ticketCode: ticketData.ticketCode,
+            ticketId: ticketId,
+            ticketCode: ticketCode,
             result: result
           });
           results.summary.updated++;
         } catch (error) {
-          console.error(`Error updating ticket ${ticketData.ticketCode}:`, error);
+          console.error(`Error updating ticket ${ticketCode}:`, error);
           results.errors.push({
-            ticketId: ticketData.ticketId,
-            ticketCode: ticketData.ticketCode,
+            ticketId: ticketId,
+            ticketCode: ticketCode,
             error: error.message
           });
           results.summary.failed++;
@@ -1672,12 +1772,16 @@ exports.saveStepperData = async (req, res) => {
 
     // Step 4: Process filled missing information
     if (missingInfoFilled && Array.isArray(missingInfoFilled)) {
+      // Get original parsed tickets from request (should be a map: { [ticketCode]: originalTicketData })
+      const originalParsedTickets = req.body.originalParsedTickets || {};
       for (let i = 0; i < missingInfoFilled.length; i++) {
         const filledInfo = missingInfoFilled[i];
-        
         try {
-          const result = await RTR.processRTRData([filledInfo.data], createdBy || 1, updatedBy || 1);
-          
+          // Merge original parsed ticket data with filled fields
+          const original = originalParsedTickets[filledInfo.ticketCode] || {};
+          const merged = { ...original, ...filledInfo.data };
+          console.log('Processing missingInfoFilled (merged):', JSON.stringify(merged, null, 2));
+          const result = await RTR.processRTRData([merged], createdBy || 1, updatedBy || 1);
           results.newTicketsCreated.push({
             ticketCode: filledInfo.ticketCode,
             result: result

@@ -71,10 +71,10 @@ const PhotoEvidenceController = {
         // Subir archivo
         await minioClient.putObject(bucket, objectName, file.buffer);
   
-        // Usar MINIO_PUBLIC_HOST y MINIO_PORT para la URL pública
+        // Usar MINIO_PUBLIC_HOST y prefijo para la URL pública
         const minioPublicHost = process.env.MINIO_PUBLIC_HOST || 'localhost';
-        const minioPort = process.env.MINIO_PORT || '9000';
-        const fileUrl = `http://${minioPublicHost}:${minioPort}/${bucket}/${objectName}`;
+        const minioPublicPrefix = process.env.MINIO_PUBLIC_PREFIX || '/minio';
+        const fileUrl = `http://${minioPublicHost}${minioPublicPrefix}/${bucket}/${objectName}`;
   
         // Extraer EXIF (opcional)
         let latitude = req.body.latitude;

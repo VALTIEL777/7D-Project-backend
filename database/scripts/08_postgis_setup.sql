@@ -210,5 +210,3 @@ COMMENT ON FUNCTION cluster_addresses_by_proximity(NUMERIC, INTEGER) IS
 SELECT 
     PostGIS_Version() as postgis_version,
     PostGIS_Extensions_Upgrade() as extensions_upgraded; 
-
-

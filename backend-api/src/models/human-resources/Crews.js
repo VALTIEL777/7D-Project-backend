@@ -73,10 +73,14 @@ static async getCrewDetailsById(crewId) {
 
       -- 🧭 Wayfinding
       w.location,
-      w.fromaddressstreet,
-      w.toaddressstreet,
+      w.fromaddressnumber,
       w.fromaddresscardinal,
+      w.fromaddressstreet,
       w.fromaddresssuffix,
+      w.toaddressnumber,
+      w.toaddresscardinal,
+      w.toaddressstreet,
+      w.toaddresssuffix,
       w.width,
       w.length,
       w.surfacetotal,

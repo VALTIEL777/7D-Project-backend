@@ -98,23 +98,28 @@ const RoutesController = {
 
       const createdBy = req.user?.userId || 1;
 
-      const optimizedRoute = await RouteOptimizationService.optimizeRouteWithTickets(
+      const optimizedRoute = await RouteOptimizationService.optimizeAndSaveRoute(
         ticketIds,
         routeCode,
         type,
-        finalOriginAddress,
-        finalDestinationAddress,
         startDate,
         endDate,
+        finalOriginAddress,
+        finalDestinationAddress,
         createdBy
       );
 
-      // The new method returns a standardized response format
-      if (optimizedRoute.success) {
-        res.status(200).json(optimizedRoute);
-      } else {
-        res.status(500).json(optimizedRoute);
-      }
+      res.status(200).json({
+        message: 'Route optimized and saved successfully',
+        routeId: optimizedRoute.routeId,
+        routeCode: optimizedRoute.routeCode,
+        totalDistance: optimizedRoute.totalDistance,
+        totalDuration: optimizedRoute.totalDuration,
+        optimizedOrder: optimizedRoute.optimizedOrder,
+        tickets: optimizedRoute.tickets,
+        originAddress: finalOriginAddress,
+        destinationAddress: finalDestinationAddress
+      });
 
     } catch (error) {
       console.error('Error optimizing route:', error);
@@ -162,23 +167,30 @@ const RoutesController = {
         });
       }
 
-      const optimizedRoute = await RouteOptimizationService.optimizeRouteWithTickets(
+      const optimizedRoute = await RouteOptimizationService.optimizeAndSaveRoute(
         ticketIds,
         routeCode || `SPOT-${Date.now()}`,
         'SPOTTER',
-        finalOriginAddress,
-        finalDestinationAddress,
         startDate,
         endDate,
+        finalOriginAddress,
+        finalDestinationAddress,
         createdBy
       );
 
-      // The new method returns a standardized response format
-      if (optimizedRoute.success) {
-        res.status(200).json(optimizedRoute);
-      } else {
-        res.status(500).json(optimizedRoute);
-      }
+      res.status(200).json({
+        message: 'Spotting route optimized and saved successfully',
+        routeId: optimizedRoute.routeId,
+        routeCode: optimizedRoute.routeCode,
+        totalDistance: optimizedRoute.totalDistance,
+        totalDuration: optimizedRoute.totalDuration,
+        optimizedOrder: optimizedRoute.optimizedOrder,
+        tickets: optimizedRoute.tickets,
+        originAddress: finalOriginAddress,
+        destinationAddress: finalDestinationAddress,
+        routeType: 'SPOTTER',
+        ticketCount: ticketIds.length
+      });
 
     } catch (error) {
       console.error('Error optimizing spotting route:', error);
@@ -226,23 +238,30 @@ const RoutesController = {
         });
       }
 
-      const optimizedRoute = await RouteOptimizationService.optimizeRouteWithTickets(
+      const optimizedRoute = await RouteOptimizationService.optimizeAndSaveRoute(
         ticketIds,
         routeCode || `CONC-${Date.now()}`,
         'CONCRETE',
-        finalOriginAddress,
-        finalDestinationAddress,
         startDate,
         endDate,
+        finalOriginAddress,
+        finalDestinationAddress,
         createdBy
       );
 
-      // The new method returns a standardized response format
-      if (optimizedRoute.success) {
-        res.status(200).json(optimizedRoute);
-      } else {
-        res.status(500).json(optimizedRoute);
-      }
+      res.status(200).json({
+        message: 'Concrete route optimized and saved successfully',
+        routeId: optimizedRoute.routeid,
+        routeCode: optimizedRoute.routecode,
+        totalDistance: optimizedRoute.totaldistance,
+        totalDuration: optimizedRoute.totalduration,
+        optimizedOrder: optimizedRoute.optimizedorder,
+        tickets: optimizedRoute.tickets,
+        originAddress: finalOriginAddress,
+        destinationAddress: finalDestinationAddress,
+        routeType: 'CONCRETE',
+        ticketCount: ticketIds.length
+      });
 
     } catch (error) {
       console.error('Error optimizing concrete route:', error);
@@ -290,23 +309,30 @@ const RoutesController = {
         });
       }
 
-      const optimizedRoute = await RouteOptimizationService.optimizeRouteWithTickets(
+      const optimizedRoute = await RouteOptimizationService.optimizeAndSaveRoute(
         ticketIds,
         routeCode || `ASP-${Date.now()}`,
         'ASPHALT',
-        finalOriginAddress,
-        finalDestinationAddress,
         startDate,
         endDate,
+        finalOriginAddress,
+        finalDestinationAddress,
         createdBy
       );
 
-      // The new method returns a standardized response format
-      if (optimizedRoute.success) {
-        res.status(200).json(optimizedRoute);
-      } else {
-        res.status(500).json(optimizedRoute);
-      }
+      res.status(200).json({
+        message: 'Asphalt route optimized and saved successfully',
+        routeId: optimizedRoute.routeid,
+        routeCode: optimizedRoute.routecode,
+        totalDistance: optimizedRoute.totaldistance,
+        totalDuration: optimizedRoute.totalduration,
+        optimizedOrder: optimizedRoute.optimizedorder,
+        tickets: optimizedRoute.tickets,
+        originAddress: finalOriginAddress,
+        destinationAddress: finalDestinationAddress,
+        routeType: 'ASPHALT',
+        ticketCount: ticketIds.length
+      });
 
     } catch (error) {
       console.error('Error optimizing asphalt route:', error);

@@ -3,7 +3,7 @@ const db = require('../config/db');
 class LocationClusteringService {
     constructor() {
         this.maxDistance = 30000; // Increased to 30km for much better clustering in Chicago
-        this.maxLocationsPerCluster = 25; // Default max locations per cluster
+        this.maxLocationsPerCluster = 150; // Default max locations per cluster
         this.minLocationsPerCluster = 20; // Minimum locations per cluster
     }
 
