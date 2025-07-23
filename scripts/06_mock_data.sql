@@ -133,3 +133,26 @@ INSERT INTO Fines (
   1                  -- updatedBy (usuario que actualiza la entrada)
 );
 
+-- Spotting
+INSERT INTO TicketStatus (taskStatusId, ticketId, crewId, createdBy, updatedBy)
+VALUES (8, 1, 1, 1, 1);
+
+-- Grind
+INSERT INTO TicketStatus (taskStatusId, ticketId, crewId, createdBy, updatedBy)
+VALUES (6, 1, 1, 1, 1);
+
+-- Asphalt
+INSERT INTO TicketStatus (taskStatusId, ticketId, crewId, createdBy, updatedBy)
+VALUES (12, 1, 1, 1, 1);
+
+-- Crack Seal
+INSERT INTO TicketStatus (taskStatusId, ticketId, crewId, createdBy, updatedBy)
+VALUES (9, 1, 1, 1, 1);
+
+-- Stripping (opcional)
+INSERT INTO TicketStatus (taskStatusId, ticketId, crewId, createdBy, updatedBy)
+VALUES (7, 1, 1, 1, 1);
+
+-- Install Signs (opcional)
+INSERT INTO TicketStatus (taskStatusId, ticketId, crewId, createdBy, updatedBy)
+VALUES (10, 1, 1, 1, 1);
