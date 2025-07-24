@@ -15,27 +15,22 @@ class WebSocketService {
 
   setupEventHandlers() {
     this.io.on('connection', (socket) => {
-      console.log('User connected:', socket.id);
-
       // Handle user authentication
       socket.on('authenticate', (userId) => {
         this.userSockets.set(userId, socket);
         socket.userId = userId;
-        console.log(`User ${userId} authenticated`);
       });
 
       // Handle disconnection
       socket.on('disconnect', () => {
         if (socket.userId) {
           this.userSockets.delete(socket.userId);
-          console.log(`User ${socket.userId} disconnected`);
         }
       });
 
       // Handle notification read
       socket.on('markNotificationRead', (notificationId) => {
         // This could trigger a database update
-        console.log(`Notification ${notificationId} marked as read by user ${socket.userId}`);
       });
     });
   }
@@ -45,7 +40,6 @@ class WebSocketService {
     const socket = this.userSockets.get(userId);
     if (socket) {
       socket.emit('notification', notification);
-      console.log(`Notification sent to user ${userId}:`, notification.title);
     }
   }
 
@@ -59,7 +53,6 @@ class WebSocketService {
   // Send notification to all connected users
   sendToAll(notification) {
     this.io.emit('notification', notification);
-    console.log('Notification sent to all users:', notification.title);
   }
 
   // Send unread count update to user

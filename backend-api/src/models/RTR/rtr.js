@@ -11,7 +11,6 @@ class ExcelItem {
 
   // Example save method
   save() {
-    console.log("Saving item:", this.data);
   }
 }
 
@@ -47,7 +46,6 @@ class RTR {
     if (numberMatch) {
       const number = numberMatch[1];
       const normalizedNumber = parseInt(number, 10).toString(); // Remove leading zeros
-      console.log(`Exact match not found for "${name}", searching for quadrants containing number "${normalizedNumber}"...`);
       
       // Search for quadrants that contain this number (with and without leading zeros)
       const fuzzyRes = await db.query(
@@ -59,7 +57,6 @@ class RTR {
       );
       
       if (fuzzyRes.rows[0]) {
-        console.log(`Found matching quadrant: "${fuzzyRes.rows[0].name}" for input "${name}"`);
         return fuzzyRes.rows[0].quadrantid;
       }
       
@@ -74,17 +71,14 @@ class RTR {
       );
       
       if (flexibleRes.rows[0]) {
-        console.log(`Found flexible matching quadrant: "${flexibleRes.rows[0].name}" for input "${name}"`);
         return flexibleRes.rows[0].quadrantid;
   }
     }
     
-    console.log(`No matching quadrant found for "${name}"`);
     return null;
   }
 
   static async createTicket(incidentId, quadrantId, contractUnitId, wayfindingId, partnerComment, comment7d, ticketCode, partnerSupervisorComment, ticketType, amountToPay, quantity, createdBy, updatedBy) {
-    console.log(`Creating ticket with amountToPay: ${amountToPay} (type: ${typeof amountToPay}) and quantity: ${quantity}`);
     
     const res = await db.query(
       'INSERT INTO Tickets(incidentId, cuadranteId, contractUnitId, wayfindingId, PartnerComment, comment7d, ticketCode, PartnerSupervisorComment, ticketType, amounttopay, quantity, createdBy, updatedBy) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING ticketId;',
@@ -114,14 +108,11 @@ class RTR {
     const existingAddressId = await this.findAddress(addressNumber, addressCardinal, addressStreet, addressSuffix);
     
     if (existingAddressId) {
-      console.log(`Found existing address ID: ${existingAddressId} for ${addressNumber} ${addressCardinal} ${addressStreet} ${addressSuffix}`);
       return existingAddressId;
     }
     
     // If not found, create new address
-    console.log(`Creating new address for ${addressNumber} ${addressCardinal} ${addressStreet} ${addressSuffix}`);
     const newAddressId = await this.createAddress(addressNumber, addressCardinal, addressStreet, addressSuffix, createdBy, updatedBy);
-    console.log(`Created new address ID: ${newAddressId}`);
     return newAddressId;
   }
 
@@ -146,14 +137,11 @@ class RTR {
     const existingTicketAddress = await this.findTicketAddress(ticketId, addressId);
     
     if (existingTicketAddress) {
-      console.log(`Found existing ticket-address relationship: Ticket ${ticketId} - Address ${addressId}`);
       return existingTicketAddress;
     }
     
     // If not found, create new relationship
-    console.log(`Creating new ticket-address relationship: Ticket ${ticketId} - Address ${addressId}`);
     const newTicketAddress = await this.createTicketAddress(ticketId, addressId, isPartner, is7d, createdBy, updatedBy);
-    console.log(`Created new ticket-address relationship`);
     return newTicketAddress;
   }
 
@@ -278,7 +266,6 @@ class RTR {
   // Method to check permits expiring within 7 days and update ticket comments
   static async checkPermitsExpiringSoon(updatedBy) {
     try {
-      console.log('Checking for permits expiring within 7 days...');
       
       // Calculate date 7 days from now
       const sevenDaysFromNow = new Date();
@@ -287,8 +274,6 @@ class RTR {
       
       const currentDate = new Date();
       currentDate.setHours(0, 0, 0, 0); // Start of day
-      
-      console.log(`Checking permits expiring between ${currentDate.toISOString()} and ${sevenDaysFromNow.toISOString()}`);
       
       // Get permits expiring within 7 days and their associated tickets
       const permitsRes = await db.query(
@@ -312,8 +297,6 @@ class RTR {
          ORDER BY p.expireDate ASC;`,
         [currentDate, sevenDaysFromNow]
       );
-      
-      console.log(`Found ${permitsRes.rows.length} tickets with permits expiring within 7 days`);
       
       const results = [];
       
@@ -340,7 +323,6 @@ class RTR {
             updated: true
           });
           
-          console.log(`Updated ticket ${row.ticketcode} (ID: ${row.ticketid}) - Permit ${row.permitnumber} expires in ${daysUntilExpiry} days`);
         } else {
           results.push({
             ticketId: row.ticketid,
@@ -357,8 +339,6 @@ class RTR {
         }
       }
       
-      console.log(`Permit extension check completed: ${results.filter(r => r.updated).length} tickets updated`);
-      
       return results;
     } catch (error) {
       console.error('Error checking permits expiring soon:', error);
@@ -369,7 +349,6 @@ class RTR {
   // Combined method to update permit statuses and check for expiring permits
   static async updatePermitStatusesAndCheckExpiring(updatedBy) {
     try {
-      console.log('Starting comprehensive permit status and expiration check...');
       
       // First update permit statuses
       const statusResults = await this.updateAllPermitStatuses(updatedBy);
@@ -403,33 +382,23 @@ class RTR {
 
   static async findContractUnitByItemCode(itemCode) {
     if (!itemCode) {
-      console.log(`findContractUnitByItemCode: itemCode is null/undefined`);
       return null;
     }
-    
-    console.log(`findContractUnitByItemCode: Searching for itemCode "${itemCode}"`);
     
     const res = await db.query(
       'SELECT contractUnitId, CostPerUnit FROM ContractUnits WHERE itemCode = $1 AND deletedAt IS NULL;', 
       [itemCode]
     );
     
-    console.log(`findContractUnitByItemCode: Query returned ${res.rows.length} rows`);
-    
     if (res.rows[0]) {
-      console.log(`findContractUnitByItemCode: Found row:`, res.rows[0]);
-      console.log(`findContractUnitByItemCode: contractUnitId = ${res.rows[0].contractunitid}, CostPerUnit = ${res.rows[0].costperunit}`);
       return {
         contractUnitId: res.rows[0].contractunitid,
         costPerUnit: res.rows[0].costperunit
       };
     }
     
-    console.log(`findContractUnitByItemCode: No ContractUnit found with itemCode "${itemCode}"`);
-    
     // Let's also check what ContractUnits exist in the database
     const allContractUnits = await db.query('SELECT contractUnitId, itemCode, CostPerUnit FROM ContractUnits WHERE deletedAt IS NULL LIMIT 5;');
-    console.log(`findContractUnitByItemCode: Available ContractUnits:`, allContractUnits.rows);
     
     return null;
   }
@@ -437,31 +406,18 @@ class RTR {
   static async processRTRData(data, createdBy, updatedBy) {
     const results = [];
     
-    console.log(`=== Starting RTR Data Processing ===`);
-    console.log(`Total rows to process: ${data.length}`);
-    console.log(`createdBy: ${createdBy}, updatedBy: ${updatedBy}`);
-    
     for (const row of data) {
       try {
-        console.log(`\n=== Processing Row ===`);
-        console.log(`Row data keys: ${Object.keys(row)}`);
-        console.log(`SAP_ITEM_NUM: ${row.SAP_ITEM_NUM}`);
-        console.log(`SQFT_QTY_RES: ${row.SQFT_QTY_RES} (type: ${typeof row.SQFT_QTY_RES})`);
-        console.log(`TASK_WO_NUM: ${row.TASK_WO_NUM}`);
-        console.log(`RESTN_WO_NUM: ${row.RESTN_WO_NUM}`);
         
         // Step 1: Create Incident
-        console.log(`Step 1: Creating incident with RESTN_WO_NUM: ${row.RESTN_WO_NUM}`);
         const incidentId = await this.createIncident(
           row.RESTN_WO_NUM,
           row.Earliest_Rpt_Dt,
           createdBy,
           updatedBy
         );
-        console.log(`Step 1 - Created Incident ID: ${incidentId}`);
 
         // Step 2: Create Wayfinding
-        console.log(`Step 2: Creating wayfinding with LOCATION2_RES: ${row.LOCATION2_RES}`);
         const wayfindingId = await this.createWayfinding(
           row.LOCATION2_RES,
           row.fromAddressNumber,
@@ -477,21 +433,15 @@ class RTR {
           createdBy,
           updatedBy
         );
-        console.log(`Step 2 - Created Wayfinding ID: ${wayfindingId}`);
 
         // Step 3: Find Quadrant (or create if doesn't exist)
-        console.log(`Step 3: Finding quadrant with SQ_MI: ${row.SQ_MI}`);
         const quadrantId = await this.findQuadrantByName(row.SQ_MI);
-        console.log(`Step 3 - Found Quadrant ID: ${quadrantId}`);
 
         // Step 4: Find ContractUnit by SAP_ITEM_NUM
-        console.log(`Step 4: Looking for ContractUnit with itemCode: "${row.SAP_ITEM_NUM}"`);
         const contractUnitData = await this.findContractUnitByItemCode(row.SAP_ITEM_NUM);
         const contractUnitId = contractUnitData ? contractUnitData.contractUnitId : null;
-        console.log(`Step 4 - ContractUnit result:`, contractUnitData);
         
         // Step 5: Calculate amountToPay
-        console.log(`Step 5: Calculating amountToPay`);
         let amountToPay = null;
         let quantity = row.SQFT_QTY_RES || 1; // Get quantity from SQFT_QTY_RES
         
@@ -500,38 +450,11 @@ class RTR {
           quantity = 1;
         }
         
-        console.log(`Step 5 - Raw SQFT_QTY_RES: ${row.SQFT_QTY_RES} (type: ${typeof row.SQFT_QTY_RES})`);
-        console.log(`Step 5 - Final quantity: ${quantity} (type: ${typeof quantity})`);
-        console.log(`Step 5 - ContractUnit data:`, contractUnitData);
-        
         if (contractUnitData && contractUnitData.costPerUnit && quantity) {
           amountToPay = contractUnitData.costPerUnit * quantity;
-          console.log(`Step 5 - Calculated amountToPay: ${contractUnitData.costPerUnit} * ${quantity} = ${amountToPay}`);
-        } else {
-          console.log(`Step 5 - Could not calculate amountToPay:`);
-          console.log(`  - contractUnitData exists: ${!!contractUnitData}`);
-          console.log(`  - costPerUnit: ${contractUnitData?.costPerUnit}`);
-          console.log(`  - quantity: ${quantity}`);
         }
 
         // Step 6: Create Ticket
-        console.log(`Step 6: Creating ticket with TASK_WO_NUM: ${row.TASK_WO_NUM}`);
-        console.log(`Step 6: Ticket parameters:`, {
-          incidentId,
-          quadrantId,
-          contractUnitId,
-          wayfindingId,
-          partnerComment: row['PGL ComD:Wments'],
-          comment7d: row['Contractor Comments'],
-          ticketCode: row.TASK_WO_NUM,
-          partnerSupervisorComment: row.NOTES2_RES,
-          ticketType: row.ticketType,
-          amountToPay,
-          quantity,
-          createdBy,
-          updatedBy
-        });
-        
         const ticketId = await this.createTicket(
           incidentId,
           quadrantId,
@@ -547,10 +470,8 @@ class RTR {
           createdBy,
           updatedBy
         );
-        console.log(`Step 6 - Created Ticket ID: ${ticketId}`);
 
         // Step 7: Find or Create Address
-        console.log(`Step 7: Finding or creating address with ADDRESS: ${row.ADDRESS}`);
         const addressId = await this.findOrCreateAddress(
           row.addressNumber,
           row.addressCardinal,
@@ -559,10 +480,8 @@ class RTR {
           createdBy,
           updatedBy
         );
-        console.log(`Step 7 - Address ID: ${addressId}`);
 
         // Step 8: Find or Create TicketAddress
-        console.log(`Step 8: Finding or creating ticket address link`);
         await this.findOrCreateTicketAddress(
           ticketId,
           addressId,
@@ -571,12 +490,9 @@ class RTR {
           createdBy,
           updatedBy
         );
-        console.log(`Step 8 - TicketAddress link established`);
 
         // Step 9: Create Permit
-        console.log(`Step 9: Creating permit with AGENCY_NO: ${row.AGENCY_NO}`);
         const permitStatus = this.determinePermitStatus(row.EXP_DATE);
-        console.log(`Step 9 - Permit status determined: ${permitStatus} (expireDate: ${row.EXP_DATE})`);
         
         const permitId = await this.createPermit(
           row.AGENCY_NO,
@@ -586,12 +502,9 @@ class RTR {
           createdBy,
           updatedBy
         );
-        console.log(`Step 9 - Created Permit ID: ${permitId} with status: ${permitStatus}`);
 
         // Step 10: Create PermitedTicket
-        console.log(`Step 10: Creating permitted ticket link`);
         await this.createPermitedTicket(permitId, ticketId, createdBy, updatedBy);
-        console.log(`Step 10 - Created PermitedTicket link`);
 
         const result = {
           success: true,
@@ -602,9 +515,6 @@ class RTR {
           permitId,
           message: 'Record created successfully'
         };
-        
-        console.log(`=== Row Processing Complete ===`);
-        console.log(`Final result:`, result);
         
         results.push(result);
 
@@ -627,11 +537,6 @@ class RTR {
       }
     }
 
-    console.log(`=== RTR Data Processing Complete ===`);
-    console.log(`Total results: ${results.length}`);
-    console.log(`Successful: ${results.filter(r => r.success).length}`);
-    console.log(`Failed: ${results.filter(r => !r.success).length}`);
-    
     return results;
   }
 
@@ -656,7 +561,6 @@ class RTR {
   // Method to generate TicketStatus records for a ticket based on its ContractUnit phases
   static async generateTicketStatusesForTicket(ticketId, updatedBy) {
     try {
-      console.log(`Generating TicketStatus records for ticket ${ticketId}...`);
       
       // First, get the ticket's contractUnitId and partnerComment
       const ticketRes = await db.query(
@@ -679,7 +583,6 @@ class RTR {
         );
       
       if (hasMobilizationInComment) {
-        console.log(`Ticket ${ticketId} has mobilization-related content in partnerComment: "${partnerComment}", skipping TicketStatus generation`);
         return {
           ticketId: ticketId,
           contractUnitId: contractUnitId,
@@ -691,7 +594,6 @@ class RTR {
       }
       
       if (!contractUnitId) {
-        console.log(`Ticket ${ticketId} has no ContractUnit assigned, skipping TicketStatus generation`);
         return {
           ticketId: ticketId,
           contractUnitId: null,
@@ -701,8 +603,6 @@ class RTR {
           reason: 'No ContractUnit assigned to ticket'
         };
       }
-      
-      console.log(`Ticket ${ticketId} has ContractUnit ${contractUnitId}`);
       
       // Check if ContractUnit name contains mobilization-related keywords
       const contractUnitRes = await db.query(
@@ -718,7 +618,6 @@ class RTR {
           );
         
         if (hasMobilizationInContractUnit) {
-          console.log(`Ticket ${ticketId} has ContractUnit with mobilization-related name: "${contractUnitName}", skipping TicketStatus generation`);
           return {
             ticketId: ticketId,
             contractUnitId: contractUnitId,
@@ -746,10 +645,7 @@ class RTR {
         [contractUnitId]
       );
       
-      console.log(`Found ${phasesRes.rows.length} phases for ContractUnit ${contractUnitId}`);
-      
       if (phasesRes.rows.length === 0) {
-        console.log(`No phases found for ContractUnit ${contractUnitId}, skipping TicketStatus generation`);
         return {
           ticketId: ticketId,
           contractUnitId: contractUnitId,
@@ -767,7 +663,6 @@ class RTR {
       );
       
       const existingTaskStatusIds = existingStatusesRes.rows.map(row => row.taskstatusid);
-      console.log(`Existing TicketStatus records for ticket ${ticketId}: ${existingTaskStatusIds.length}`);
       
       const results = [];
       let createdCount = 0;
@@ -793,7 +688,6 @@ class RTR {
             });
             
             createdCount++;
-            console.log(`Created TicketStatus for ticket ${ticketId}, taskStatus: ${phase.taskstatusname} (ID: ${phase.taskstatusid})`);
           } catch (insertError) {
             console.error(`Error creating TicketStatus for ticket ${ticketId}, taskStatus ${phase.taskstatusid}:`, insertError);
             results.push({
@@ -812,11 +706,8 @@ class RTR {
             created: false,
             reason: 'TicketStatus already exists'
           });
-          console.log(`TicketStatus already exists for ticket ${ticketId}, taskStatus: ${phase.taskstatusname} (ID: ${phase.taskstatusid})`);
         }
       }
-      
-      console.log(`TicketStatus generation completed for ticket ${ticketId}: ${createdCount} new records created`);
       
       return {
         ticketId: ticketId,
@@ -836,7 +727,6 @@ class RTR {
   // Method to generate TicketStatus records for multiple tickets
   static async generateTicketStatusesForTickets(ticketIds, updatedBy) {
     try {
-      console.log(`Generating TicketStatus records for ${ticketIds.length} tickets...`);
       
       const results = [];
       
@@ -849,7 +739,6 @@ class RTR {
           );
           
           if (ticketCheckRes.rows.length === 0) {
-            console.log(`Ticket ${ticketId} not found, skipping`);
             results.push({
               ticketId: ticketId,
               error: 'Ticket not found',
@@ -863,7 +752,6 @@ class RTR {
           
           // Only generate TicketStatus records if comment7d is null or empty
           if (comment7d !== null && comment7d !== '' && comment7d !== undefined) {
-            console.log(`Ticket ${ticketId} has comment7d: "${comment7d}", skipping TicketStatus generation`);
             results.push({
               ticketId: ticketId,
               comment7d: comment7d,
@@ -872,8 +760,6 @@ class RTR {
             });
             continue;
           }
-          
-          console.log(`Ticket ${ticketId} has comment7d: "${comment7d}", proceeding with TicketStatus generation`);
           
           const result = await this.generateTicketStatusesForTicket(ticketId, updatedBy);
           results.push(result);
@@ -896,8 +782,6 @@ class RTR {
         totalPhasesFound: results.reduce((sum, r) => sum + (r.phasesFound || 0), 0),
         totalStatusesCreated: results.reduce((sum, r) => sum + (r.statusesCreated || 0), 0)
       };
-      
-      console.log(`TicketStatus generation completed for all tickets:`, summary);
       
       return {
         summary: summary,
