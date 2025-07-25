@@ -969,52 +969,83 @@ class RouteOptimizationService {
     async getConcreteTickets() {
         try {
             const result = await db.query(`
-                SELECT DISTINCT 
-                    t.ticketId,
-                    t.ticketCode,
-                    t.contractNumber,
-                    t.amountToPay,
-                    t.ticketType,
-                    t.daysOutstanding,
-                    t.comment7d,
-                    t.quantity,
-                    t.createdAt,
-                    t.updatedAt,
-                    cu.name as contractUnitName,
-                    i.name as incidentName
-                FROM Tickets t
-                LEFT JOIN ContractUnits cu ON t.contractUnitId = cu.contractUnitId AND cu.deletedAt IS NULL
-                LEFT JOIN IncidentsMx i ON t.incidentId = i.incidentId AND i.deletedAt IS NULL
-                WHERE t.deletedAt IS NULL
-                    AND EXISTS (
-                        -- SPOTTING completed (has endingDate)
-                        SELECT 1 FROM TicketStatus tks1 
-                        JOIN TaskStatus ts1 ON tks1.taskStatusId = ts1.taskStatusId 
-                        WHERE tks1.ticketId = t.ticketId 
-                            AND ts1.name = 'Spotting'
-                            AND tks1.endingdate IS NOT NULL
-                            AND tks1.deletedAt IS NULL
-                            AND ts1.deletedAt IS NULL
-                    )
-                    AND EXISTS (
-                        -- Has SAWCUT status
-                        SELECT 1 FROM TicketStatus tks2 
-                        JOIN TaskStatus ts2 ON tks2.taskStatusId = ts2.taskStatusId 
-                        WHERE tks2.ticketId = t.ticketId 
-                            AND ts2.name = 'Sawcut'
-                            AND tks2.deletedAt IS NULL
-                            AND ts2.deletedAt IS NULL
-                    )
-                    AND NOT EXISTS (
-                        -- Exclude tickets already assigned to an active concrete route
-                        SELECT 1 FROM RouteTickets rt
-                        JOIN Routes r ON rt.routeId = r.routeId
-                        WHERE rt.ticketId = t.ticketId
-                            AND r.type = 'CONCRETE'
-                            AND r.deletedAt IS NULL
-                            AND rt.deletedAt IS NULL
-                    )
-                ORDER BY t.ticketId ASC
+            SELECT DISTINCT 
+                t.ticketId,
+                t.ticketCode,
+                t.contractNumber,
+                t.amountToPay,
+                t.ticketType,
+                t.daysOutstanding,
+                t.comment7d,
+                t.quantity,
+                t.createdAt,
+                t.updatedAt,
+                cu.name as contractUnitName,
+                i.name as incidentName
+            FROM Tickets t
+            LEFT JOIN ContractUnits cu ON t.contractUnitId = cu.contractUnitId AND cu.deletedAt IS NULL
+            LEFT JOIN IncidentsMx i ON t.incidentId = i.incidentId AND i.deletedAt IS NULL
+            WHERE t.deletedAt IS NULL
+            AND EXISTS (
+                -- SPOTTING completed (has endingDate)
+                SELECT 1 FROM TicketStatus tks1 
+                JOIN TaskStatus ts1 ON tks1.taskStatusId = ts1.taskStatusId 
+                WHERE tks1.ticketId = t.ticketId 
+                AND ts1.name = 'Spotting'
+                AND tks1.endingdate IS NOT NULL
+                AND tks1.deletedAt IS NULL
+                AND ts1.deletedAt IS NULL
+            )
+            AND (
+                -- Sawcut is the first incomplete phase
+                (
+                EXISTS (SELECT 1 FROM TicketStatus tks2 JOIN TaskStatus ts2 ON tks2.taskStatusId = ts2.taskStatusId WHERE tks2.ticketId = t.ticketId AND ts2.name = 'Sawcut' AND tks2.endingdate IS NULL AND tks2.deletedAt IS NULL AND ts2.deletedAt IS NULL)
+                )
+                OR
+                -- Removal is the first incomplete phase
+                (
+                EXISTS (SELECT 1 FROM TicketStatus tks3 JOIN TaskStatus ts3 ON tks3.taskStatusId = ts3.taskStatusId WHERE tks3.ticketId = t.ticketId AND ts3.name = 'Removal' AND tks3.endingdate IS NULL AND tks3.deletedAt IS NULL AND ts3.deletedAt IS NULL)
+                AND EXISTS (SELECT 1 FROM TicketStatus tks2 JOIN TaskStatus ts2 ON tks2.taskStatusId = ts2.taskStatusId WHERE tks2.ticketId = t.ticketId AND ts2.name = 'Sawcut' AND tks2.endingdate IS NOT NULL AND tks2.deletedAt IS NULL AND ts2.deletedAt IS NULL)
+                )
+                OR
+                -- Framing is the first incomplete phase
+                (
+                EXISTS (SELECT 1 FROM TicketStatus tks4 JOIN TaskStatus ts4 ON tks4.taskStatusId = ts4.taskStatusId WHERE tks4.ticketId = t.ticketId AND ts4.name = 'Framing' AND tks4.endingdate IS NULL AND tks4.deletedAt IS NULL AND ts4.deletedAt IS NULL)
+                AND EXISTS (SELECT 1 FROM TicketStatus tks2 JOIN TaskStatus ts2 ON tks2.taskStatusId = ts2.taskStatusId WHERE tks2.ticketId = t.ticketId AND ts2.name = 'Sawcut' AND tks2.endingdate IS NOT NULL AND tks2.deletedAt IS NULL AND ts2.deletedAt IS NULL)
+                AND EXISTS (SELECT 1 FROM TicketStatus tks3 JOIN TaskStatus ts3 ON tks3.taskStatusId = ts3.taskStatusId WHERE tks3.ticketId = t.ticketId AND ts3.name = 'Removal' AND tks3.endingdate IS NOT NULL AND tks3.deletedAt IS NULL AND ts3.deletedAt IS NULL)
+                )
+                OR
+                -- Pour is the first incomplete phase
+                (
+                EXISTS (SELECT 1 FROM TicketStatus tks5 JOIN TaskStatus ts5 ON tks5.taskStatusId = ts5.taskStatusId WHERE tks5.ticketId = t.ticketId AND ts5.name = 'Pour' AND tks5.endingdate IS NULL AND tks5.deletedAt IS NULL AND ts5.deletedAt IS NULL)
+                AND EXISTS (SELECT 1 FROM TicketStatus tks2 JOIN TaskStatus ts2 ON tks2.taskStatusId = ts2.taskStatusId WHERE tks2.ticketId = t.ticketId AND ts2.name = 'Sawcut' AND tks2.endingdate IS NOT NULL AND tks2.deletedAt IS NULL AND ts2.deletedAt IS NULL)
+                AND EXISTS (SELECT 1 FROM TicketStatus tks3 JOIN TaskStatus ts3 ON tks3.taskStatusId = ts3.taskStatusId WHERE tks3.ticketId = t.ticketId AND ts3.name = 'Removal' AND tks3.endingdate IS NOT NULL AND tks3.deletedAt IS NULL AND ts3.deletedAt IS NULL)
+                AND EXISTS (SELECT 1 FROM TicketStatus tks4 JOIN TaskStatus ts4 ON tks4.taskStatusId = ts4.taskStatusId WHERE tks4.ticketId = t.ticketId AND ts4.name = 'Framing' AND tks4.endingdate IS NOT NULL AND tks4.deletedAt IS NULL AND ts4.deletedAt IS NULL)
+                )
+                OR
+                -- Clean is the first incomplete phase
+                (
+                EXISTS (SELECT 1 FROM TicketStatus tks6 JOIN TaskStatus ts6 ON tks6.taskStatusId = ts6.taskStatusId WHERE tks6.ticketId = t.ticketId AND ts6.name = 'Clean' AND tks6.endingdate IS NULL AND tks6.deletedAt IS NULL AND ts6.deletedAt IS NULL)
+                AND EXISTS (SELECT 1 FROM TicketStatus tks2 JOIN TaskStatus ts2 ON tks2.taskStatusId = ts2.taskStatusId WHERE tks2.ticketId = t.ticketId AND ts2.name = 'Sawcut' AND tks2.endingdate IS NOT NULL AND tks2.deletedAt IS NULL AND ts2.deletedAt IS NULL)
+                AND EXISTS (SELECT 1 FROM TicketStatus tks3 JOIN TaskStatus ts3 ON tks3.taskStatusId = ts3.taskStatusId WHERE tks3.ticketId = t.ticketId AND ts3.name = 'Removal' AND tks3.endingdate IS NOT NULL AND tks3.deletedAt IS NULL AND ts3.deletedAt IS NULL)
+                AND EXISTS (SELECT 1 FROM TicketStatus tks4 JOIN TaskStatus ts4 ON tks4.taskStatusId = ts4.taskStatusId WHERE tks4.ticketId = t.ticketId AND ts4.name = 'Framing' AND tks4.endingdate IS NOT NULL AND tks4.deletedAt IS NULL AND ts4.deletedAt IS NULL)
+                AND EXISTS (SELECT 1 FROM TicketStatus tks5 JOIN TaskStatus ts5 ON tks5.taskStatusId = ts5.taskStatusId WHERE tks5.ticketId = t.ticketId AND ts5.name = 'Pour' AND tks5.endingdate IS NOT NULL AND tks5.deletedAt IS NULL AND ts5.deletedAt IS NULL)
+                )
+            )
+            AND NOT EXISTS (
+                -- Exclude tickets where all phases are completed
+                SELECT 1 FROM TicketStatus tks7 JOIN TaskStatus ts7 ON tks7.taskStatusId = ts7.taskStatusId WHERE tks7.ticketId = t.ticketId AND ts7.name = 'Clean' AND tks7.endingdate IS NOT NULL AND tks7.deletedAt IS NULL AND ts7.deletedAt IS NULL
+            )
+            AND NOT EXISTS (
+                -- Exclude tickets already assigned to an active concrete route
+                SELECT 1 FROM RouteTickets rt
+                JOIN Routes r ON rt.routeId = r.routeId
+                WHERE rt.ticketId = t.ticketId
+                AND r.type = 'CONCRETE'
+                AND r.deletedAt IS NULL
+                AND rt.deletedAt IS NULL
+            )
+            ORDER BY t.ticketId ASC
             `);
             
             return result.rows;
@@ -1051,86 +1082,55 @@ class RouteOptimizationService {
                 LEFT JOIN ContractUnits cu ON t.contractUnitId = cu.contractUnitId AND cu.deletedAt IS NULL
                 LEFT JOIN IncidentsMx i ON t.incidentId = i.incidentId AND i.deletedAt IS NULL
                 WHERE t.deletedAt IS NULL
-                    AND EXISTS (
-                        -- SPOTTING completed (has endingDate)
-                        SELECT 1 FROM TicketStatus tks1 
-                        JOIN TaskStatus ts1 ON tks1.taskStatusId = ts1.taskStatusId 
-                        WHERE tks1.ticketId = t.ticketId 
-                            AND ts1.name = 'Spotting'
-                            AND tks1.endingdate IS NOT NULL
-                            AND tks1.deletedAt IS NULL
-                            AND ts1.deletedAt IS NULL
-                    )
-                    AND (
-                        -- Case 1: Has GRINDING status but no SAWCUT
-                        (
-                            EXISTS (
-                                SELECT 1 FROM TicketStatus tks2 
-                                JOIN TaskStatus ts2 ON tks2.taskStatusId = ts2.taskStatusId 
-                                WHERE tks2.ticketId = t.ticketId 
-                                    AND ts2.name = 'Grind'
-                                    AND tks2.deletedAt IS NULL
-                                    AND ts2.deletedAt IS NULL
-                            )
-                            AND NOT EXISTS (
-                                SELECT 1 FROM TicketStatus tks3 
-                                JOIN TaskStatus ts3 ON tks3.taskStatusId = ts3.taskStatusId 
-                                WHERE tks3.ticketId = t.ticketId 
-                                    AND ts3.name = 'Sawcut'
-                                    AND tks3.deletedAt IS NULL
-                                    AND ts3.deletedAt IS NULL
-                            )
-                        )
-                        OR
-                        -- Case 2: All concrete phases completed (SAWCUT, REMOVAL, FRAMING, POURING)
-                        (
-                            EXISTS (
-                                SELECT 1 FROM TicketStatus tks4 
-                                JOIN TaskStatus ts4 ON tks4.taskStatusId = ts4.taskStatusId 
-                                WHERE tks4.ticketId = t.ticketId 
-                                    AND ts4.name = 'Sawcut'
-                                    AND tks4.endingdate IS NOT NULL
-                                    AND tks4.deletedAt IS NULL
-                                    AND ts4.deletedAt IS NULL
-                            )
-                            AND EXISTS (
-                                SELECT 1 FROM TicketStatus tks5 
-                                JOIN TaskStatus ts5 ON tks5.taskStatusId = ts5.taskStatusId 
-                                WHERE tks5.ticketId = t.ticketId 
-                                    AND ts5.name = 'Stripping'
-                                    AND tks5.endingdate IS NOT NULL
-                                    AND tks5.deletedAt IS NULL
-                                    AND ts5.deletedAt IS NULL
-                            )
-                            AND EXISTS (
-                                SELECT 1 FROM TicketStatus tks6 
-                                JOIN TaskStatus ts6 ON tks6.taskStatusId = ts6.taskStatusId 
-                                WHERE tks6.ticketId = t.ticketId 
-                                    AND ts6.name = 'Framing'
-                                    AND tks6.endingdate IS NOT NULL
-                                    AND tks6.deletedAt IS NULL
-                                    AND ts6.deletedAt IS NULL
-                            )
-                            AND EXISTS (
-                                SELECT 1 FROM TicketStatus tks7 
-                                JOIN TaskStatus ts7 ON tks7.taskStatusId = ts7.taskStatusId 
-                                WHERE tks7.ticketId = t.ticketId 
-                                    AND ts7.name = 'Pour'
-                                    AND tks7.endingdate IS NOT NULL
-                                    AND tks7.deletedAt IS NULL
-                                    AND ts7.deletedAt IS NULL
-                            )
-                        )
-                    )
-                    AND NOT EXISTS (
-                        -- Exclude tickets already assigned to an active asphalt route
-                        SELECT 1 FROM RouteTickets rt
-                        JOIN Routes r ON rt.routeId = r.routeId
-                        WHERE rt.ticketId = t.ticketId
-                            AND r.type = 'ASPHALT'
-                            AND r.deletedAt IS NULL
-                            AND rt.deletedAt IS NULL
-                    )
+                AND EXISTS (
+                    -- SPOTTING completed (has endingDate)
+                    SELECT 1 FROM TicketStatus tks1 
+                    JOIN TaskStatus ts1 ON tks1.taskStatusId = ts1.taskStatusId 
+                    WHERE tks1.ticketId = t.ticketId 
+                    AND ts1.name = 'Spotting'
+                    AND tks1.endingdate IS NOT NULL
+                    AND tks1.deletedAt IS NULL
+                    AND ts1.deletedAt IS NULL
+                )
+                AND EXISTS (
+                    -- Grind completed
+                    SELECT 1 FROM TicketStatus tks2 
+                    JOIN TaskStatus ts2 ON tks2.taskStatusId = ts2.taskStatusId 
+                    WHERE tks2.ticketId = t.ticketId 
+                    AND ts2.name = 'Grind'
+                    AND tks2.endingdate IS NOT NULL
+                    AND tks2.deletedAt IS NULL
+                    AND ts2.deletedAt IS NULL
+                )
+                AND EXISTS (
+                    -- Asphalt completed
+                    SELECT 1 FROM TicketStatus tks3 
+                    JOIN TaskStatus ts3 ON tks3.taskStatusId = ts3.taskStatusId 
+                    WHERE tks3.ticketId = t.ticketId 
+                    AND ts3.name = 'Asphalt'
+                    AND tks3.endingdate IS NOT NULL
+                    AND tks3.deletedAt IS NULL
+                    AND ts3.deletedAt IS NULL
+                )
+                AND EXISTS (
+                    -- Crack Seal completed
+                    SELECT 1 FROM TicketStatus tks4 
+                    JOIN TaskStatus ts4 ON tks4.taskStatusId = ts4.taskStatusId 
+                    WHERE tks4.ticketId = t.ticketId 
+                    AND ts4.name = 'Crack Seal'
+                    AND tks4.endingdate IS NOT NULL
+                    AND tks4.deletedAt IS NULL
+                    AND ts4.deletedAt IS NULL
+                )
+                AND NOT EXISTS (
+                    -- Exclude tickets already assigned to an active asphalt route
+                    SELECT 1 FROM RouteTickets rt
+                    JOIN Routes r ON rt.routeId = r.routeId
+                    WHERE rt.ticketId = t.ticketId
+                    AND r.type = 'ASPHALT'
+                    AND r.deletedAt IS NULL
+                    AND rt.deletedAt IS NULL
+                )
                 ORDER BY t.ticketId ASC
             `);
             

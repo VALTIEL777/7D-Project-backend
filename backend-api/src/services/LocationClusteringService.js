@@ -3,8 +3,8 @@ const db = require('../config/db');
 class LocationClusteringService {
     constructor() {
         this.maxDistance = 30000; // Increased to 30km for much better clustering in Chicago
-        this.maxLocationsPerCluster = 150; // Default max locations per cluster
-        this.minLocationsPerCluster = 20; // Minimum locations per cluster
+        this.maxLocationsPerCluster = 95; // Default max locations per cluster (VROOM/OSRM safe limit)
+        this.minLocationsPerCluster = 1; // Minimum locations per cluster - allow single locations
     }
 
     /**
@@ -17,7 +17,7 @@ class LocationClusteringService {
         try {
             const { 
                 maxDistance = this.maxDistance, 
-                maxLocationsPerCluster = this.maxLocationsPerCluster,
+                maxLocationsPerCluster = 95,
                 minLocationsPerCluster = this.minLocationsPerCluster 
             } = options;
             
@@ -167,6 +167,35 @@ class LocationClusteringService {
             return null;
         }
     }
+        /**
+     * Get route polyline, distance, and duration for a fixed order of addresses (no optimization)
+     * @param {string} originAddress
+     * @param {string} destinationAddress
+     * @param {Array<string>} addresses - ordered addresses (excluding origin)
+     * @returns {Promise<{encodedPolyline: string, totalDistance: number, totalDuration: number}>}
+     */
+        async getRouteForFixedOrder(originAddress, destinationAddress, addresses) {
+            // Geocode all addresses if needed
+            const [originGeo, ...geocodedIntermediates] = await Promise.all([
+                this.geocodeAddress(originAddress),
+                ...addresses.map(address => this.geocodeAddress(address))
+            ]);
+            // Build coordinates string in the given order
+            const coordinates = [
+                `${originGeo.longitude},${originGeo.latitude}`,
+                ...geocodedIntermediates.map(geo => `${geo.longitude},${geo.latitude}`)
+            ];
+            const coordinatesString = coordinates.join(';');
+            // Call OSRM for the route in this order
+            const osrmUrl = `${this.osrmBaseUrl}/route/v1/driving/${coordinatesString}?overview=full&steps=true&annotations=true&geometries=polyline`;
+            const osrmResponse = await axios.get(osrmUrl);
+            const route = osrmResponse.data.routes[0];
+            return {
+                encodedPolyline: route.geometry,
+                totalDistance: route.distance,
+                totalDuration: route.duration
+            };
+        }
 
     /**
      * Save address to database with coordinates
@@ -286,7 +315,7 @@ class LocationClusteringService {
     }
 
     /**
-     * Perform spatial clustering using PostGIS functions
+     * Perform spatial clustering using PostGIS function
      * @param {Array} addressCoordinates - Array of address objects with coordinates
      * @param {number} maxDistance - Maximum distance in meters
      * @param {number} maxLocationsPerCluster - Maximum locations per cluster
@@ -294,289 +323,61 @@ class LocationClusteringService {
      */
     async performSpatialClustering(addressCoordinates, maxDistance, maxLocationsPerCluster, minLocationsPerCluster) {
         try {
-            const clusters = [];
-            const processedAddressIds = new Set();
-            let clusterId = 1;
+            console.log(`Using PostGIS clustering function with maxDistance: ${maxDistance}m, maxLocationsPerCluster: ${maxLocationsPerCluster}`);
             
-            // Sort addresses by density (areas with more addresses first)
-            const addressDensity = await this.calculateAddressDensity(addressCoordinates);
-            const sortedAddresses = addressCoordinates.sort((a, b) => {
-                const densityA = addressDensity.get(a.addressId) || 0;
-                const densityB = addressDensity.get(b.addressId) || 0;
-                return densityB - densityA; // Higher density first
+            // Use the PostGIS clustering function directly
+            const result = await db.query(`
+                SELECT 
+                    cluster_id,
+                    addressid,
+                    latitude,
+                    longitude,
+                    cluster_center_lat,
+                    cluster_center_lng
+                FROM cluster_addresses_by_proximity($1, $2)
+                ORDER BY cluster_id, addressid
+            `, [maxDistance, 95]);
+            
+            // Group results by cluster
+            const clusters = {};
+            result.rows.forEach(row => {
+                if (!clusters[row.cluster_id]) {
+                    clusters[row.cluster_id] = {
+                        clusterId: row.cluster_id,
+                        centerLat: parseFloat(row.cluster_center_lat),
+                        centerLng: parseFloat(row.cluster_center_lng),
+                        locations: []
+                    };
+                }
+                
+                // Find the original address object
+                const originalAddress = addressCoordinates.find(ac => ac.addressId === row.addressid);
+                if (originalAddress) {
+                    clusters[row.cluster_id].locations.push({
+                        addressId: row.addressid,
+                        address: originalAddress.address,
+                        latitude: parseFloat(row.latitude),
+                        longitude: parseFloat(row.longitude)
+                    });
+                }
             });
             
-            for (const coord of sortedAddresses) {
-                if (processedAddressIds.has(coord.addressId)) {
-                    continue; // Skip if already processed
-                }
-                
-                // Try to create a cluster with minLocationsPerCluster-maxLocationsPerCluster locations
-                let cluster = await this.createOptimalCluster(coord, addressCoordinates, processedAddressIds, maxDistance, minLocationsPerCluster);
-                
-                if (cluster && cluster.locations.length >= minLocationsPerCluster) {
-                    clusters.push(cluster);
-                    clusterId++;
-                    
-                    // Mark all addresses in this cluster as processed
-                    cluster.locations.forEach(loc => {
-                        processedAddressIds.add(loc.addressId);
-                    });
-                } else if (cluster && cluster.locations.length > 0) {
-                    // If we have a smaller cluster, try to merge it with nearby clusters
-                    const merged = await this.mergeSmallCluster(cluster, clusters, addressCoordinates, processedAddressIds, maxLocationsPerCluster);
-                    if (!merged) {
-                        // If we can't merge, keep the small cluster
-                        clusters.push(cluster);
-                        clusterId++;
-                    }
-                } else {
-                    // If we can't create cluster, keep the address as is
-                    clusters.push({
-                        clusterId: clusterId,
-                        centerLat: coord.latitude,
-                        centerLng: coord.longitude,
-                        locations: [{
-                            addressId: coord.addressId,
-                            address: coord.address,
-                            latitude: coord.latitude,
-                            longitude: coord.longitude
-                        }]
-                    });
-                    clusterId++;
-                    processedAddressIds.add(coord.addressId);
-                }
-            }
+            const clusterArray = Object.values(clusters);
+            console.log(`PostGIS clustering created ${clusterArray.length} clusters`);
             
-            // Handle remaining unprocessed addresses by creating smaller clusters
-            const remainingAddresses = addressCoordinates.filter(coord => !processedAddressIds.has(coord.addressId));
-            if (remainingAddresses.length > 0) {
-                const remainingClusters = await this.createRemainingClusters(remainingAddresses, processedAddressIds, clusterId, maxLocationsPerCluster, minLocationsPerCluster);
-                clusters.push(...remainingClusters);
-            }
+            // Log cluster details
+            clusterArray.forEach((cluster, index) => {
+                console.log(`Cluster ${index + 1}: ${cluster.locations.length} locations`);
+            });
             
-            return clusters;
+            return clusterArray;
         } catch (error) {
             console.error('Error in performSpatialClustering:', error);
             throw error;
         }
     }
 
-    /**
-     * Calculate address density for each location
-     * @param {Array} addressCoordinates - Array of address coordinates
-     * @returns {Promise<Map>} - Map of addressId to density count
-     */
-    async calculateAddressDensity(addressCoordinates) {
-        const densityMap = new Map();
-        
-        for (const coord of addressCoordinates) {
-            const result = await db.query(`
-                SELECT COUNT(*) as count
-                FROM Addresses a
-                WHERE a.latitude IS NOT NULL 
-                    AND a.longitude IS NOT NULL 
-                    AND a.deletedAt IS NULL
-                    AND ST_DWithin(
-                        ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography,
-                        ST_SetSRID(ST_MakePoint(a.longitude, a.latitude), 4326)::geography,
-                        2000
-                    )
-            `, [coord.longitude, coord.latitude]);
-            
-            densityMap.set(coord.addressId, parseInt(result.rows[0].count));
-        }
-        
-        return densityMap;
-    }
 
-    /**
-     * Create an optimal cluster with 20-25 locations
-     * @param {Object} centerCoord - Center coordinate for the cluster
-     * @param {Array} allAddresses - All available addresses
-     * @param {Set} processedAddressIds - Set of already processed address IDs
-     * @param {number} maxDistance - Maximum distance for clustering
-     * @returns {Promise<Object|null>} - Cluster object or null
-     */
-    async createOptimalCluster(centerCoord, allAddresses, processedAddressIds, maxDistance, minLocationsPerCluster) {
-        let currentDistance = maxDistance * 0.5; // Start with half the max distance
-        let cluster = null;
-        let attempts = 0;
-        const maxAttempts = 10;
-        
-        while (currentDistance <= maxDistance && (!cluster || cluster.locations.length < minLocationsPerCluster) && attempts < maxAttempts) {
-            attempts++;
-            
-            const result = await db.query(`
-                SELECT 
-                    a.addressid,
-                    a.latitude,
-                    a.longitude,
-                    ST_Distance(
-                        ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography,
-                        ST_SetSRID(ST_MakePoint(a.longitude, a.latitude), 4326)::geography
-                    ) as distance
-                FROM Addresses a
-                WHERE a.latitude IS NOT NULL 
-                    AND a.longitude IS NOT NULL 
-                    AND a.deletedAt IS NULL
-                    AND ST_DWithin(
-                        ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography,
-                        ST_SetSRID(ST_MakePoint(a.longitude, a.latitude), 4326)::geography,
-                        $3
-                    )
-                ORDER BY distance
-                LIMIT 25
-            `, [centerCoord.longitude, centerCoord.latitude, currentDistance]);
-            
-            const availableLocations = result.rows.filter(row => !processedAddressIds.has(row.addressid));
-            
-            if (availableLocations.length > 0) {
-                // Calculate cluster center
-                const totalLat = availableLocations.reduce((sum, row) => sum + parseFloat(row.latitude), 0);
-                const totalLng = availableLocations.reduce((sum, row) => sum + parseFloat(row.longitude), 0);
-                const centerLat = totalLat / availableLocations.length;
-                const centerLng = totalLng / availableLocations.length;
-                
-                cluster = {
-                    clusterId: Date.now() + Math.random(), // Temporary ID
-                    centerLat: centerLat,
-                    centerLng: centerLng,
-                    locations: availableLocations.map(row => ({
-                        addressId: row.addressid,
-                        address: allAddresses.find(ac => ac.addressId === row.addressid)?.address || '',
-                        latitude: parseFloat(row.latitude),
-                        longitude: parseFloat(row.longitude)
-                    }))
-                };
-                
-                // If we have a good cluster size (minLocationsPerCluster-maxLocationsPerCluster), stop searching
-                if (availableLocations.length >= minLocationsPerCluster) {
-                    break;
-                }
-            } else {
-                currentDistance += maxDistance * 0.1; // Increase distance by 10% of max
-            }
-        }
-        
-        if (attempts >= maxAttempts) {
-            return null;
-        }
-        
-        if (cluster) {
-            if (cluster.locations.length === 1) {
-                console.warn(`Single-location cluster created for address: ${centerCoord.address}`);
-            }
-        } else {
-            return null;
-        }
-        
-        return cluster;
-    }
-
-    /**
-     * Try to merge a small cluster with nearby clusters
-     * @param {Object} smallCluster - Small cluster to merge
-     * @param {Array} existingClusters - Existing clusters
-     * @param {Array} allAddresses - All available addresses
-     * @param {Set} processedAddressIds - Set of processed address IDs
-     * @returns {Promise<boolean>} - True if merged, false otherwise
-     */
-    async mergeSmallCluster(smallCluster, existingClusters, allAddresses, processedAddressIds, maxLocationsPerCluster = 25) {
-        for (let i = 0; i < existingClusters.length; i++) {
-            const existingCluster = existingClusters[i];
-            const combinedSize = existingCluster.locations.length + smallCluster.locations.length;
-            
-            if (combinedSize <= maxLocationsPerCluster) {
-                // Check if clusters are close enough to merge
-                const distance = await this.calculateClusterDistance(existingCluster, smallCluster);
-                
-                if (distance <= 15000) { // 15km threshold for merging (increased for large cities)
-                    
-                    // Merge the clusters
-                    existingCluster.locations.push(...smallCluster.locations);
-                    
-                    // Recalculate center
-                    const totalLat = existingCluster.locations.reduce((sum, loc) => sum + loc.latitude, 0);
-                    const totalLng = existingCluster.locations.reduce((sum, loc) => sum + loc.longitude, 0);
-                    existingCluster.centerLat = totalLat / existingCluster.locations.length;
-                    existingCluster.centerLng = totalLng / existingCluster.locations.length;
-                    
-                    // Mark addresses as processed
-                    smallCluster.locations.forEach(loc => {
-                        processedAddressIds.add(loc.addressId);
-                    });
-                    
-                    return true;
-                }
-            }
-        }
-        
-        return false;
-    }
-
-    /**
-     * Calculate distance between two clusters
-     * @param {Object} cluster1 - First cluster
-     * @param {Object} cluster2 - Second cluster
-     * @returns {Promise<number>} - Distance in meters
-     */
-    async calculateClusterDistance(cluster1, cluster2) {
-        const result = await db.query(`
-            SELECT ST_Distance(
-                ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography,
-                ST_SetSRID(ST_MakePoint($3, $4), 4326)::geography
-            ) as distance
-        `, [cluster1.centerLng, cluster1.centerLat, cluster2.centerLng, cluster2.centerLat]);
-        
-        return parseFloat(result.rows[0].distance);
-    }
-
-    /**
-     * Create clusters for remaining unprocessed addresses
-     * @param {Array} remainingAddresses - Remaining addresses to cluster
-     * @param {Set} processedAddressIds - Set of processed address IDs
-     * @param {number} startClusterId - Starting cluster ID
-     * @returns {Promise<Array>} - Array of clusters
-     */
-    async createRemainingClusters(remainingAddresses, processedAddressIds, startClusterId, maxLocationsPerCluster = 25, minLocationsPerCluster = 20) {
-        const clusters = [];
-        let clusterId = startClusterId;
-        
-        // Group remaining addresses into clusters of minLocationsPerCluster-maxLocationsPerCluster
-        const chunkSize = Math.min(minLocationsPerCluster, maxLocationsPerCluster);
-        for (let i = 0; i < remainingAddresses.length; i += chunkSize) {
-            const chunk = remainingAddresses.slice(i, i + chunkSize);
-            
-            // Calculate center for this chunk
-            const totalLat = chunk.reduce((sum, coord) => sum + coord.latitude, 0);
-            const totalLng = chunk.reduce((sum, coord) => sum + coord.longitude, 0);
-            const centerLat = totalLat / chunk.length;
-            const centerLng = totalLng / chunk.length;
-            
-            const cluster = {
-                clusterId: clusterId,
-                centerLat: centerLat,
-                centerLng: centerLng,
-                locations: chunk.map(coord => ({
-                    addressId: coord.addressId,
-                    address: coord.address,
-                    latitude: coord.latitude,
-                    longitude: coord.longitude
-                }))
-            };
-            
-            clusters.push(cluster);
-            clusterId++;
-            
-            // Mark as processed
-            chunk.forEach(coord => {
-                processedAddressIds.add(coord.addressId);
-            });
-        }
-        
-        return clusters;
-    }
 
     /**
      * Map clusters back to tickets
@@ -642,91 +443,7 @@ class LocationClusteringService {
         return ticketClusters;
     }
 
-    /**
-     * Cluster tickets that already have coordinates (for use with pre-fetched data)
-     * @param {Array} tickets - Array of tickets with coordinates
-     * @param {Object} options - Clustering options
-     * @returns {Promise<Array>} - Array of clusters
-     */
-    async clusterTicketsWithCoordinates(tickets, options = {}) {
-        try {
-            const { maxDistance = this.maxDistance, maxLocationsPerCluster = this.maxLocationsPerCluster } = options;
-            
-            // Filter tickets with valid coordinates
-            const ticketsWithCoords = tickets.filter(ticket => 
-                ticket.latitude && ticket.longitude && 
-                !isNaN(parseFloat(ticket.latitude)) && !isNaN(parseFloat(ticket.longitude))
-            );
-            
-            if (ticketsWithCoords.length === 0) {
-                throw new Error('No tickets found with valid coordinates');
-            }
 
-            // Create a temporary table with the coordinates
-            await db.query(`
-                CREATE TEMP TABLE temp_ticket_coordinates (
-                    ticket_id INTEGER,
-                    address TEXT,
-                    latitude NUMERIC,
-                    longitude NUMERIC
-                ) ON COMMIT DROP
-            `);
-
-            // Insert coordinates into temporary table
-            for (const ticket of ticketsWithCoords) {
-                await db.query(`
-                    INSERT INTO temp_ticket_coordinates (ticket_id, address, latitude, longitude)
-                    VALUES ($1, $2, $3, $4)
-                `, [ticket.ticketid, ticket.address, parseFloat(ticket.latitude), parseFloat(ticket.longitude)]);
-            }
-
-            // Use PostGIS clustering function
-            const result = await db.query(`
-                SELECT 
-                    cluster_id,
-                    ticket_id,
-                    address,
-                    latitude,
-                    longitude,
-                    cluster_center_lat,
-                    cluster_center_lng
-                FROM cluster_addresses_by_proximity($1, $2)
-                WHERE ticket_id IN (SELECT ticket_id FROM temp_ticket_coordinates)
-                ORDER BY cluster_id, ticket_id
-            `, [maxDistance, maxLocationsPerCluster]);
-
-            // Group results by cluster
-            const clusters = {};
-            result.rows.forEach(row => {
-                if (!clusters[row.cluster_id]) {
-                    clusters[row.cluster_id] = {
-                        clusterId: row.cluster_id,
-                        centerLat: parseFloat(row.cluster_center_lat),
-                        centerLng: parseFloat(row.cluster_center_lng),
-                        tickets: []
-                    };
-                }
-                
-                // Find the original ticket object
-                const originalTicket = ticketsWithCoords.find(t => t.ticketid === row.ticket_id);
-                if (originalTicket) {
-                    clusters[row.cluster_id].tickets.push(originalTicket);
-                }
-            });
-
-            const ticketClusters = Object.values(clusters).map(cluster => ({
-                ...cluster,
-                locationCount: cluster.tickets.length,
-                ticketCount: cluster.tickets.length
-            }));
-
-            console.log(`Created ${ticketClusters.length} clusters`);
-            return ticketClusters;
-        } catch (error) {
-            console.error('Error in clusterTicketsWithCoordinates:', error);
-            throw error;
-        }
-    }
 }
 
 module.exports = LocationClusteringService; 

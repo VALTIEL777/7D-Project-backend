@@ -754,3 +754,17 @@ VALUES
     ('Steel Plate Pick Up', 'Removing previously installed steel plates from the roadway'),
     ('Asphalt', 'Laying down or repairing asphalt pavement surfaces'),
     ('Removal', 'Removing materials, debris, or temporary installations from the work site');
+
+
+
+
+
+
+
+
+
+
+
+
+
+    

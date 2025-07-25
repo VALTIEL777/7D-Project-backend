@@ -3,7 +3,7 @@ const db = require('../../config/db');
 class Routes {
   static async create(routeCode, type, startDate, endDate, encodedPolyline, totalDistance, totalDuration, optimizedOrder, optimizationMetadata, createdBy, updatedBy) {
     // Convert JavaScript objects to JSON strings for PostgreSQL JSONB fields
-    const optimizedOrderJson = optimizedOrder ? JSON.stringify(optimizedOrder) : null;
+    const optimizedOrderJson = Array.isArray(optimizedOrder) ? JSON.stringify(optimizedOrder) : (optimizedOrder ? JSON.stringify(optimizedOrder) : null);
     const optimizationMetadataJson = optimizationMetadata ? JSON.stringify(optimizationMetadata) : null;
     
     const res = await db.query(
@@ -30,7 +30,7 @@ class Routes {
 
   static async update(routeId, routeCode, type, startDate, endDate, encodedPolyline, totalDistance, totalDuration, optimizedOrder, optimizationMetadata, updatedBy) {
     // Convert JavaScript objects to JSON strings for PostgreSQL JSONB fields
-    const optimizedOrderJson = optimizedOrder ? JSON.stringify(optimizedOrder) : null;
+    const optimizedOrderJson = Array.isArray(optimizedOrder) ? JSON.stringify(optimizedOrder) : (optimizedOrder ? JSON.stringify(optimizedOrder) : null);
     const optimizationMetadataJson = optimizationMetadata ? JSON.stringify(optimizationMetadata) : null;
     
     const res = await db.query(
@@ -47,7 +47,7 @@ class Routes {
 
   static async updateOptimization(routeId, encodedPolyline, totalDistance, totalDuration, optimizedOrder, updatedBy) {
     // Convert JavaScript objects to JSON strings for PostgreSQL JSONB fields
-    const optimizedOrderJson = optimizedOrder ? JSON.stringify(optimizedOrder) : null;
+    const optimizedOrderJson = Array.isArray(optimizedOrder) ? JSON.stringify(optimizedOrder) : (optimizedOrder ? JSON.stringify(optimizedOrder) : null);
     
     const res = await db.query(
       'UPDATE Routes SET encodedPolyline = $1, totalDistance = $2, totalDuration = $3, optimizedOrder = $4, updatedAt = CURRENT_TIMESTAMP, updatedBy = $5 WHERE routeId = $6 AND deletedAt IS NULL RETURNING *;',
@@ -130,9 +130,24 @@ class Routes {
           let optimizationMetadata = null;
           
           try {
-            optimizedOrder = row.optimizedorder ? JSON.parse(row.optimizedorder) : null;
+            if (row.optimizedorder) {
+              try {
+                optimizedOrder = JSON.parse(row.optimizedorder);
+              } catch (e) {
+                // Fallback: try to parse as comma-separated numbers (legacy format)
+                if (typeof row.optimizedorder === 'string' && row.optimizedorder.match(/^\s*\d+(,\s*\d+)*\s*$/)) {
+                  optimizedOrder = row.optimizedorder.split(',').map(s => parseInt(s.trim(), 10));
+                } else {
+                  console.warn(`Failed to parse optimizedOrder for route ${routeId}:`, e.message);
+                  optimizedOrder = null;
+                }
+              }
+            } else {
+              optimizedOrder = null;
+            }
           } catch (e) {
             console.warn(`Failed to parse optimizedOrder for route ${routeId}:`, e.message);
+            optimizedOrder = null;
           }
           
           try {

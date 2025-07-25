@@ -135,59 +135,10 @@ router.get('/:routeId/:ticketId', RouteTicketsController.getRouteTicketsById);
  */
 router.get('/', RouteTicketsController.getAllRouteTickets);
 
-/**
- * @swagger
- * /routetickets/{routeId}/{ticketId}:
- *   put:
- *     summary: Update a route ticket association by route ID and ticket ID
- *     tags: [Route Tickets]
- *     parameters:
- *       - in: path
- *         name: routeId
- *         schema:
- *           type: integer
- *         required: true
- *         description: The ID of the route.
- *       - in: path
- *         name: ticketId
- *         schema:
- *           type: integer
- *         required: true
- *         description: The ID of the ticket.
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               queue:
- *                 type: integer
- *                 description: The updated order of the ticket in the route queue.
- *                 example: 2
- *               updatedBy:
- *                 type: integer
- *                 description: The ID of the user who last updated this entry.
- *                 example: 2
- *     responses:
- *       200:
- *         description: The route ticket association was successfully updated.
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 routeId:
- *                   type: integer
- *                   example: 1
- *                 ticketId:
- *                   type: integer
- *                   example: 1
- *       404:
- *         description: Route ticket association not found
- *       500:
- *         description: Server error
- */
+// Batch queue update route must come before single-ticket update route
+router.put('/:routeId/batch-queue', RouteTicketsController.updateBatchQueue);
+
+// Single-ticket update route
 router.put('/:routeId/:ticketId', RouteTicketsController.updateRouteTickets);
 
 /**
