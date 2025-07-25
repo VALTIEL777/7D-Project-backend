@@ -71,10 +71,10 @@ const PhotoEvidenceController = {
         // Subir archivo
         await minioClient.putObject(bucket, objectName, file.buffer);
   
-        // Usar MINIO_PUBLIC_HOST y prefijo para la URL pública
+        // Usar MINIO_PUBLIC_HOST y MINIO_PORT para la URL pública
         const minioPublicHost = process.env.MINIO_PUBLIC_HOST || 'localhost';
-        const minioPublicPrefix = process.env.MINIO_PUBLIC_PREFIX || '/minio';
-        const fileUrl = `http://${minioPublicHost}${minioPublicPrefix}/${bucket}/${objectName}`;
+const minioPublicPrefix = process.env.MINIO_PUBLIC_PREFIX || '/minio';
+const fileUrl = `http://${minioPublicHost}${minioPublicPrefix}/${bucket}/${objectName}`;
   
         // Extraer EXIF (opcional)
         let latitude = req.body.latitude;
@@ -175,10 +175,10 @@ const PhotoEvidenceController = {
           await minioClient.makeBucket(bucket);
         }
         await minioClient.putObject(bucket, objectName, req.file.buffer);
-        // Usar MINIO_PUBLIC_HOST y MINIO_PORT para la URL pública
+        // Usar MINIO_PUBLIC_HOST y prefijo para la URL pública
         const minioPublicHost = process.env.MINIO_PUBLIC_HOST || 'localhost';
-        const minioPort = process.env.MINIO_PORT || '9000';
-        fileUrl = `http://${minioPublicHost}:${minioPort}/${bucket}/${objectName}`;
+        const minioPublicPrefix = process.env.MINIO_PUBLIC_PREFIX || '/minio';
+        fileUrl = `http://${minioPublicHost}${minioPublicPrefix}/${bucket}/${objectName}`;
 
         // Extract EXIF metadata
         try {
@@ -224,6 +224,16 @@ const PhotoEvidenceController = {
       res.status(500).json({ message: 'Error deleting PhotoEvidence', error: error.message });
     }
   },
+  async getPhotoEvidenceByTicketId(req, res) {
+    try {
+      const { ticketId } = req.params;
+      const photos = await PhotoEvidence.findByTicketId(ticketId);
+      res.status(200).json(photos);
+    } catch (error) {
+      console.error('Error fetching PhotoEvidence by ticketId:', error);
+      res.status(500).json({ message: 'Error fetching PhotoEvidence by ticketId', error: error.message });
+    }
+  }
 };
 
 module.exports = PhotoEvidenceController; 
