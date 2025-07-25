@@ -6,19 +6,106 @@ INSERT INTO Users ( username, password) VALUES
   ('Christian', 'Christian'),
   ('Elian', 'Elian'),
   ('Eva', 'Eva'),
-  ('Laura', 'laura123');
+  ('Laura', 'laura123'),
+  ('Nicolas', 'Nicolas'),
+('Carlos', 'Carlos'),
+('Eduardo', 'Eduardo'),
+('JuanB', 'JuanB'),
+('Enrique', 'Enrique'),
+('Richard', 'Richard'),
+('Arturo', 'Arturo'),
+('Gabriel', 'Gabriel'),
+('JuanCamarena', 'JuanCamarena'),
+('Julian', 'Julian'),
+('LuisAlfredo', 'LuisAlfredo'),
+('JuanCorral', 'JuanCorral'),
+('Grgorio', 'Grgorio'),
+('EduardoD', 'EduardoD'),
+('EnriqueD', 'EnriqueD'),
+('Jorge', 'Jorge'),
+('Victor', 'Victor'),
+('AlejandroG', 'AlejandroG'),
+('Raul', 'Raul'),
+('SalvadorH', 'SalvadorH'),
+('HectorH', 'HectorH'),
+('JesusH', 'JesusH'),
+('ScottK', 'ScottK'),
+('JuanLopez', 'JuanLopez'),
+('CesarM', 'CesarM'),
+('Jorge Mojica', 'JorgeMojica'),
+('Carlos Montoya', 'CarlosMontoya'),
+('JuanCarlos', 'JuanCarlos'),
+('HoracioR', 'HoracioR'),
+('IsmaelR', 'IsmaelR'),
+('MarioR', 'MarioR'),
+('AntonioR', 'AntonioR'),
+('AmparoR', 'AmparoR'),
+('RamonS', 'RamonS'),
+('LuisT', 'LuisT'),
+('Jesus Valdez', 'JesusValdez'),
+('DionicioV', 'DionicioV'),
+('CesarV', 'CesarV'),
+('EdwardW', 'EdwardW'),
+('MarcosA', 'MarcosA'),
+('CarlosA', 'CarlosA'),
+('DelaCruzE', 'Delacruz'),
+('GustavoH', 'GustavoH'),
+('JavierO', 'JavierO');
 
 
 -- Mock data for People
-INSERT INTO People ( UserId, firstname, lastname, role, phone, email, createdBy, updatedBy) VALUES
-  ( 2, 'Agustin', 'Landa', 'admin', '1234567890', 'Agustin@example.com', 1, 1),
-  ( 3, 'Iris', 'Landa', 'admin', '2345678901', 'Iris@example.com', 1, 1),
-  ( 4, 'Erick', 'Flores', 'admin', '3456789012', 'Erick@example.com', 1, 1),
-  ( 5, 'Christian', 'Barragan', 'operator', '3456789012', 'Christian@example.com', 1, 1),
-  ( 5, 'Christian', 'Barragan', 'operator', '3456789012', 'Christian@example.com', 1, 1),
-  ( 6, 'Elian', 'Medina', 'admin', '3456789012', 'Elian@example.com', 1, 1),
-  ( 7, 'Eva', 'Landa', 'admin', '3456789012', 'Eva@example.com', 1, 1),
-   ( 8, 'Laura', 'Mcqueen', 'operator', '3456789012', 'Eva@example.com', 1, 1);
+INSERT INTO People (UserId, firstname, lastname, role, phone, email, createdBy, updatedBy) VALUES
+  (2, 'Agustin', 'Landa', 'admin', '1234567890', 'Agustin@example.com', 1, 1),
+  (3, 'Iris', 'Landa', 'admin', '2345678901', 'Iris@example.com', 1, 1),
+  (4, 'Erick', 'Flores', 'admin', '3456789012', 'Erick@example.com', 1, 1),
+  (5, 'Christian', 'Barragan', 'operator', '3456789012', 'Christian@example.com', 1, 1),
+  (6, 'Elian', 'Medina', 'admin', '3456789012', 'Elian@example.com', 1, 1),
+  (7, 'Eva', 'Landa', 'admin', '3456789012', 'Eva@example.com', 1, 1),
+  (8, 'Laura', 'Mcqueen', 'operator', '3456789012', 'Laura@example.com', 1, 1),
+  (9, 'Nicolas', 'Alarcon', 'operator', '0000000000', 'Nicolas@example.com', 1, 1),
+  (10, 'Carlos', 'Aguayo', 'operator', '0000000000', 'Carlos@example.com', 1, 1),
+  (11, 'Eduardo', 'Barraza', 'operator', '0000000000', 'Eduardo@example.com', 1, 1),
+  (12, 'Juan', 'Barraza', 'operator', '0000000000', 'JuanC@example.com', 1, 1),
+  (13, 'Enrique', 'Becerra', 'operator', '0000000000', 'Enrique@example.com', 1, 1),
+  (14, 'Richard', 'Burandt', 'operator', '0000000000', 'Richard@example.com', 1, 1),
+  (15, 'Arturo', 'Cahue', 'operator', '0000000000', 'Arturo@example.com', 1, 1),
+  (16, 'Gabriel', 'Cahue', 'operator', '0000000000', 'Gabriel@example.com', 1, 1),
+  (17, 'Juan', 'Camarena', 'operator', '0000000000', 'Juan@example.com', 1, 1),
+  (18, 'Julian', 'Ceja', 'operator', '0000000000', 'Julian@example.com', 1, 1),
+  (19, 'LuisAlfredo', 'Cisneros', 'operator', '0000000000', 'LuisAlfredo@example.com', 1, 1),
+  (20, 'Juan', 'Corral', 'operator', '0000000000', 'JuanC@example.com', 1, 1),
+  (21, 'Grgorio', 'Cuellar', 'operator', '0000000000', 'Grgorio@example.com', 1, 1),
+  (22, 'EduardoD', 'Diaz', 'operator', '0000000000', 'EduardoD@example.com', 1, 1),
+  (23, 'EnriqueD', 'Diaz', 'operator', '0000000000', 'EnriqueD@example.com', 1, 1),
+  (24, 'Jorge', 'Duran', 'operator', '0000000000', 'Jorge@example.com', 1, 1),
+  (25, 'Victor', 'Flores', 'operator', '0000000000', 'Victor@example.com', 1, 1),
+  (26, 'Alejandro', 'Gonzalez', 'operator', '0000000000', 'Alejandro@example.com', 1, 1),
+  (27, 'Raul', 'Guzman', 'operator', '0000000000', 'Raul@example.com', 1, 1),
+  (28, 'Salvador', 'Hernandez', 'operator', '0000000000', 'Salvador@example.com', 1, 1),
+  (29, 'Hector', 'Hernandez', 'operator', '0000000000', 'Hector@example.com', 1, 1),
+  (30, 'Jesus', 'Herrera', 'operator', '0000000000', 'JesusH@example.com', 1, 1),
+  (31, 'Scott', 'Kendall', 'operator', '0000000000', 'Scott@example.com', 1, 1),
+  (32, 'Juan', 'Lopez', 'operator', '0000000000', 'JuanL@example.com', 1, 1),  
+  (33, 'Cesar', 'Medina', 'operator', '0000000000', 'CesarM@example.com', 1, 1),
+  (34, 'Jorge', 'Mojica', 'operator', '0000000000', 'Jorge.Mojica@example.com', NULL, NULL),
+  (35, 'Carlos', 'Montoya', 'operator', '0000000000', 'Carlos.Montoya@example.com', NULL, NULL),  
+  (36, 'Juan Carlos', 'Reyes', 'operator', '0000000000', 'JuanCarlos.Reyes@example.com', NULL, NULL),  
+  (37, 'Horacio', 'Rodriguez', 'operator', '0000000000', 'Horacio@example.com', 1, 1),
+  (38, 'Ismael', 'Romero', 'operator', '0000000000', 'Ismael@example.com', 1, 1),
+  (39, 'Mario', 'Romero', 'operator', '0000000000', 'Mario@example.com', 1, 1),
+  (40, 'Antonio', 'Rosalez', 'operator', '0000000000', 'Antonio@example.com', 1, 1),
+  (41, 'Amparo', 'Rosalez', 'operator', '0000000000', 'Amparo@example.com', 1, 1),
+  (42, 'Ramon', 'Solis', 'operator', '0000000000', 'Ramon@example.com', 1, 1),
+  (43, 'Luis', 'Tello', 'operator', '0000000000', 'Luis@example.com', 1, 1),
+  (44, 'Jesus', 'Valdez', 'operator', '0000000000', 'Jesus.Valdez@example.com', NULL, NULL),
+  (45, 'Dionicio', 'Veloz', 'operator', '0000000000', 'Dionicio@example.com', 1, 1),
+  (46, 'Cesar', 'Vera', 'operator', '0000000000', 'CesarV@example.com', 1, 1),
+  (47, 'Edward', 'Watson', 'operator', '0000000000', 'Edward@example.com', 1, 1),
+  (48, 'Marcos', 'Armas', 'operator', '0000000000', 'Marcos@example.com', 1, 1),
+  (49, 'Carlos', 'Arroyo', 'operator', '0000000000', 'CarlosA@example.com', 1, 1),
+  (50, 'DelaCruz', 'Enmergaudio', 'operator', '0000000000', 'DelaCruz@example.com', 1, 1),
+  (51, 'Gustavo', 'Hernandez', 'operator', '0000000000', 'Gustavo@example.com', 1, 1),
+  (52, 'Javier', 'Ontiveros', 'operator', '0000000000', 'Javier.Ontiveros@example.com', NULL, NULL);
 
 
 -- Mock data for Payments
@@ -30,29 +117,66 @@ INSERT INTO Payments (checkId, paymentNumber, datePaid, amountPaid, status, paym
 
 -- Mock data for Skills
 INSERT INTO Skills (skillId, name, description, createdBy, updatedBy) VALUES
-  (1, 'Welding', 'Welding skills', 1, 1),
-  (2, 'Plumbing', 'Plumbing skills', 2, 2),
+  (1, 'Labor', 'Labor skills', 1, 1),
+  (2, 'Finisher', 'Finisher skills', 1, 1),
   (3, 'Driver', 'Driving different types of vehicles', 1, 1),
-  (4, 'Tool', 'Proficiency in using construction tools', 1, 1),
-  (5, 'Machine', 'Operating heavy machinery', 2, 2),
-  (6, 'Measure', 'Measurement and leveling skills', 2, 2);
+  (4, 'Machine', 'Operating heavy machinery', 1, 1),
+  (5, 'Measure', 'Measurement and leveling skills', 1, 1),  
+  (6, 'Spotter', 'Spotter skills', 1, 1);
 
-
--- Mock data for EmployeeSkills con nuevos employeeId
+-- Mock data for EmployeeSkills solo para los empleados especificados
 INSERT INTO EmployeeSkills (employeeId, skillId, proficiencyLevel, createdBy, updatedBy) VALUES
-  (15, 1, 5, 1, 1), -- Agustin - Welding (Expert)
-  (16, 2, 4, 2, 2), -- Iris - Plumbing (Advanced)
-  (15, 3, 4, 1, 1), -- Agustin - Driver
-  (15, 4, 3, 1, 1), -- Agustin - Tool
-  (16, 5, 5, 2, 2), -- Iris - Machine
-  (17, 6, 2, 1, 1), -- Erick - Measure (Basic)
-   (18, 1, 5, 1, 1), -- Christian - Welding (Expert)
-  (19, 2, 4, 2, 2), -- Elian - Plumbing (Advanced)
-  (20, 3, 4, 1, 1), -- Eva - Driver
-  (20, 4, 3, 1, 1), -- Eva - Tool
-  (19, 5, 5, 2, 2), -- Elian - Machine
-  (21, 6, 2, 1, 1); -- Laura - Measure (Basic)
-
+  (15, 1, 5, 1, 1),   -- Agustin Landa - Labor
+  (16, 2, 4, 1, 1),   -- Iris Landa - Finisher
+  (17, 3, 3, 1, 1),   -- Erick Flores - Driver
+  (18, 4, 5, 1, 1),   -- Christian Barragan - Machine
+  (19, 5, 4, 1, 1),   -- Elian Medina - Measure
+  (20, 6, 3, 1, 1),   -- Eva Landa - Spotter
+  (21, 1, 5, 1, 1),   -- Laura Mcqueen - Labor
+  (22, 2, 4, 1, 1),   -- Nicolas Alarcon - Finisher
+  (23, 3, 3, 1, 1),   -- Carlos Aguayo - Driver
+  (24, 4, 5, 1, 1),   -- Eduardo Barraza - Machine
+  (25, 5, 4, 1, 1),   -- Juan Barraza - Measure
+  (26, 6, 3, 1, 1),   -- Enrique Becerra - Spotter
+  (27, 1, 5, 1, 1),   -- Richard Burandt - Labor
+  (28, 2, 4, 1, 1),   -- Arturo Cahue - Finisher
+  (29, 3, 3, 1, 1),   -- Gabriel Cahue - Driver
+  (30, 4, 5, 1, 1),   -- Juan Camarena - Machine
+  (31, 5, 4, 1, 1),   -- Julian Ceja - Measure
+  (32, 6, 3, 1, 1),   -- LuisAlfredo Cisneros - Spotter
+  (33, 1, 5, 1, 1),   -- Juan Corral - Labor
+  (34, 2, 4, 1, 1),   -- Grgorio Cuellar - Finisher
+  (35, 3, 3, 1, 1),   -- EduardoD Diaz - Driver
+  (36, 4, 5, 1, 1),   -- EnriqueD Diaz - Machine
+  (37, 5, 4, 1, 1),   -- Jorge Duran - Measure
+  (38, 6, 3, 1, 1),   -- Victor Flores - Spotter
+  (39, 1, 5, 1, 1),   -- Alejandro Gonzalez - Labor
+  (40, 2, 4, 1, 1),   -- Raul Guzman - Finisher
+  (41, 3, 3, 1, 1),   -- Salvador Hernandez - Driver
+  (42, 4, 5, 1, 1),   -- Hector Hernandez - Machine
+  (43, 5, 4, 1, 1),   -- Jesus Herrera - Measure
+  (44, 6, 3, 1, 1),   -- Scott Kendall - Spotter
+  (45, 1, 5, 1, 1),   -- Juan Lopez - Labor
+  (46, 2, 4, 1, 1),   -- Cesar Medina - Finisher
+  (47, 3, 3, 1, 1),   -- Jorge Mojica - Driver
+  (48, 4, 5, 1, 1),   -- Carlos Montoya - Machine
+  (49, 5, 4, 1, 1),   -- Juan Carlos Reyes - Measure
+  (50, 6, 3, 1, 1),   -- Horacio Rodriguez - Spotter
+  (51, 1, 5, 1, 1),   -- Ismael Romero - Labor
+  (52, 2, 4, 1, 1),   -- Mario Romero - Finisher
+  (53, 3, 3, 1, 1),   -- Antonio Rosalez - Driver
+  (54, 4, 5, 1, 1),   -- Amparo Rosalez - Machine
+  (55, 5, 4, 1, 1),   -- Ramon Solis - Measure
+  (56, 6, 3, 1, 1),   -- Luis Tello - Spotter
+  (57, 1, 5, 1, 1),   -- Jesus Valdez - Labor
+  (58, 2, 4, 1, 1),   -- Dionicio Veloz - Finisher
+  (59, 3, 3, 1, 1),   -- Cesar Vera - Driver
+  (60, 4, 5, 1, 1),   -- Edward Watson - Machine
+  (61, 5, 4, 1, 1),   -- Marcos Armas - Measure
+  (62, 6, 3, 1, 1),   -- Carlos Arroyo - Spotter
+  (63, 1, 5, 1, 1),   -- DelaCruz Enmergaudio - Labor
+  (64, 2, 4, 1, 1),   -- Gustavo Hernandez - Finisher
+  (65, 3, 3, 1, 1);   -- Javier Ontiveros - Driver
 
 
 -- Mock data for Crews
