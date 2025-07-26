@@ -1814,7 +1814,7 @@ router.post("/generate-ticket-statuses", generateTicketStatuses);
  * /rtr/generate-ticket-statuses:
  *   post:
  *     summary: Generate TicketStatus records for tickets based on their ContractUnit phases
- *     description: Creates TicketStatus records for the specified tickets based on the phases defined in their ContractUnits. Each ContractUnit has associated phases (TaskStatus records) that define the workflow steps. This endpoint creates TicketStatus records to track the progress of each ticket through these phases.
+ *     description: Creates TicketStatus records for the specified tickets based on the phases defined in their ContractUnits. Each ContractUnit has associated phases (TaskStatus records) that define the workflow steps. This endpoint creates TicketStatus records to track the progress of each ticket through these phases. Works for tickets with any comment7d value.
  *     tags: [RTR]
  *     requestBody:
  *       required: true

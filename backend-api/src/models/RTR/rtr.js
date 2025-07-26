@@ -732,7 +732,7 @@ class RTR {
       
       for (const ticketId of ticketIds) {
         try {
-          // First check if the ticket has comment7d as null or empty
+          // Check if the ticket exists (regardless of comment7d value)
           const ticketCheckRes = await db.query(
             'SELECT ticketId, comment7d FROM Tickets WHERE ticketId = $1 AND deletedAt IS NULL;',
             [ticketId]
@@ -750,16 +750,8 @@ class RTR {
           const ticket = ticketCheckRes.rows[0];
           const comment7d = ticket.comment7d;
           
-          // Only generate TicketStatus records if comment7d is null or empty
-          if (comment7d !== null && comment7d !== '' && comment7d !== undefined) {
-            results.push({
-              ticketId: ticketId,
-              comment7d: comment7d,
-              skipped: true,
-              reason: 'comment7d is not null or empty'
-            });
-            continue;
-          }
+          // Generate TicketStatus records for any comment7d value
+          // (Removed restriction - now processes all tickets regardless of comment7d)
           
           const result = await this.generateTicketStatusesForTicket(ticketId, updatedBy);
           results.push(result);
