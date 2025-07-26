@@ -71,7 +71,7 @@ $$ LANGUAGE plpgsql STABLE;
 
 -- Add function to cluster addresses by proximity with configurable distance and cluster size
 CREATE OR REPLACE FUNCTION cluster_addresses_by_proximity(
-    max_distance_meters NUMERIC DEFAULT 30000,
+    max_distance_meters NUMERIC DEFAULT 50000,
     max_locations_per_cluster INTEGER DEFAULT 95
 ) RETURNS TABLE (
     cluster_id INTEGER,

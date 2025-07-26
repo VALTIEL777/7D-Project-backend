@@ -905,7 +905,7 @@ class RouteOptimizationService {
 
     /**
      * Get tickets for spotting routes
-     * Criteria: comment7d is NULL, empty, or TK - PERMIT EXTENDED, and SPOTTING status exists but has no endingDate (not completed)
+     * Criteria: comment7d is NULL, empty, TK - PERMIT EXTENDED, or TK - LAYOUT, and SPOTTING status exists but has no endingDate (not completed)
      * @returns {Promise<Array>} - Array of tickets eligible for spotting routes
      */
     async getSpottingTickets() {
@@ -932,6 +932,7 @@ class RouteOptimizationService {
                         t.comment7d IS NULL 
                         OR t.comment7d = '' 
                         OR t.comment7d = 'TK - PERMIT EXTENDED'
+                        OR t.comment7d = 'TK - LAYOUT'
                     )
                     AND EXISTS (
                         SELECT 1 FROM TicketStatus tks2 
@@ -2333,7 +2334,23 @@ class RouteOptimizationService {
 
                 const updatedTicketStatuses = ticketStatusResult.rows.length;
 
-                // 2. Update the route's endDate to NULL (mark as not completed)
+                // 2. Update comment7d to 'TK - ON LAYOUT' for tickets that don't have 'TK - ON SCHEDULE' or 'TK - ON PROGRESS'
+                const commentUpdateResult = await client.query(`
+                    UPDATE Tickets 
+                    SET comment7d = 'TK - ON LAYOUT',
+                        updatedAt = CURRENT_TIMESTAMP, 
+                        updatedBy = $1 
+                    WHERE ticketId = ANY($2) 
+                        AND deletedAt IS NULL
+                        AND (comment7d IS NULL 
+                             OR comment7d = '' 
+                             OR comment7d NOT IN ('TK - ON SCHEDULE', 'TK - ON PROGRESS'))
+                    RETURNING ticketId, comment7d
+                `, [updatedBy, ticketIds]);
+
+                const updatedComments = commentUpdateResult.rows.length;
+
+                // 3. Update the route's endDate to NULL (mark as not completed)
                 const routeResult = await client.query(`
                     UPDATE Routes 
                     SET endDate = NULL, 
@@ -2346,12 +2363,13 @@ class RouteOptimizationService {
 
                 await client.query('COMMIT');
 
-                console.log(`Updated ${updatedTicketStatuses} ticket statuses and route ${routeId} for cancellation`);
+                console.log(`Updated ${updatedTicketStatuses} ticket statuses, ${updatedComments} ticket comments, and route ${routeId} for cancellation`);
 
                 return {
                     routeId: routeId,
-                    message: `Route canceled successfully. Updated ${updatedTicketStatuses} ticket statuses.`,
+                    message: `Route canceled successfully. Updated ${updatedTicketStatuses} ticket statuses and ${updatedComments} ticket comments to 'TK - ON LAYOUT'.`,
                     updatedTicketStatuses: updatedTicketStatuses,
+                    updatedComments: updatedComments,
                     totalTickets: ticketIds.length,
                     routeUpdated: routeResult.rows.length > 0,
                     timestamp: new Date().toISOString()
@@ -2401,7 +2419,23 @@ class RouteOptimizationService {
 
                 const updatedSpottingStatuses = spottingStatusResult.rows.length;
 
-                // 2. Soft delete the route
+                // 2. Update comment7d to 'TK - ON LAYOUT' for tickets that don't have 'TK - ON SCHEDULE' or 'TK - ON PROGRESS'
+                const commentUpdateResult = await client.query(`
+                    UPDATE Tickets 
+                    SET comment7d = 'TK - ON LAYOUT',
+                        updatedAt = CURRENT_TIMESTAMP, 
+                        updatedBy = $1 
+                    WHERE ticketId = ANY($2) 
+                        AND deletedAt IS NULL
+                        AND (comment7d IS NULL 
+                             OR comment7d = '' 
+                             OR comment7d NOT IN ('TK - ON SCHEDULE', 'TK - ON PROGRESS'))
+                    RETURNING ticketId, comment7d
+                `, [updatedBy, ticketIds]);
+
+                const updatedComments = commentUpdateResult.rows.length;
+
+                // 3. Soft delete the route
                 const routeResult = await client.query(`
                     UPDATE Routes 
                     SET deletedAt = CURRENT_TIMESTAMP, 
@@ -2413,7 +2447,7 @@ class RouteOptimizationService {
                     RETURNING routeId, deletedAt
                 `, [updatedBy, routeId]);
 
-                // 3. Soft delete all RouteTickets associations
+                // 4. Soft delete all RouteTickets associations
                 const routeTicketsResult = await client.query(`
                     UPDATE RouteTickets 
                     SET deletedAt = CURRENT_TIMESTAMP, 
@@ -2426,12 +2460,13 @@ class RouteOptimizationService {
 
                 await client.query('COMMIT');
 
-                console.log(`Canceled spotting route ${routeId}: ${updatedSpottingStatuses} SPOTTING statuses reset, route soft deleted`);
+                console.log(`Canceled spotting route ${routeId}: ${updatedSpottingStatuses} SPOTTING statuses reset, ${updatedComments} comments updated, route soft deleted`);
 
                 return {
                     routeId: routeId,
-                    message: `Spotting route canceled successfully. Reset ${updatedSpottingStatuses} SPOTTING statuses and soft deleted route.`,
+                    message: `Spotting route canceled successfully. Reset ${updatedSpottingStatuses} SPOTTING statuses, updated ${updatedComments} ticket comments to 'TK - ON LAYOUT', and soft deleted route.`,
                     updatedSpottingStatuses: updatedSpottingStatuses,
+                    updatedComments: updatedComments,
                     totalTickets: ticketIds.length,
                     routeSoftDeleted: routeResult.rows.length > 0,
                     routeTicketsSoftDeleted: routeTicketsResult.rows.length,
@@ -2482,7 +2517,23 @@ class RouteOptimizationService {
 
                 const updatedSawcutStatuses = sawcutStatusResult.rows.length;
 
-                // 2. Soft delete the route
+                // 2. Update comment7d to 'TK - ON LAYOUT' for tickets that don't have 'TK - ON SCHEDULE' or 'TK - ON PROGRESS'
+                const commentUpdateResult = await client.query(`
+                    UPDATE Tickets 
+                    SET comment7d = 'TK - ON LAYOUT',
+                        updatedAt = CURRENT_TIMESTAMP, 
+                        updatedBy = $1 
+                    WHERE ticketId = ANY($2) 
+                        AND deletedAt IS NULL
+                        AND (comment7d IS NULL 
+                             OR comment7d = '' 
+                             OR comment7d NOT IN ('TK - ON SCHEDULE', 'TK - ON PROGRESS'))
+                    RETURNING ticketId, comment7d
+                `, [updatedBy, ticketIds]);
+
+                const updatedComments = commentUpdateResult.rows.length;
+
+                // 3. Soft delete the route
                 const routeResult = await client.query(`
                     UPDATE Routes 
                     SET deletedAt = CURRENT_TIMESTAMP, 
@@ -2494,7 +2545,7 @@ class RouteOptimizationService {
                     RETURNING routeId, deletedAt
                 `, [updatedBy, routeId]);
 
-                // 3. Soft delete all RouteTickets associations
+                // 4. Soft delete all RouteTickets associations
                 const routeTicketsResult = await client.query(`
                     UPDATE RouteTickets 
                     SET deletedAt = CURRENT_TIMESTAMP, 
@@ -2507,12 +2558,13 @@ class RouteOptimizationService {
 
                 await client.query('COMMIT');
 
-                console.log(`Canceled concrete route ${routeId}: ${updatedSawcutStatuses} SAWCUT statuses reset, route soft deleted`);
+                console.log(`Canceled concrete route ${routeId}: ${updatedSawcutStatuses} SAWCUT statuses reset, ${updatedComments} comments updated, route soft deleted`);
 
                 return {
                     routeId: routeId,
-                    message: `Concrete route canceled successfully. Reset ${updatedSawcutStatuses} SAWCUT statuses and soft deleted route.`,
+                    message: `Concrete route canceled successfully. Reset ${updatedSawcutStatuses} SAWCUT statuses, updated ${updatedComments} ticket comments to 'TK - ON LAYOUT', and soft deleted route.`,
                     updatedSawcutStatuses: updatedSawcutStatuses,
+                    updatedComments: updatedComments,
                     totalTickets: ticketIds.length,
                     routeSoftDeleted: routeResult.rows.length > 0,
                     routeTicketsSoftDeleted: routeTicketsResult.rows.length,
@@ -2563,7 +2615,23 @@ class RouteOptimizationService {
 
                 const updatedFramingStatuses = framingStatusResult.rows.length;
 
-                // 2. Soft delete the route
+                // 2. Update comment7d to 'TK - ON LAYOUT' for tickets that don't have 'TK - ON SCHEDULE' or 'TK - ON PROGRESS'
+                const commentUpdateResult = await client.query(`
+                    UPDATE Tickets 
+                    SET comment7d = 'TK - ON LAYOUT',
+                        updatedAt = CURRENT_TIMESTAMP, 
+                        updatedBy = $1 
+                    WHERE ticketId = ANY($2) 
+                        AND deletedAt IS NULL
+                        AND (comment7d IS NULL 
+                             OR comment7d = '' 
+                             OR comment7d NOT IN ('TK - ON SCHEDULE', 'TK - ON PROGRESS'))
+                    RETURNING ticketId, comment7d
+                `, [updatedBy, ticketIds]);
+
+                const updatedComments = commentUpdateResult.rows.length;
+
+                // 3. Soft delete the route
                 const routeResult = await client.query(`
                     UPDATE Routes 
                     SET deletedAt = CURRENT_TIMESTAMP, 
@@ -2575,7 +2643,7 @@ class RouteOptimizationService {
                     RETURNING routeId, deletedAt
                 `, [updatedBy, routeId]);
 
-                // 3. Soft delete all RouteTickets associations
+                // 4. Soft delete all RouteTickets associations
                 const routeTicketsResult = await client.query(`
                     UPDATE RouteTickets 
                     SET deletedAt = CURRENT_TIMESTAMP, 
@@ -2588,12 +2656,13 @@ class RouteOptimizationService {
 
                 await client.query('COMMIT');
 
-                console.log(`Canceled asphalt route ${routeId}: ${updatedFramingStatuses} FRAMING statuses reset, route soft deleted`);
+                console.log(`Canceled asphalt route ${routeId}: ${updatedFramingStatuses} FRAMING statuses reset, ${updatedComments} comments updated, route soft deleted`);
 
                 return {
                     routeId: routeId,
-                    message: `Asphalt route canceled successfully. Reset ${updatedFramingStatuses} FRAMING statuses and soft deleted route.`,
+                    message: `Asphalt route canceled successfully. Reset ${updatedFramingStatuses} FRAMING statuses, updated ${updatedComments} ticket comments to 'TK - ON LAYOUT', and soft deleted route.`,
                     updatedFramingStatuses: updatedFramingStatuses,
+                    updatedComments: updatedComments,
                     totalTickets: ticketIds.length,
                     routeSoftDeleted: routeResult.rows.length > 0,
                     routeTicketsSoftDeleted: routeTicketsResult.rows.length,
@@ -2747,7 +2816,8 @@ class RouteOptimizationService {
                 // Check if ticket meets comment7d criteria
                 const hasValidComment = !ticket.comment7d || 
                                        ticket.comment7d === '' || 
-                                       ticket.comment7d === 'TK - PERMIT EXTENDED';
+                                       ticket.comment7d === 'TK - PERMIT EXTENDED' ||
+                                       ticket.comment7d === 'TK - LAYOUT';
 
                 return hasSpottingInProgress && hasValidComment;
             });

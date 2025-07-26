@@ -863,7 +863,7 @@ router.get('/completed/asphalt', RoutesController.getCompletedAsphaltRoutes);
  *     tags: [Routes]
  *     description: |
  *       Retrieves all tickets that are ready for spotting route optimization, including their addresses. 
- *       These tickets meet the criteria: comment7d is NULL, empty, or TK - PERMIT EXTENDED, and no endingDate for SPOTTING status.
+ *       These tickets meet the criteria: comment7d is NULL, empty, TK - PERMIT EXTENDED, or TK - LAYOUT, and no endingDate for SPOTTING status.
  *     responses:
  *       200:
  *         description: Tickets ready for spotting routes retrieved successfully
@@ -885,7 +885,7 @@ router.get('/completed/asphalt', RoutesController.getCompletedAsphaltRoutes);
  *                 criteria:
  *                   type: string
  *                   description: Selection criteria used
- *                   example: "comment7d is NULL, empty, or TK - PERMIT EXTENDED, and no endingDate for SPOTTING status"
+ *                   example: "comment7d is NULL, empty, TK - PERMIT EXTENDED, or TK - LAYOUT, and no endingDate for SPOTTING status"
  *                 tickets:
  *                   type: array
  *                   description: Array of tickets ready for spotting routes
@@ -1448,7 +1448,7 @@ router.post('/optimize', RoutesController.optimizeRoute);
  *   post:
  *     summary: Optimize and create a spotting route
  *     tags: [Routes]
- *     description: Creates an optimized route for spotter teams. Automatically selects tickets where comment7d is NULL, empty, or TK - PERMIT EXTENDED, and the ticket has no endingDate for its SPOTTING status. If originAddress and destinationAddress are not provided, they will default to "2000 W 43rd St, Chicago, IL 60609, Estados Unidos".
+ *     description: Creates an optimized route for spotter teams. Automatically selects tickets where comment7d is NULL, empty, TK - PERMIT EXTENDED, or TK - LAYOUT, and the ticket has no endingDate for its SPOTTING status. If originAddress and destinationAddress are not provided, they will default to "2000 W 43rd St, Chicago, IL 60609, Estados Unidos".
  *     requestBody:
  *       required: true
  *       content:
@@ -1560,7 +1560,7 @@ router.post('/optimize', RoutesController.optimizeRoute);
  *                   example: "No tickets found for spotting routes"
  *                 criteria:
  *                   type: string
- *                   example: "comment7d is NULL, empty, or TK - PERMIT EXTENDED, and no endingDate for SPOTTING status"
+ *                   example: "comment7d is NULL, empty, TK - PERMIT EXTENDED, or TK - LAYOUT, and no endingDate for SPOTTING status"
  *       500:
  *         description: Server error
  */
