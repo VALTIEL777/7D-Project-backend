@@ -1,4 +1,4 @@
-const Permits = require('../../models/Permissions/Permits');
+const Permits = require('../../models/permissions/Permits');
 
 const PermitsController = {
   async createPermit(req, res) {
