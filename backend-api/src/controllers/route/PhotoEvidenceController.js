@@ -233,7 +233,96 @@ const fileUrl = `http://${minioPublicHost}${minioPublicPrefix}/${bucket}/${objec
       console.error('Error fetching PhotoEvidence by ticketId:', error);
       res.status(500).json({ message: 'Error fetching PhotoEvidence by ticketId', error: error.message });
     }
-  }
+  },
+  async downloadPhotoFile(req, res) {
+    try {
+      const { photoId } = req.params;
+      
+      // Buscar el registro en la base de datos
+      const photoEvidence = await PhotoEvidence.findById(photoId);
+      if (!photoEvidence) {
+        return res.status(404).json({ message: 'PhotoEvidence not found' });
+      }
+  
+      if (!photoEvidence.photourl) {
+        return res.status(404).json({ message: 'No photo URL found' });
+      }
+  
+      const minioClient = getMinioClient();
+      const bucket = 'uploads';
+  
+      // Extraer objectName de la URL de manera más robusta
+      let objectName;
+      try {
+        const url = new URL(photoEvidence.photourl);
+        const pathParts = url.pathname.split('/');
+        const uploadsIndex = pathParts.findIndex(part => part === 'uploads');
+        
+        if (uploadsIndex === -1) {
+          return res.status(400).json({ message: 'Invalid photo URL format' });
+        }
+        
+        objectName = pathParts.slice(uploadsIndex + 1).join('/');
+      } catch (urlError) {
+        // Fallback para URLs malformadas
+        const urlParts = photoEvidence.photourl.split('/');
+        const uploadsIndex = urlParts.findIndex(part => part === 'uploads');
+        
+        if (uploadsIndex === -1) {
+          return res.status(400).json({ message: 'Invalid photo URL format' });
+        }
+        
+        objectName = urlParts.slice(uploadsIndex + 1).join('/');
+      }
+  
+      console.log('🔍 Downloading file from MinIO:');
+      console.log('  Bucket:', bucket);
+      console.log('  Object Name:', objectName);
+      console.log('  Original URL:', photoEvidence.photourl);
+  
+      // Verificar que el objeto existe
+      try {
+        await minioClient.statObject(bucket, objectName);
+      } catch (statError) {
+        console.error('❌ Object not found in MinIO:', statError);
+        return res.status(404).json({ message: 'Photo file not found in storage' });
+      }
+  
+      // Descargar el archivo
+      const dataStream = await minioClient.getObject(bucket, objectName);
+      
+      // Configurar headers
+      const ext = path.extname(objectName).toLowerCase();
+      const contentTypeMap = {
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.png': 'image/png',
+        '.gif': 'image/gif',
+        '.webp': 'image/webp',
+        '.pdf': 'application/pdf'
+      };
+      
+      const contentType = contentTypeMap[ext] || 'image/jpeg';
+  
+      res.set({
+        'Content-Type': contentType,
+        'Cache-Control': 'public, max-age=3600',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET',
+        'Access-Control-Allow-Headers': 'Content-Type'
+      });
+  
+      // Pipe el stream directamente a la respuesta (más eficiente)
+      dataStream.pipe(res);
+  
+    } catch (error) {
+      console.error('❌ Error in downloadPhotoFile:', error);
+      res.status(500).json({ 
+        message: 'Error downloading photo file', 
+        error: error.message 
+      });
+    }
+  },
 };
 
 module.exports = PhotoEvidenceController; 

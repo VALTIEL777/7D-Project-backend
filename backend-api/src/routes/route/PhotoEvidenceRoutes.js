@@ -12,6 +12,7 @@ const router = express.Router();
  *   description: Managing photo evidence for ticket statuses
  */
 router.get('/ticket/:ticketId', PhotoEvidenceController.getPhotoEvidenceByTicketId);
+router.get('/:photoId/file', PhotoEvidenceController.downloadPhotoFile);
 /**
  * @swagger
  * /photoevidence:
