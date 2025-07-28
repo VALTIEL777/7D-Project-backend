@@ -492,6 +492,55 @@ const TicketsController = {
         error: error.message 
       });
     }
+  },
+
+  // Get ticket coordinates by ticket code
+  async getTicketCoordinates(req, res) {
+    try {
+      const { ticketCode } = req.params;
+      const coordinates = await Tickets.getTicketCoordinates(ticketCode);
+      
+      if (!coordinates || coordinates.length === 0) {
+        return res.status(404).json({ 
+          success: false,
+          message: 'Ticket not found or no coordinates available',
+          ticketCode: ticketCode 
+        });
+      }
+
+      // Group coordinates by ticket and format the response
+      const ticketInfo = {
+        ticketId: coordinates[0].ticketid,
+        ticketCode: coordinates[0].ticketcode,
+        contractNumber: coordinates[0].contractnumber,
+        amountToPay: coordinates[0].amounttopay,
+        ticketType: coordinates[0].tickettype,
+        addresses: coordinates.map(coord => ({
+          addressId: coord.addressid,
+          addressNumber: coord.addressnumber,
+          addressCardinal: coord.addresscardinal,
+          addressStreet: coord.addressstreet,
+          addressSuffix: coord.addressesuffix,
+          latitude: coord.latitude,
+          longitude: coord.longitude,
+          placeid: coord.placeid,
+          fullAddress: coord.fulladdress
+        })).filter(addr => addr.addressId !== null) // Filter out null addresses
+      };
+
+      res.status(200).json({
+        success: true,
+        message: 'Ticket coordinates retrieved successfully',
+        data: ticketInfo
+      });
+    } catch (error) {
+      console.error('Error fetching ticket coordinates:', error);
+      res.status(500).json({ 
+        success: false,
+        message: 'Error fetching ticket coordinates', 
+        error: error.message 
+      });
+    }
   }
 };
 

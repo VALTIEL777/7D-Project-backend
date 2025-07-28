@@ -1025,4 +1025,136 @@ router.get('/expiring/after15days', TicketsController.getTicketsExpiringAfter15D
  */
 router.get('/search/route-generation', TicketsController.searchTicketsForRouteGeneration);
 
+/**
+ * @swagger
+ * /tickets/coordinates/{ticketCode}:
+ *   get:
+ *     summary: Get ticket coordinates by ticket code
+ *     tags: [Tickets]
+ *     description: Retrieve latitude and longitude coordinates for all addresses associated with a specific ticket
+ *     parameters:
+ *       - in: path
+ *         name: ticketCode
+ *         schema:
+ *           type: string
+ *         required: true
+ *         description: The ticket code to search for coordinates
+ *         example: "TK6514243"
+ *     responses:
+ *       200:
+ *         description: Ticket coordinates retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Ticket coordinates retrieved successfully"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     ticketId:
+ *                       type: integer
+ *                       description: The ticket ID
+ *                       example: 123
+ *                     ticketCode:
+ *                       type: string
+ *                       description: The ticket code
+ *                       example: "TK6514243"
+ *                     contractNumber:
+ *                       type: string
+ *                       description: The contract number
+ *                       example: "CONTRACT-2024-001"
+ *                     amountToPay:
+ *                       type: number
+ *                       description: The amount to pay for the ticket
+ *                       example: 1500.00
+ *                     ticketType:
+ *                       type: string
+ *                       description: The type of ticket
+ *                       example: "regular"
+ *                     addresses:
+ *                       type: array
+ *                       description: Array of addresses with coordinates for this ticket
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           addressId:
+ *                             type: integer
+ *                             description: Address ID
+ *                             example: 456
+ *                           addressNumber:
+ *                             type: string
+ *                             description: House or building number
+ *                             example: "123"
+ *                           addressCardinal:
+ *                             type: string
+ *                             description: Cardinal direction
+ *                             example: "N"
+ *                           addressStreet:
+ *                             type: string
+ *                             description: Street name
+ *                             example: "Main"
+ *                           addressSuffix:
+ *                             type: string
+ *                             description: Street suffix
+ *                             example: "St"
+ *                           latitude:
+ *                             type: number
+ *                             description: Latitude coordinate
+ *                             example: 41.8781
+ *                             nullable: true
+ *                           longitude:
+ *                             type: number
+ *                             description: Longitude coordinate
+ *                             example: -87.6298
+ *                             nullable: true
+ *                           placeid:
+ *                             type: string
+ *                             description: Google Places ID
+ *                             example: "ChIJ7U0fzrosDogRFQ-eGiz8E3A"
+ *                             nullable: true
+ *                           fullAddress:
+ *                             type: string
+ *                             description: Complete formatted address
+ *                             example: "123 N Main St"
+ *       404:
+ *         description: Ticket not found or no coordinates available
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Ticket not found or no coordinates available"
+ *                 ticketCode:
+ *                   type: string
+ *                   example: "TK6514243"
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Error fetching ticket coordinates"
+ *                 error:
+ *                   type: string
+ *                   example: "Database connection failed"
+ */
+router.get('/coordinates/:ticketCode', TicketsController.getTicketCoordinates);
+
 module.exports = router; 

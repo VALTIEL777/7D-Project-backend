@@ -403,6 +403,41 @@ class Tickets {
     return result.rows;
   }
 
+  // Get ticket coordinates by ticket code
+  static async getTicketCoordinates(ticketCode) {
+    const result = await db.query(`
+      SELECT 
+        t.ticketId,
+        t.ticketCode,
+        t.contractNumber,
+        t.amountToPay,
+        t.ticketType,
+        -- Address coordinates
+        a.addressId,
+        a.addressNumber,
+        a.addressCardinal,
+        a.addressStreet,
+        a.addressSuffix,
+        a.latitude,
+        a.longitude,
+        a.placeid,
+        -- Full address construction
+        CONCAT(
+          COALESCE(a.addressNumber, ''), ' ',
+          COALESCE(a.addressCardinal, ''), ' ',
+          COALESCE(a.addressStreet, ''), ' ',
+          COALESCE(a.addressSuffix, '')
+        ) as fullAddress
+      FROM Tickets t
+      LEFT JOIN TicketAddresses ta ON t.ticketId = ta.ticketId AND ta.deletedAt IS NULL
+      LEFT JOIN Addresses a ON ta.addressId = a.addressId AND a.deletedAt IS NULL
+      WHERE t.ticketCode = $1 AND t.deletedAt IS NULL
+      ORDER BY a.addressId
+    `, [ticketCode]);
+    
+    return result.rows;
+  }
+
   // Get ticket information with related payment and invoice data
   static async getTicketPaymentInvoiceInfo() {
     const result = await db.query(`
