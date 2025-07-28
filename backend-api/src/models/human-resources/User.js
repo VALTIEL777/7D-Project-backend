@@ -11,25 +11,25 @@ class User {
   }
 
   static async findById(userId) {
-    const res = await db.query('SELECT * FROM Users WHERE UserId = $1 AND deletedAt IS NULL;', [userId]);
+    const res = await db.query('SELECT * FROM Users WHERE userid = $1 AND deletedat IS NULL;', [userId]);
     return res.rows[0];
   }
 
   static async findAll() {
-    const res = await db.query('SELECT * FROM Users WHERE deletedAt IS NULL;');
+    const res = await db.query('SELECT * FROM Users WHERE deletedat IS NULL;');
     return res.rows;
   }
 
   static async update(userId, username, password) {
     const res = await db.query(
-      'UPDATE Users SET username = $1, password = $2, updatedAt = CURRENT_TIMESTAMP WHERE UserId = $3 AND deletedAt IS NULL RETURNING *;',
+      'UPDATE Users SET username = $1, password = $2, updatedat = CURRENT_TIMESTAMP WHERE userid = $3 AND deletedat IS NULL RETURNING *;',
       [username, password, userId]
     );
     return res.rows[0];
   }
 
   static async delete(userId) {
-    const res = await db.query('UPDATE Users SET deletedAt = CURRENT_TIMESTAMP WHERE UserId = $1 AND deletedAt IS NULL RETURNING *;', [userId]);
+    const res = await db.query('UPDATE Users SET deletedat = CURRENT_TIMESTAMP WHERE userid = $1 AND deletedat IS NULL RETURNING *;', [userId]);
     return res.rows[0];
   }
 

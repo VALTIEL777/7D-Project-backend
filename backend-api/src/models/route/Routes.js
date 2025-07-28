@@ -287,6 +287,89 @@ class Routes {
       throw error;
     }
   }
+
+  // Get all routes with polylines and addresses for map display (including deleted routes)
+  static async findAllWithPolylinesAndAddresses() {
+    try {
+      const res = await db.query(`
+        SELECT 
+          r.*,
+          rt.ticketId,
+          rt.address,
+          rt.queue,
+          t.ticketCode,
+          t.quantity,
+          t.amountToPay,
+          t.comment7d,
+          -- Build full address string from RouteTickets
+          CASE 
+            WHEN rt.address IS NOT NULL AND rt.address != '' THEN rt.address
+            ELSE NULL
+          END as fullAddress
+        FROM Routes r
+        LEFT JOIN RouteTickets rt ON r.routeId = rt.routeId AND rt.deletedAt IS NULL
+        LEFT JOIN Tickets t ON rt.ticketId = t.ticketId AND t.deletedAt IS NULL
+        ORDER BY r.createdAt DESC, rt.queue ASC
+      `);
+      
+      if (res.rows.length === 0) return [];
+      
+      // Group routes with their tickets and addresses
+      const routesMap = new Map();
+      
+      res.rows.forEach(row => {
+        const routeId = row.routeid;
+        
+        if (!routesMap.has(routeId)) {
+          // Create route object
+          const route = {
+            routeId: row.routeid,
+            routeCode: row.routecode,
+            type: row.type,
+            startDate: row.startdate,
+            endDate: row.enddate,
+            encodedPolyline: row.encodedpolyline,
+            totalDistance: row.totaldistance,
+            totalDuration: row.totalduration,
+            optimizedOrder: row.optimizedorder,
+            optimizationMetadata: row.optimizationmetadata,
+            createdAt: row.createdat,
+            updatedAt: row.updatedat,
+            deletedAt: row.deletedat,
+            createdBy: row.createdby,
+            updatedBy: row.updatedby,
+            tickets: [],
+            addressCount: 0
+          };
+          
+          routesMap.set(routeId, route);
+        }
+        
+        // Add ticket if it exists
+        if (row.ticketid) {
+          const ticket = {
+            ticketId: row.ticketid,
+            ticketCode: row.ticketcode,
+            address: row.address,
+            fullAddress: row.fulladdress,
+            queue: row.queue,
+            quantity: row.quantity,
+            amountToPay: row.amounttopay,
+            comment7d: row.comment7d
+          };
+          
+          routesMap.get(routeId).tickets.push(ticket);
+          routesMap.get(routeId).addressCount++;
+        }
+      });
+      
+      return Array.from(routesMap.values());
+      
+    } catch (error) {
+      console.error('Error getting all routes with polylines and addresses:', error);
+      throw error;
+    }
+  }
 }
 
 module.exports = Routes; 

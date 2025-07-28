@@ -146,6 +146,148 @@ router.get('/', RoutesController.getAllActiveRoutes);
 
 /**
  * @swagger
+ * /routes/all-with-polylines:
+ *   get:
+ *     summary: Get all routes with polylines and addresses for map display
+ *     tags: [Routes]
+ *     description: Retrieves ALL routes (including deleted ones) with their polylines and addresses. Perfect for displaying routes on a map with full route visualization capabilities.
+ *     responses:
+ *       200:
+ *         description: All routes with polylines and addresses retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "All routes with polylines and addresses retrieved successfully"
+ *                 count:
+ *                   type: integer
+ *                   description: Number of routes returned
+ *                   example: 25
+ *                 routes:
+ *                   type: array
+ *                   description: Array of route objects with polylines and addresses
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       routeId:
+ *                         type: integer
+ *                         description: Unique identifier for the route
+ *                         example: 1
+ *                       routeCode:
+ *                         type: string
+ *                         description: Route code/name
+ *                         example: "SPOTTER-2024-001"
+ *                       type:
+ *                         type: string
+ *                         description: Type of route
+ *                         example: "SPOTTER"
+ *                       startDate:
+ *                         type: string
+ *                         format: date
+ *                         description: Start date of the route
+ *                         example: "2024-06-01"
+ *                       endDate:
+ *                         type: string
+ *                         format: date
+ *                         description: End date of the route
+ *                         example: "2024-06-02"
+ *                       encodedPolyline:
+ *                         type: string
+ *                         description: Google Maps encoded polyline for route visualization
+ *                         example: "encoded_polyline_string_here"
+ *                       totalDistance:
+ *                         type: number
+ *                         description: Total distance in meters
+ *                         example: 15420.5
+ *                       totalDuration:
+ *                         type: number
+ *                         description: Total duration in seconds
+ *                         example: 1800
+ *                       optimizedOrder:
+ *                         type: array
+ *                         description: Optimized order of waypoints
+ *                         items:
+ *                           type: integer
+ *                         example: [0, 2, 1, 3, 4]
+ *                       optimizationMetadata:
+ *                         type: object
+ *                         description: Additional optimization data
+ *                         example: {"algorithm": "vroom", "version": "1.0"}
+ *                       createdAt:
+ *                         type: string
+ *                         format: date-time
+ *                         description: Route creation timestamp
+ *                         example: "2024-06-01T10:30:00Z"
+ *                       updatedAt:
+ *                         type: string
+ *                         format: date-time
+ *                         description: Last update timestamp
+ *                         example: "2024-06-01T10:30:00Z"
+ *                       deletedAt:
+ *                         type: string
+ *                         format: date-time
+ *                         description: Soft delete timestamp (null if active)
+ *                         example: null
+ *                       createdBy:
+ *                         type: integer
+ *                         description: User ID who created the route
+ *                         example: 1
+ *                       updatedBy:
+ *                         type: integer
+ *                         description: User ID who last updated the route
+ *                         example: 1
+ *                       tickets:
+ *                         type: array
+ *                         description: Array of tickets in this route with addresses
+ *                         items:
+ *                           type: object
+ *                           properties:
+ *                             ticketId:
+ *                               type: integer
+ *                               description: Unique identifier for the ticket
+ *                               example: 101
+ *                             ticketCode:
+ *                               type: string
+ *                               description: Ticket code/name
+ *                               example: "TK6514243"
+ *                             address:
+ *                               type: string
+ *                               description: Address stored in RouteTickets
+ *                               example: "123 N Main St, Chicago, IL"
+ *                             fullAddress:
+ *                               type: string
+ *                               description: Full formatted address
+ *                               example: "123 N Main St, Chicago, IL"
+ *                             queue:
+ *                               type: integer
+ *                               description: Position in the optimized route order
+ *                               example: 0
+ *                             quantity:
+ *                               type: integer
+ *                               description: Quantity for this ticket
+ *                               example: 1
+ *                             amountToPay:
+ *                               type: number
+ *                               description: Amount to pay for this ticket
+ *                               example: 150.00
+ *                             comment7d:
+ *                               type: string
+ *                               description: 7D comment for this ticket
+ *                               example: "TK - ON LAYOUT"
+ *                       addressCount:
+ *                         type: integer
+ *                         description: Number of addresses in this route
+ *                         example: 15
+ *       500:
+ *         description: Server error
+ */
+router.get('/all-with-polylines', RoutesController.getAllRoutesWithPolylinesAndAddresses);
+
+/**
+ * @swagger
  * /routes/type/{type}:
  *   get:
  *     summary: Get routes by type
@@ -1077,7 +1219,7 @@ router.get('/tickets-ready/concrete', RoutesController.getTicketsReadyForConcret
  *                 criteria:
  *                   type: string
  *                   description: Selection criteria used
- *                   example: "SPOTTING completed and either has GRINDING status (no SAWCUT) OR all concrete phases completed"
+ *                   example: "SPOTTING completed and either has GRINDING status (no SAWCUT) OR all concrete phases completed (SAWCUT, REMOVAL, FRAMING, POURING)"
  *                 tickets:
  *                   type: array
  *                   description: Array of tickets ready for asphalt routes

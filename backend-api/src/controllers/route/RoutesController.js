@@ -681,6 +681,25 @@ const RoutesController = {
         details: error.message 
       });
     }
+  },
+
+  // Get all routes with polylines and addresses for map display (including deleted routes)
+  async getAllRoutesWithPolylinesAndAddresses(req, res) {
+    try {
+      const routes = await Routes.findAllWithPolylinesAndAddresses();
+      
+      res.status(200).json({
+        message: 'All routes with polylines and addresses retrieved successfully',
+        count: routes.length,
+        routes: routes
+      });
+    } catch (error) {
+      console.error('Error getting all routes with polylines and addresses:', error);
+      res.status(500).json({ 
+        error: 'Failed to get routes with polylines and addresses', 
+        details: error.message 
+      });
+    }
   }
 };
 
