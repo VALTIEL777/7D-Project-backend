@@ -1,3 +1,4 @@
+
 CREATE TABLE Users (
     UserId SERIAL PRIMARY KEY,
     username VARCHAR(128) UNIQUE,
@@ -341,8 +342,8 @@ CREATE TABLE TicketStatus(
     ticketId INTEGER REFERENCES Tickets(ticketId),
     crewId INTEGER REFERENCES Crews(crewId),
     PRIMARY KEY (taskStatusId, ticketId),
-    startingDate DATE,
-    endingDate DATE,
+    startingDate TIMESTAMPTZ,
+    endingDate TIMESTAMPTZ,
     observation TEXT,
     createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
