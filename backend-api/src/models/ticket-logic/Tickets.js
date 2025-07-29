@@ -547,6 +547,26 @@ class Tickets {
         t.daysOutstanding,
         t.comment7d,
         t.createdAt as ticketCreatedAt,
+        -- Contract Unit information
+        t.contractUnitId,
+        cu.name as contractUnitName,
+        cu.description as contractUnitDescription,
+        cu.unit as contractUnitUnit,
+        cu.CostPerUnit as contractUnitCostPerUnit,
+        -- Wayfinding information
+        t.wayfindingId,
+        w.location as wayfindingLocation,
+        w.fromAddressNumber,
+        w.fromAddressCardinal,
+        w.fromAddressStreet,
+        w.fromAddressSuffix,
+        w.toAddressNumber,
+        w.toAddressCardinal,
+        w.toAddressStreet,
+        w.toAddressSuffix,
+        w.width as wayfindingWidth,
+        w.length as wayfindingLength,
+        w.surfaceTotal as wayfindingSurfaceTotal,
         -- Address information
         a.addressId,
         a.addressNumber,
@@ -580,6 +600,8 @@ class Tickets {
       FROM IncidentsMx i
       LEFT JOIN incident_photo_counts ipc ON i.incidentId = ipc.incidentId
       LEFT JOIN Tickets t ON i.incidentId = t.incidentId AND t.deletedAt IS NULL
+      LEFT JOIN ContractUnits cu ON t.contractUnitId = cu.contractUnitId AND cu.deletedAt IS NULL
+      LEFT JOIN wayfinding w ON t.wayfindingId = w.wayfindingId AND w.deletedAt IS NULL
       LEFT JOIN TicketAddresses ta ON t.ticketId = ta.ticketId AND ta.deletedAt IS NULL
       LEFT JOIN Addresses a ON ta.addressId = a.addressId AND a.deletedAt IS NULL
       LEFT JOIN TicketStatus tks ON t.ticketId = tks.ticketId AND tks.deletedAt IS NULL

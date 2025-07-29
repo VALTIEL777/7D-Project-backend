@@ -730,6 +730,36 @@ const TicketsController = {
               daysOutstanding: row.daysoutstanding,
               comment7d: row.comment7d,
               createdAt: row.ticketcreatedat,
+              // Contract Unit information
+              contractUnit: {
+                contractUnitId: row.contractunitid,
+                name: row.contractunitname,
+                description: row.contractunitdescription,
+                unit: row.contractunitunit,
+                costPerUnit: row.contractunitcostperunit
+              },
+              // Wayfinding information
+              wayfinding: {
+                wayfindingId: row.wayfindingid,
+                location: row.wayfindinglocation,
+                fromAddress: {
+                  addressNumber: row.fromaddressnumber,
+                  addressCardinal: row.fromaddresscardinal,
+                  addressStreet: row.fromaddressstreet,
+                  addressSuffix: row.fromaddresssuffix
+                },
+                toAddress: {
+                  addressNumber: row.toaddressnumber,
+                  addressCardinal: row.toaddresscardinal,
+                  addressStreet: row.toaddressstreet,
+                  addressSuffix: row.toaddresssuffix
+                },
+                dimensions: {
+                  width: row.wayfindingwidth,
+                  length: row.wayfindinglength,
+                  surfaceTotal: row.wayfindingsurfacetotal
+                }
+              },
               addresses: [],
               taskStatuses: []
             };
