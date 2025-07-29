@@ -438,6 +438,167 @@ class Tickets {
     return result.rows;
   }
 
+  // Get ticket gallery data with addresses and photo evidence
+  static async getTicketGallery(ticketCode) {
+    const result = await db.query(`
+      SELECT 
+        -- Ticket information
+        t.ticketId,
+        t.ticketCode,
+        t.contractNumber,
+        t.amountToPay,
+        t.ticketType,
+        t.quantity,
+        t.daysOutstanding,
+        t.comment7d,
+        -- Contract Unit information
+        t.contractUnitId,
+        cu.name as contractUnitName,
+        cu.description as contractUnitDescription,
+        cu.unit as contractUnitUnit,
+        cu.CostPerUnit as contractUnitCostPerUnit,
+        -- Wayfinding information
+        t.wayfindingId,
+        w.location as wayfindingLocation,
+        w.fromAddressNumber,
+        w.fromAddressCardinal,
+        w.fromAddressStreet,
+        w.fromAddressSuffix,
+        w.toAddressNumber,
+        w.toAddressCardinal,
+        w.toAddressStreet,
+        w.toAddressSuffix,
+        w.width as wayfindingWidth,
+        w.length as wayfindingLength,
+        w.surfaceTotal as wayfindingSurfaceTotal,
+        -- Address information
+        a.addressId,
+        a.addressNumber,
+        a.addressCardinal,
+        a.addressStreet,
+        a.addressSuffix,
+        CONCAT(
+          COALESCE(a.addressNumber, ''), ' ',
+          COALESCE(a.addressCardinal, ''), ' ',
+          COALESCE(a.addressStreet, ''), ' ',
+          COALESCE(a.addressSuffix, '')
+        ) as fullAddress,
+        -- Task status information
+        ts.taskStatusId,
+        ts.name as taskStatusName,
+        ts.description as taskStatusDescription,
+        tks.startingDate,
+        tks.endingDate,
+        tks.observation,
+        tks.crewId,
+        -- Photo evidence information
+        pe.photoId,
+        pe.name as photoName,
+        pe.latitude as photoLatitude,
+        pe.longitude as photoLongitude,
+        pe.photo,
+        pe.date as photoDate,
+        pe.comment as photoComment,
+        pe.photoURL,
+        pe.createdAt as photoCreatedAt
+      FROM Tickets t
+      LEFT JOIN ContractUnits cu ON t.contractUnitId = cu.contractUnitId AND cu.deletedAt IS NULL
+      LEFT JOIN wayfinding w ON t.wayfindingId = w.wayfindingId AND w.deletedAt IS NULL
+      LEFT JOIN TicketAddresses ta ON t.ticketId = ta.ticketId AND ta.deletedAt IS NULL
+      LEFT JOIN Addresses a ON ta.addressId = a.addressId AND a.deletedAt IS NULL
+      LEFT JOIN TicketStatus tks ON t.ticketId = tks.ticketId AND tks.deletedAt IS NULL
+      LEFT JOIN TaskStatus ts ON tks.taskStatusId = ts.taskStatusId AND ts.deletedAt IS NULL
+      LEFT JOIN PhotoEvidence pe ON tks.taskStatusId = pe.ticketStatusId AND t.ticketId = pe.ticketId AND pe.deletedAt IS NULL
+      WHERE t.ticketCode = $1 AND t.deletedAt IS NULL
+      ORDER BY t.ticketId, a.addressId, ts.taskStatusId, pe.photoId
+    `, [ticketCode]);
+    
+    return result.rows;
+  }
+
+  // Get all tickets gallery data grouped by incident name, ordered by incidents with photo evidence first
+  static async getAllTicketsGallery() {
+    const result = await db.query(`
+      WITH incident_photo_counts AS (
+        SELECT 
+          i.incidentId,
+          COUNT(DISTINCT pe.photoId) as photo_count
+        FROM IncidentsMx i
+        LEFT JOIN Tickets t ON i.incidentId = t.incidentId AND t.deletedAt IS NULL
+        LEFT JOIN TicketStatus tks ON t.ticketId = tks.ticketId AND tks.deletedAt IS NULL
+        LEFT JOIN PhotoEvidence pe ON tks.taskStatusId = pe.ticketStatusId AND t.ticketId = pe.ticketId AND pe.deletedAt IS NULL
+        WHERE i.deletedAt IS NULL
+        GROUP BY i.incidentId
+      )
+      SELECT 
+        -- Incident information
+        i.incidentId,
+        i.name as incidentName,
+        i.earliestRptDate,
+        -- Photo count for ordering
+        COALESCE(ipc.photo_count, 0) as photo_count,
+        -- Ticket information
+        t.ticketId,
+        t.ticketCode,
+        t.contractNumber,
+        t.amountToPay,
+        t.ticketType,
+        t.quantity,
+        t.daysOutstanding,
+        t.comment7d,
+        t.createdAt as ticketCreatedAt,
+        -- Address information
+        a.addressId,
+        a.addressNumber,
+        a.addressCardinal,
+        a.addressStreet,
+        a.addressSuffix,
+        CONCAT(
+          COALESCE(a.addressNumber, ''), ' ',
+          COALESCE(a.addressCardinal, ''), ' ',
+          COALESCE(a.addressStreet, ''), ' ',
+          COALESCE(a.addressSuffix, '')
+        ) as fullAddress,
+        -- Task status information
+        ts.taskStatusId,
+        ts.name as taskStatusName,
+        ts.description as taskStatusDescription,
+        tks.startingDate,
+        tks.endingDate,
+        tks.observation,
+        tks.crewId,
+        -- Photo evidence information
+        pe.photoId,
+        pe.name as photoName,
+        pe.latitude as photoLatitude,
+        pe.longitude as photoLongitude,
+        pe.photo,
+        pe.date as photoDate,
+        pe.comment as photoComment,
+        pe.photoURL,
+        pe.createdAt as photoCreatedAt
+      FROM IncidentsMx i
+      LEFT JOIN incident_photo_counts ipc ON i.incidentId = ipc.incidentId
+      LEFT JOIN Tickets t ON i.incidentId = t.incidentId AND t.deletedAt IS NULL
+      LEFT JOIN TicketAddresses ta ON t.ticketId = ta.ticketId AND ta.deletedAt IS NULL
+      LEFT JOIN Addresses a ON ta.addressId = a.addressId AND a.deletedAt IS NULL
+      LEFT JOIN TicketStatus tks ON t.ticketId = tks.ticketId AND tks.deletedAt IS NULL
+      LEFT JOIN TaskStatus ts ON tks.taskStatusId = ts.taskStatusId AND ts.deletedAt IS NULL
+      LEFT JOIN PhotoEvidence pe ON tks.taskStatusId = pe.ticketStatusId AND t.ticketId = pe.ticketId AND pe.deletedAt IS NULL
+      WHERE i.deletedAt IS NULL
+      ORDER BY 
+        ipc.photo_count DESC NULLS LAST,  -- Incidents with photos first
+        i.incidentId, 
+        i.name, 
+        t.ticketId, 
+        a.addressId, 
+        ts.taskStatusId, 
+        pe.photoId
+    `);
+    
+    return result.rows;
+  }
+
   // Get ticket information with related payment and invoice data
   static async getTicketPaymentInvoiceInfo() {
     const result = await db.query(`

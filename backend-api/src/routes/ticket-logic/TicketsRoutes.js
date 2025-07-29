@@ -394,6 +394,641 @@ router.get('/payment-invoice-info', TicketsController.getTicketPaymentInvoiceInf
 
 /**
  * @swagger
+ * /tickets/gallery:
+ *   get:
+ *     summary: Get all tickets gallery grouped by incident name
+ *     tags: [Tickets]
+ *     description: Retrieve all tickets with their addresses, task statuses, and photo evidence, grouped by incident name from IncidentsMx table
+ *     responses:
+ *       200:
+ *         description: All tickets gallery retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "All tickets gallery retrieved successfully"
+ *                 summary:
+ *                   type: object
+ *                   properties:
+ *                     totalIncidents:
+ *                       type: integer
+ *                       description: Total number of incidents
+ *                       example: 25
+ *                     totalTickets:
+ *                       type: integer
+ *                       description: Total number of tickets across all incidents
+ *                       example: 150
+ *                     totalPhotos:
+ *                       type: integer
+ *                       description: Total number of photos across all tickets
+ *                       example: 500
+ *                     totalAddresses:
+ *                       type: integer
+ *                       description: Total number of addresses across all tickets
+ *                       example: 300
+ *                     incidentsWithPhotos:
+ *                       type: integer
+ *                       description: Number of incidents that have photos
+ *                       example: 20
+ *                     incidentsWithAddresses:
+ *                       type: integer
+ *                       description: Number of incidents that have addresses
+ *                       example: 22
+ *                 data:
+ *                   type: array
+ *                   description: Array of incidents with their tickets and gallery data
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       incidentId:
+ *                         type: integer
+ *                         description: The incident ID
+ *                         example: 1
+ *                       incidentName:
+ *                         type: string
+ *                         description: The incident name
+ *                         example: "Pothole Repair"
+ *                       earliestRptDate:
+ *                         type: string
+ *                         format: date
+ *                         description: The earliest report date for this incident
+ *                         example: "2024-01-15"
+ *                       totalTickets:
+ *                         type: integer
+ *                         description: Total number of tickets for this incident
+ *                         example: 5
+ *                       totalPhotos:
+ *                         type: integer
+ *                         description: Total number of photos for this incident
+ *                         example: 15
+ *                       totalAddresses:
+ *                         type: integer
+ *                         description: Total number of addresses for this incident
+ *                         example: 8
+ *                       tickets:
+ *                         type: array
+ *                         description: Array of tickets for this incident
+ *                         items:
+ *                           type: object
+ *                           properties:
+ *                             ticketId:
+ *                               type: integer
+ *                               description: The ticket ID
+ *                               example: 123
+ *                             ticketCode:
+ *                               type: string
+ *                               description: The ticket code
+ *                               example: "TK6514243"
+ *                             contractNumber:
+ *                               type: string
+ *                               description: The contract number
+ *                               example: "CONTRACT-2024-001"
+ *                             amountToPay:
+ *                               type: number
+ *                               description: The amount to pay for the ticket
+ *                               example: 1500.00
+ *                             ticketType:
+ *                               type: string
+ *                               description: The type of ticket
+ *                               example: "regular"
+ *                             quantity:
+ *                               type: integer
+ *                               description: The ticket quantity
+ *                               example: 1
+ *                             daysOutstanding:
+ *                               type: integer
+ *                               description: Number of days outstanding
+ *                               example: 5
+ *                             comment7d:
+ *                               type: string
+ *                               description: 7D comment
+ *                               example: "TK - COMPLETED"
+ *                             addresses:
+ *                               type: array
+ *                               description: Array of addresses for this ticket
+ *                               items:
+ *                                 type: object
+ *                                 properties:
+ *                                   addressId:
+ *                                     type: integer
+ *                                     description: Address ID
+ *                                     example: 456
+ *                                   addressNumber:
+ *                                     type: string
+ *                                     description: House or building number
+ *                                     example: "123"
+ *                                   addressCardinal:
+ *                                     type: string
+ *                                     description: Cardinal direction
+ *                                     example: "N"
+ *                                   addressStreet:
+ *                                     type: string
+ *                                     description: Street name
+ *                                     example: "Main"
+ *                                   addressSuffix:
+ *                                     type: string
+ *                                     description: Street suffix
+ *                                     example: "St"
+ *                                   fullAddress:
+ *                                     type: string
+ *                                     description: Complete formatted address
+ *                                     example: "123 N Main St"
+ *                             taskStatuses:
+ *                               type: array
+ *                               description: Array of task statuses with photo evidence
+ *                               items:
+ *                                 type: object
+ *                                 properties:
+ *                                   taskStatusId:
+ *                                     type: integer
+ *                                     description: Task status ID
+ *                                     example: 1
+ *                                   name:
+ *                                     type: string
+ *                                     description: Task status name
+ *                                     example: "Sawcut"
+ *                                   description:
+ *                                     type: string
+ *                                     description: Task status description
+ *                                     example: "Cutting the damaged pavement section with a saw"
+ *                                   startingDate:
+ *                                     type: string
+ *                                     format: date
+ *                                     description: Start date of this status
+ *                                     example: "2024-01-15"
+ *                                   endingDate:
+ *                                     type: string
+ *                                     format: date
+ *                                     description: End date of this status
+ *                                     example: "2024-01-16"
+ *                                   observation:
+ *                                     type: string
+ *                                     description: Additional observations
+ *                                     example: "Completed successfully"
+ *                                   crewId:
+ *                                     type: integer
+ *                                     description: Associated crew ID
+ *                                     example: 1
+ *                                   photoEvidence:
+ *                                     type: array
+ *                                     description: Array of photo evidence for this task status
+ *                                     items:
+ *                                       type: object
+ *                                       properties:
+ *                                         photoId:
+ *                                           type: integer
+ *                                           description: Photo evidence ID
+ *                                           example: 789
+ *                                         name:
+ *                                           type: string
+ *                                           description: Photo name/title
+ *                                           example: "Before Sawcut"
+ *                                         latitude:
+ *                                           type: number
+ *                                           description: Photo latitude coordinate
+ *                                           example: 41.8781
+ *                                           nullable: true
+ *                                         longitude:
+ *                                           type: number
+ *                                           description: Photo longitude coordinate
+ *                                           example: -87.6298
+ *                                           nullable: true
+ *                                         photo:
+ *                                           type: string
+ *                                           description: Base64 encoded photo or photo data
+ *                                           example: "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQ..."
+ *                                           nullable: true
+ *                                         date:
+ *                                           type: string
+ *                                           format: date-time
+ *                                           description: Photo date and time
+ *                                           example: "2024-01-15T10:30:00Z"
+ *                                           nullable: true
+ *                                         comment:
+ *                                           type: string
+ *                                           description: Photo comment/description
+ *                                           example: "Damage assessment before repair"
+ *                                           nullable: true
+ *                                         photoURL:
+ *                                           type: string
+ *                                           description: URL to the hosted photo
+ *                                           example: "http://localhost:9000/minio/uploads/photo-evidence/1705312200000-photo.jpg"
+ *                                           nullable: true
+ *                                         createdAt:
+ *                                           type: string
+ *                                           format: date-time
+ *                                           description: When the photo was created
+ *                                           example: "2024-01-15T10:30:00Z"
+ *       404:
+ *         description: No tickets found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "No tickets found"
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Error fetching all tickets gallery"
+ *                 error:
+ *                   type: string
+ *                   example: "Database connection failed"
+ */
+router.get('/gallery', TicketsController.getAllTicketsGallery);
+
+/**
+ * @swagger
+ * /tickets/gallery/{ticketCode}:
+ *   get:
+ *     summary: Get ticket gallery with addresses and photo evidence
+ *     tags: [Tickets]
+ *     description: Retrieve complete ticket information including addresses, task statuses, and photo evidence for building a gallery
+ *     parameters:
+ *       - in: path
+ *         name: ticketCode
+ *         schema:
+ *           type: string
+ *         required: true
+ *         description: The ticket code to retrieve gallery data for
+ *         example: "TK6514243"
+ *     responses:
+ *       200:
+ *         description: Ticket gallery retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Ticket gallery retrieved successfully"
+ *                 summary:
+ *                   type: object
+ *                   properties:
+ *                     totalPhotos:
+ *                       type: integer
+ *                       description: Total number of photos across all task statuses
+ *                       example: 15
+ *                     totalTaskStatuses:
+ *                       type: integer
+ *                       description: Total number of task statuses
+ *                       example: 5
+ *                     totalAddresses:
+ *                       type: integer
+ *                       description: Total number of addresses
+ *                       example: 2
+ *                     hasPhotos:
+ *                       type: boolean
+ *                       description: Whether the ticket has any photos
+ *                       example: true
+ *                     hasAddresses:
+ *                       type: boolean
+ *                       description: Whether the ticket has any addresses
+ *                       example: true
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     ticketId:
+ *                       type: integer
+ *                       description: The ticket ID
+ *                       example: 123
+ *                     ticketCode:
+ *                       type: string
+ *                       description: The ticket code
+ *                       example: "TK6514243"
+ *                     contractNumber:
+ *                       type: string
+ *                       description: The contract number
+ *                       example: "CONTRACT-2024-001"
+ *                     amountToPay:
+ *                       type: number
+ *                       description: The amount to pay for the ticket
+ *                       example: 1500.00
+ *                     ticketType:
+ *                       type: string
+ *                       description: The type of ticket
+ *                       example: "regular"
+ *                     quantity:
+ *                       type: integer
+ *                       description: The ticket quantity
+ *                       example: 1
+ *                     daysOutstanding:
+ *                       type: integer
+ *                       description: Number of days outstanding
+ *                       example: 5
+ *                     comment7d:
+ *                       type: string
+ *                       description: 7D comment
+ *                       example: "TK - COMPLETED"
+ *                     addresses:
+ *                       type: array
+ *                       description: Array of addresses for this ticket
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           addressId:
+ *                             type: integer
+ *                             description: Address ID
+ *                             example: 456
+ *                           addressNumber:
+ *                             type: string
+ *                             description: House or building number
+ *                             example: "123"
+ *                           addressCardinal:
+ *                             type: string
+ *                             description: Cardinal direction
+ *                             example: "N"
+ *                           addressStreet:
+ *                             type: string
+ *                             description: Street name
+ *                             example: "Main"
+ *                           addressSuffix:
+ *                             type: string
+ *                             description: Street suffix
+ *                             example: "St"
+ *                           fullAddress:
+ *                             type: string
+ *                             description: Complete formatted address
+ *                             example: "123 N Main St"
+ *                     taskStatuses:
+ *                       type: array
+ *                       description: Array of task statuses with photo evidence
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           taskStatusId:
+ *                             type: integer
+ *                             description: Task status ID
+ *                             example: 1
+ *                           name:
+ *                             type: string
+ *                             description: Task status name
+ *                             example: "Sawcut"
+ *                           description:
+ *                             type: string
+ *                             description: Task status description
+ *                             example: "Cutting the damaged pavement section with a saw"
+ *                           startingDate:
+ *                             type: string
+ *                             format: date
+ *                             description: Start date of this status
+ *                             example: "2024-01-15"
+ *                           endingDate:
+ *                             type: string
+ *                             format: date
+ *                             description: End date of this status
+ *                             example: "2024-01-16"
+ *                           observation:
+ *                             type: string
+ *                             description: Additional observations
+ *                             example: "Completed successfully"
+ *                           crewId:
+ *                             type: integer
+ *                             description: Associated crew ID
+ *                             example: 1
+ *                           photoEvidence:
+ *                             type: array
+ *                             description: Array of photo evidence for this task status
+ *                             items:
+ *                               type: object
+ *                               properties:
+ *                                 photoId:
+ *                                   type: integer
+ *                                   description: Photo evidence ID
+ *                                   example: 789
+ *                                 name:
+ *                                   type: string
+ *                                   description: Photo name/title
+ *                                   example: "Before Sawcut"
+ *                                 latitude:
+ *                                   type: number
+ *                                   description: Photo latitude coordinate
+ *                                   example: 41.8781
+ *                                   nullable: true
+ *                                 longitude:
+ *                                   type: number
+ *                                   description: Photo longitude coordinate
+ *                                   example: -87.6298
+ *                                   nullable: true
+ *                                 photo:
+ *                                   type: string
+ *                                   description: Base64 encoded photo or photo data
+ *                                   example: "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQ..."
+ *                                   nullable: true
+ *                                 date:
+ *                                   type: string
+ *                                   format: date-time
+ *                                   description: Photo date and time
+ *                                   example: "2024-01-15T10:30:00Z"
+ *                                   nullable: true
+ *                                 comment:
+ *                                   type: string
+ *                                   description: Photo comment/description
+ *                                   example: "Damage assessment before repair"
+ *                                   nullable: true
+ *                                 photoURL:
+ *                                   type: string
+ *                                   description: URL to the hosted photo
+ *                                   example: "http://localhost:9000/minio/uploads/photo-evidence/1705312200000-photo.jpg"
+ *                                   nullable: true
+ *                                 createdAt:
+ *                                   type: string
+ *                                   format: date-time
+ *                                   description: When the photo was created
+ *                                   example: "2024-01-15T10:30:00Z"
+ *       404:
+ *         description: Ticket not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Ticket not found"
+ *                 ticketCode:
+ *                   type: string
+ *                   example: "TK6514243"
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Error fetching ticket gallery"
+ *                 error:
+ *                   type: string
+ *                   example: "Database connection failed"
+ */
+router.get('/gallery/:ticketCode', TicketsController.getTicketGallery);
+
+/**
+ * @swagger
+ * /tickets/coordinates/{ticketCode}:
+ *   get:
+ *     summary: Get ticket coordinates by ticket code
+ *     tags: [Tickets]
+ *     description: Retrieve latitude and longitude coordinates for all addresses associated with a specific ticket
+ *     parameters:
+ *       - in: path
+ *         name: ticketCode
+ *         schema:
+ *           type: string
+ *         required: true
+ *         description: The ticket code to search for coordinates
+ *         example: "TK6514243"
+ *     responses:
+ *       200:
+ *         description: Ticket coordinates retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Ticket coordinates retrieved successfully"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     ticketId:
+ *                       type: integer
+ *                       description: The ticket ID
+ *                       example: 123
+ *                     ticketCode:
+ *                       type: string
+ *                       description: The ticket code
+ *                       example: "TK6514243"
+ *                     contractNumber:
+ *                       type: string
+ *                       description: The contract number
+ *                       example: "CONTRACT-2024-001"
+ *                     amountToPay:
+ *                       type: number
+ *                       description: The amount to pay for the ticket
+ *                       example: 1500.00
+ *                     ticketType:
+ *                       type: string
+ *                       description: The type of ticket
+ *                       example: "regular"
+ *                     addresses:
+ *                       type: array
+ *                       description: Array of addresses with coordinates for this ticket
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           addressId:
+ *                             type: integer
+ *                             description: Address ID
+ *                             example: 456
+ *                           addressNumber:
+ *                             type: string
+ *                             description: House or building number
+ *                             example: "123"
+ *                           addressCardinal:
+ *                             type: string
+ *                             description: Cardinal direction
+ *                             example: "N"
+ *                           addressStreet:
+ *                             type: string
+ *                             description: Street name
+ *                             example: "Main"
+ *                           addressSuffix:
+ *                             type: string
+ *                             description: Street suffix
+ *                             example: "St"
+ *                           latitude:
+ *                             type: number
+ *                             description: Latitude coordinate
+ *                             example: 41.8781
+ *                             nullable: true
+ *                           longitude:
+ *                             type: number
+ *                             description: Longitude coordinate
+ *                             example: -87.6298
+ *                             nullable: true
+ *                           placeid:
+ *                             type: string
+ *                             description: Google Places ID
+ *                             example: "ChIJ7U0fzrosDogRFQ-eGiz8E3A"
+ *                             nullable: true
+ *                           fullAddress:
+ *                             type: string
+ *                             description: Complete formatted address
+ *                             example: "123 N Main St"
+ *       404:
+ *         description: Ticket not found or no coordinates available
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Ticket not found or no coordinates available"
+ *                 ticketCode:
+ *                   type: string
+ *                   example: "TK6514243"
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Error fetching ticket coordinates"
+ *                 error:
+ *                   type: string
+ *                   example: "Database connection failed"
+ */
+router.get('/coordinates/:ticketCode', TicketsController.getTicketCoordinates);
+
+/**
+ * @swagger
  * /tickets/{ticketId}:
  *   get:
  *     summary: Get a ticket by ID
