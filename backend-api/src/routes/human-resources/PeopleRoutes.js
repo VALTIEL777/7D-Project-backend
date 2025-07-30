@@ -975,6 +975,10 @@ router.put('/:employeeId/quadrant-assignments', PeopleController.updateQuadrantA
  *       500:
  *         description: Server error
  */
+// Specific routes must come before parameterized routes
+router.get('/with-users', PeopleController.getAllPeopleWithUsers);
+router.get('/with-quadrants', PeopleController.getAllPeopleWithQuadrants);
+
 router.get('/:employeeId', PeopleController.getPeopleById);
 
 /**

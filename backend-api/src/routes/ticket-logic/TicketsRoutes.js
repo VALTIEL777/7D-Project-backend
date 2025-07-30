@@ -224,9 +224,12 @@ router.get('/with-issues', TicketsController.getTicketsWithIssues);
  *               comment7d:
  *                 type: string
  *                 description: The 7D comment
- *               PeopleGasComment:
+ *               PartnerComment:
  *                 type: string
- *                 description: The people gas comment
+ *                 description: The partner comment
+ *               PartnerSupervisorComment:
+ *                 type: string
+ *                 description: The partner supervisor comment
  *               contractNumber:
  *                 type: string
  *                 description: The contract number
@@ -1298,7 +1301,9 @@ router.get('/', TicketsController.getAllTickets);
  *                 type: integer
  *               comment7d:
  *                 type: string
- *               PeopleGasComment:
+ *               PartnerComment:
+ *                 type: string
+ *               PartnerSupervisorComment:
  *                 type: string
  *               contractNumber:
  *                 type: string

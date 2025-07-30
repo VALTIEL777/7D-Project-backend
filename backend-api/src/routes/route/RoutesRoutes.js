@@ -284,7 +284,6 @@ router.get('/', RoutesController.getAllActiveRoutes);
  *       500:
  *         description: Server error
  */
-router.get('/all-with-polylines', RoutesController.getAllRoutesWithPolylinesAndAddresses);
 
 /**
  * @swagger
@@ -1347,6 +1346,9 @@ router.get('/test', RoutesController.testRoutesTable);
  *       500:
  *         description: Server error
  */
+// Specific routes must come before parameterized routes
+router.get('/all-with-polylines', RoutesController.getAllRoutesWithPolylinesAndAddresses);
+
 router.get('/:routeId', RoutesController.getRouteById);
 
 /**

@@ -1,10 +1,10 @@
 const db = require('../../config/db');
 
 class Tickets {
-  static async create(incidentId, cuadranteId, contractUnitId, wayfindingId, paymentId, mobilizationId, ticketCode, quantity, daysOutstanding, comment7d, PeopleGasComment, contractNumber, amountToPay, ticketType, createdBy, updatedBy) {
+  static async create(incidentId, cuadranteId, contractUnitId, wayfindingId, paymentId, mobilizationId, ticketCode, quantity, daysOutstanding, comment7d, PartnerComment, PartnerSupervisorComment, contractNumber, amountToPay, ticketType, createdBy, updatedBy) {
     const result = await db.query(
       'INSERT INTO Tickets (incidentId, cuadranteId, contractUnitId, wayfindingId, paymentId, mobilizationId, ticketCode, quantity, daysOutstanding, comment7d, PartnerComment, PartnerSupervisorComment, contractNumber, amountToPay, ticketType, createdBy, updatedBy) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) RETURNING *',
-      [incidentId, cuadranteId, contractUnitId, wayfindingId, paymentId, mobilizationId, ticketCode, quantity, daysOutstanding, comment7d, PeopleGasComment, PeopleGasComment, contractNumber, amountToPay, ticketType, createdBy, updatedBy]
+      [incidentId, cuadranteId, contractUnitId, wayfindingId, paymentId, mobilizationId, ticketCode, quantity, daysOutstanding, comment7d, PartnerComment, PartnerSupervisorComment, contractNumber, amountToPay, ticketType, createdBy, updatedBy]
     );
     return result.rows[0];
   }
@@ -52,10 +52,10 @@ class Tickets {
     return result.rows;
   }
 
-  static async update(ticketId, incidentId, cuadranteId, contractUnitId, wayfindingId, paymentId, mobilizationId, ticketCode, quantity, daysOutstanding, comment7d, PeopleGasComment, contractNumber, amountToPay, ticketType, updatedBy) {
+  static async update(ticketId, incidentId, cuadranteId, contractUnitId, wayfindingId, paymentId, mobilizationId, ticketCode, quantity, daysOutstanding, comment7d, PartnerComment, PartnerSupervisorComment, contractNumber, amountToPay, ticketType, updatedBy) {
     const result = await db.query(
       'UPDATE Tickets SET incidentId = $1, cuadranteId = $2, contractUnitId = $3, wayfindingId = $4, paymentId = $5, mobilizationId = $6, ticketCode = $7, quantity = $8, daysOutstanding = $9, comment7d = $10, PartnerComment = $11, PartnerSupervisorComment = $12, contractNumber = $13, amountToPay = $14, ticketType = $15, updatedBy = $16 WHERE ticketId = $17 AND deletedAt IS NULL RETURNING *',
-      [incidentId, cuadranteId, contractUnitId, wayfindingId, paymentId, mobilizationId, ticketCode, quantity, daysOutstanding, comment7d, PeopleGasComment, PeopleGasComment, contractNumber, amountToPay, ticketType, updatedBy, ticketId]
+      [incidentId, cuadranteId, contractUnitId, wayfindingId, paymentId, mobilizationId, ticketCode, quantity, daysOutstanding, comment7d, PartnerComment, PartnerSupervisorComment, contractNumber, amountToPay, ticketType, updatedBy, ticketId]
     );
     return result.rows[0];
   }

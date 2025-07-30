@@ -1073,6 +1073,7 @@ async function updateTicketWithData(ticketId, finalData, updatedBy) {
       daysOutstanding: finalData.daysOutstanding || currentTicket.daysoutstanding,
       comment7d: finalData.comment7d || currentTicket.comment7d,
       PartnerComment: finalData.partnercomment || currentTicket.partnercomment,
+      PartnerSupervisorComment: finalData.partnersupervisorcomment || currentTicket.partnersupervisorcomment,
       contractNumber: finalData.contractNumber || currentTicket.contractnumber,
       amountToPay: finalData.amountToPay || currentTicket.amounttopay,
       ticketType: finalData.ticketType || currentTicket.tickettype
@@ -1091,6 +1092,7 @@ async function updateTicketWithData(ticketId, finalData, updatedBy) {
       updateData.daysOutstanding,
       updateData.comment7d,
       updateData.PartnerComment,
+      updateData.PartnerSupervisorComment,
       updateData.contractNumber,
       updateData.amountToPay,
       updateData.ticketType,
