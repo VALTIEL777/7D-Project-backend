@@ -4,6 +4,7 @@ const NotificationService = require("../../services/NotificationService");
 const { getMinioClient, generatePublicPresignedUrl } = require('../../config/minio');
 const path = require('path');
 const Tickets = require("../../models/ticket-logic/Tickets");
+const db = require("../../config/db");
 
 const importantColumns = [
   "RESTN_WO_NUM",
@@ -992,15 +993,34 @@ function getFieldType(field) {
 function applyUserDecisions(excelData, databaseData, decisions) {
   const finalData = { ...databaseData };
   
+  // Define vital fields that should not be set to null/empty
+  const vitalFields = [
+    'TASK_WO_NUM',
+    'RESTN_WO_NUM', 
+    'ADDRESS',
+    'SAP_ITEM_NUM'
+  ];
+  
   // Apply decisions directly using the field names from inconsistencies
   for (const [field, choice] of Object.entries(decisions)) {
     if (choice === 'excel') {
       // Use the Excel value for this field
       if (excelData[field] !== undefined) {
+        // Check if this is a vital field and Excel value is null/empty
+        const isVitalField = vitalFields.includes(field);
+        const excelValue = excelData[field];
+        const isExcelValueEmpty = !excelValue || excelValue === '' || excelValue === null;
+        
+        if (isVitalField && isExcelValueEmpty) {
+          // For vital fields, keep database value if Excel value is empty
+          console.log(`Keeping database value for vital field "${field}" because Excel value is empty`);
+          continue; // Skip this field, keep database value
+        }
+        
         // Map Excel field to database field
         const dbField = getDatabaseFieldMapping(field);
         if (dbField) {
-          finalData[dbField] = excelData[field];
+          finalData[dbField] = excelValue;
         } else {
           console.warn(`No database field mapping found for Excel field: ${field}`);
         }
@@ -1361,9 +1381,99 @@ exports.analyzeForStepper = async (req, res) => {
           analysis.summary.new++;
         }
       } else {
-        console.log(`Comparing data for existing ticket`);
-        const inconsistencies = compareTicketData(processedRow, existingTicket);
-        console.log(`Found ${inconsistencies.length} inconsistencies:`, inconsistencies);
+        // Auto-correct comment7d based on permit expiration date for existing tickets
+        let wasAutoCorrected = false;
+        const inconsistencies = [];
+        
+        if (processedRow['Contractor Comments'] && processedRow.EXP_DATE) {
+          // Skip if comment contains "TK - COMPLETED" or any variant
+          if (processedRow['Contractor Comments'].toLowerCase().includes('tk - completed')) {
+            console.log(`Skipping auto-correction for ticket ${existingTicket.ticketId} - ticket is completed`);
+            // Continue with normal processing without auto-correction
+          }
+          // Skip auto-correction for specific status comments - show as inconsistencies for manual review
+          else if (processedRow['Contractor Comments'].toLowerCase().includes('tk - on hold off') ||
+                   processedRow['Contractor Comments'].toLowerCase().includes('tk - on progress') ||
+                   processedRow['Contractor Comments'].toLowerCase().includes('tk - on schedule')) {
+            console.log(`Skipping auto-correction for ticket ${existingTicket.ticketId} - ticket has status comment: "${processedRow['Contractor Comments']}"`);
+            // Continue with normal processing without auto-correction
+          }
+          else {
+            const currentDate = new Date();
+            currentDate.setHours(0, 0, 0, 0);
+            const expirationDate = new Date(processedRow.EXP_DATE);
+            expirationDate.setHours(0, 0, 0, 0);
+            
+            const daysUntilExpiry = Math.ceil((expirationDate - currentDate) / (1000 * 60 * 60 * 24));
+            
+            // If permit is valid (more than 7 days away) but comment says it needs extension
+            if (daysUntilExpiry > 7 && processedRow['Contractor Comments'].toLowerCase().includes('tk - needs permit extension')) {
+              console.log(`Auto-correcting ticket ${existingTicket.ticketId} comment from "${processedRow['Contractor Comments']}" to "TK - LAYOUT" (permit expires in ${daysUntilExpiry} days)`);
+              // Update the processed row to reflect the correction
+              processedRow['Contractor Comments'] = 'TK - LAYOUT';
+              // Only add inconsistency if database value is different
+              if (existingTicket.comment7d !== 'TK - LAYOUT') {
+                inconsistencies.push({
+                  field: 'Contractor Comments',
+                  databaseField: 'comment7d',
+                  excelValue: processedRow['Contractor Comments'],
+                  databaseValue: existingTicket.comment7d,
+                  type: 'text',
+                  autoCorrected: true,
+                  reason: `Auto-corrected: Permit is valid (expires in ${daysUntilExpiry} days)`
+                });
+              }
+            }
+            // If permit is expiring soon (≤ 7 days) but comment doesn't mention it
+            else if (daysUntilExpiry <= 7 && daysUntilExpiry >= 0 && !processedRow['Contractor Comments'].toLowerCase().includes('tk - needs permit extension')) {
+              console.log(`Auto-correcting ticket ${existingTicket.ticketId} comment to "TK - NEEDS PERMIT EXTENSION" (permit expires in ${daysUntilExpiry} days)`);
+              // Update the processed row to reflect the correction
+              processedRow['Contractor Comments'] = 'TK - NEEDS PERMIT EXTENSION';
+              // Only add inconsistency if database value is different
+              if (existingTicket.comment7d !== 'TK - NEEDS PERMIT EXTENSION') {
+                inconsistencies.push({
+                  field: 'Contractor Comments',
+                  databaseField: 'comment7d',
+                  excelValue: processedRow['Contractor Comments'],
+                  databaseValue: existingTicket.comment7d,
+                  type: 'text',
+                  autoCorrected: true,
+                  reason: `Auto-corrected: Permit expires in ${daysUntilExpiry} days`
+                });
+              }
+            }
+            // NEW: If database has "TK - NEEDS PERMIT EXTENSION" but permit is valid, auto-update database
+            else if (daysUntilExpiry > 7 && existingTicket.comment7d && existingTicket.comment7d.toLowerCase().includes('tk - needs permit extension')) {
+              // Skip auto-correction for specific status comments in database
+              if (existingTicket.comment7d.toLowerCase().includes('tk - on hold off') ||
+                  existingTicket.comment7d.toLowerCase().includes('tk - on progress') ||
+                  existingTicket.comment7d.toLowerCase().includes('tk - on schedule')) {
+                console.log(`Skipping database auto-correction for ticket ${existingTicket.ticketId} - ticket has status comment: "${existingTicket.comment7d}"`);
+              } else {
+                console.log(`Auto-updating database for ticket ${existingTicket.ticketId} from "${existingTicket.comment7d}" to "TK - LAYOUT" (permit expires in ${daysUntilExpiry} days)`);
+                // Update the database directly
+                await db.query(
+                  'UPDATE Tickets SET comment7d = $1, updatedBy = $2 WHERE ticketId = $3;',
+                  ['TK - LAYOUT', 1, existingTicket.ticketId] // Using 1 as default updatedBy
+                );
+                // Update the existingTicket object to reflect the change
+                existingTicket.comment7d = 'TK - LAYOUT';
+                wasAutoCorrected = true;
+                console.log(`Database updated for ticket ${existingTicket.ticketId}`);
+              }
+            }
+          }
+        }
+        
+        // Only compare data if we haven't auto-corrected the database
+        if (!wasAutoCorrected) {
+          console.log(`Comparing data for existing ticket`);
+          const dataInconsistencies = compareTicketData(processedRow, existingTicket);
+          console.log(`Found ${dataInconsistencies.length} inconsistencies:`, dataInconsistencies);
+          inconsistencies.push(...dataInconsistencies);
+        } else {
+          console.log(`Skipping data comparison for auto-corrected ticket`);
+        }
         
         if (inconsistencies.length > 0) {
           console.log(`Adding to inconsistentTickets`);
