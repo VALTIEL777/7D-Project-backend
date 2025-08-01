@@ -2,6 +2,7 @@ const RouteOptimizationService = require('../../services/RouteOptimizationServic
 const Tickets = require('../../models/ticket-logic/Tickets');
 const Crews = require('../../models/human-resources/Crews');
 const RouteTickets = require('../../models/route/RouteTickets');
+const Routes = require('../../models/route/Routes');
 
 const RouteOptimizationController = {
   /**
@@ -488,6 +489,15 @@ const RouteOptimizationController = {
 
       console.log(`Completing route ${routeId}`);
 
+      // Get route information to determine type
+      const route = await Routes.findById(parseInt(routeId));
+      if (!route) {
+        return res.status(404).json({
+          success: false,
+          error: `Route ${routeId} not found`
+        });
+      }
+
       // Get all tickets in the route
       const routeTickets = await RouteTickets.findByRouteId(parseInt(routeId));
       
@@ -499,10 +509,21 @@ const RouteOptimizationController = {
       }
 
       const ticketIds = routeTickets.map(rt => rt.ticketid);
-      console.log(`Found ${ticketIds.length} tickets in route ${routeId}`);
+      console.log(`Found ${ticketIds.length} tickets in route ${routeId} of type ${route.type}`);
 
-      // Update all ticket statuses to set endingDate to current timestamp
-      const result = await RouteOptimizationService.completeRoute(parseInt(routeId), ticketIds, updatedBy);
+      let result;
+      
+      // Use specific completion method based on route type
+      if (route.type === 'CONCRETE') {
+        result = await RouteOptimizationService.completeConcreteRoute(parseInt(routeId), ticketIds, updatedBy);
+      } else if (route.type === 'SPOTTING') {
+        result = await RouteOptimizationService.completeSpottingRoute(parseInt(routeId), ticketIds, updatedBy);
+      } else if (route.type === 'ASPHALT') {
+        result = await RouteOptimizationService.completeAsphaltRoute(parseInt(routeId), ticketIds, updatedBy);
+      } else {
+        // For other route types, use the generic completion method
+        result = await RouteOptimizationService.completeRoute(parseInt(routeId), ticketIds, updatedBy);
+      }
 
       res.status(200).json({
         success: true,
@@ -551,9 +572,9 @@ const RouteOptimizationController = {
   },
 
   /**
-   * Cancel a route by removing the endingDate from all related ticket statuses
+   * Cancel a route by updating comment7d only (preserves endingDate)
    * @route POST /api/route-optimization/route/{routeId}/cancel
-   * @desc Cancel a route by removing endingDate from all ticket statuses for tickets in the route
+   * @desc Cancel a route by updating comment7d to 'TK - LAYOUT' while preserving endingDate
    * @access Private
    */
   async cancelRoute(req, res) {
@@ -561,7 +582,7 @@ const RouteOptimizationController = {
       const { routeId } = req.params;
       const updatedBy = req.user?.id || 1;
 
-      console.log(`Canceling route ${routeId}`);
+      console.log(`Canceling route ${routeId} (comment-only)`);
 
       // Get all tickets in the route
       const routeTickets = await RouteTickets.findByRouteId(parseInt(routeId));
@@ -576,7 +597,7 @@ const RouteOptimizationController = {
       const ticketIds = routeTickets.map(rt => rt.ticketid);
       console.log(`Found ${ticketIds.length} tickets in route ${routeId}`);
 
-      // Update all ticket statuses to remove endingDate (set to NULL)
+      // Cancel the route (comment-only)
       const result = await RouteOptimizationService.cancelRoute(parseInt(routeId), ticketIds, updatedBy);
 
       res.status(200).json({

@@ -1,5 +1,8 @@
 const express = require('express');
 const PaymentsController = require('../../controllers/payments/PaymentsController');
+const PaymentsExcelController = require('../../controllers/payments/PaymentsExcelController');
+const multer = require('multer');
+const upload = multer({ storage: multer.memoryStorage() });
 
 const router = express.Router();
 
@@ -292,5 +295,9 @@ router.delete('/:checkId', PaymentsController.deletePayment);
  *         description: Server error
  */
 router.get('/info/payment-invoice-ticket', PaymentsController.getPaymentInvoiceTicketInfo);
+
+// Excel analysis and upload endpoints for payments - DEPRECATED: Use /api/unified/excel/ instead
+// router.post('/excel/analyze', upload.single('file'), PaymentsExcelController.analyzeExcel);
+// router.post('/excel/upload', upload.single('file'), PaymentsExcelController.uploadExcel);
 
 module.exports = router; 

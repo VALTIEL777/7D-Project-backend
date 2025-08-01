@@ -251,9 +251,9 @@ router.put('/:invoiceId', InvoicesController.updateInvoice);
  */
 router.delete('/:invoiceId', InvoicesController.deleteInvoice);
 
-// Excel analysis and upload endpoints
-router.post('/excel/analyze', upload.single('file'), InvoicesExcelController.analyzeExcel);
-router.post('/excel/upload', upload.single('file'), InvoicesExcelController.uploadExcel);
+// Excel analysis and upload endpoints - DEPRECATED: Use /api/unified/excel/ instead
+// router.post('/excel/analyze', upload.single('file'), InvoicesExcelController.analyzeExcel);
+// router.post('/excel/upload', upload.single('file'), InvoicesExcelController.uploadExcel);
 
 /**
  * @swagger

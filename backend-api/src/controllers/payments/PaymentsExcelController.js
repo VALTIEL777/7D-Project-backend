@@ -3,18 +3,14 @@ const path = require('path');
 const { getMinioClient } = require('../../config/minio');
 const Tickets = require('../../models/ticket-logic/Tickets');
 const Invoices = require('../../models/payments/Invoices');
-const ContractUnits = require('../../models/ticket-logic/ContractUnits');
+const Payments = require('../../models/payments/Payments');
 
-// Required columns and their mapping
+// Required columns and their mapping for payment Excel files
 const COLUMN_MAP = {
-  'Contract Number': 'contractNumber',
-  'SIP Number': 'invoiceNumber',
-  'SIP ST Description': 'status',
-  'SIP Creation Date': 'invoiceDateRequested',
-  'Planned': 'ticketCode',
-  'Payline Item Code': 'paylineItemCode',
-  'Actual Quantity': 'actualQuantity',
-  'Item Unit Price': 'itemUnitPrice',
+  'Amount': 'amount',
+  'Payment Reference': 'paymentReference',
+  'LineItem.InvoiceNumber': 'lineItemInvoiceNumber',
+  'Date': 'date'
 };
 
 function normalizeHeader(header) {
@@ -127,120 +123,88 @@ function parseDateValue(value) {
   return null;
 }
 
-// Process a single row of invoice data
-async function processInvoiceRow(row, indexes, headerRowIndex, rowIndex, fileUrl) {
-  console.log(`=== Processing Invoice Row ${rowIndex + 1} ===`);
+// Process a single row of payment data
+async function processPaymentRow(row, indexes, headerRowIndex, rowIndex, fileUrl) {
+  console.log(`=== Processing Payment Row ${rowIndex + 1} ===`);
   
   try {
     // Extract data from row using indexes
-    const ticketCode = indexes['ticketCode'] !== undefined ? row[indexes['ticketCode']] : undefined;
-    const contractNumber = indexes['contractNumber'] !== undefined ? row[indexes['contractNumber']] : undefined;
-    const invoiceNumber = indexes['invoiceNumber'] !== undefined ? row[indexes['invoiceNumber']] : undefined;
-    const status = indexes['status'] !== undefined ? row[indexes['status']] : undefined;
-    const invoiceDateRequested = indexes['invoiceDateRequested'] !== undefined ? 
-      parseDateValue(row[indexes['invoiceDateRequested']]) : undefined;
-    const actualQuantity = indexes['actualQuantity'] !== undefined ? 
-      parseFloat(row[indexes['actualQuantity']] || 0) : 0;
-    const itemUnitPrice = indexes['itemUnitPrice'] !== undefined ? 
-      parseFloat(row[indexes['itemUnitPrice']] || 0) : 0;
-    const paylineCode = indexes['paylineItemCode'] !== undefined ? row[indexes['paylineItemCode']] : undefined;
+    const amount = indexes['amount'] !== undefined ? parseFloat(row[indexes['amount']] || 0) : 0;
+    const paymentReference = indexes['paymentReference'] !== undefined ? row[indexes['paymentReference']] : undefined;
+    const lineItemInvoiceNumber = indexes['lineItemInvoiceNumber'] !== undefined ? row[indexes['lineItemInvoiceNumber']] : undefined;
+    const date = indexes['date'] !== undefined ? parseDateValue(row[indexes['date']]) : undefined;
     
     console.log(`Row data extracted:`, {
-      ticketCode,
-      contractNumber,
-      invoiceNumber,
-      status,
-      invoiceDateRequested,
-      actualQuantity,
-      itemUnitPrice,
-      paylineCode
+      amount,
+      paymentReference,
+      lineItemInvoiceNumber,
+      date
     });
     
     // Validate required fields
-    if (!ticketCode) {
-      throw new Error('Ticket code is required');
+    if (!lineItemInvoiceNumber) {
+      throw new Error('LineItem.InvoiceNumber is required');
     }
     
-    // Step 1: Find ticket
-    console.log(`Step 1: Finding ticket with code: ${ticketCode}`);
-    const ticket = await Tickets.findByCode(ticketCode);
+    if (!paymentReference) {
+      throw new Error('Payment Reference is required');
+    }
+    
+    if (!amount || amount <= 0) {
+      throw new Error('Amount must be greater than 0');
+    }
+    
+    // Step 1: Find invoice by invoice number
+    console.log(`Step 1: Finding invoice with number: ${lineItemInvoiceNumber}`);
+    const invoice = await Invoices.findByInvoiceNumber(lineItemInvoiceNumber);
+    if (!invoice) {
+      throw new Error(`Invoice not found with number: ${lineItemInvoiceNumber}`);
+    }
+    console.log(`Step 1 - Found invoice:`, invoice);
+    
+    // Step 2: Get ticket from invoice
+    console.log(`Step 2: Getting ticket for invoice`);
+    const ticket = await Tickets.findById(invoice.ticketid);
     if (!ticket) {
-      throw new Error(`Ticket not found with code: ${ticketCode}`);
+      throw new Error(`Ticket not found for invoice: ${lineItemInvoiceNumber}`);
     }
-    console.log(`Step 1 - Found ticket:`, ticket);
-    console.log(`Step 1 - Found ticket ID: ${ticket.ticketid}`);
-    console.log(`Step 1 - Found ticket ID (camelCase): ${ticket.ticketId}`);
+    console.log(`Step 2 - Found ticket:`, ticket);
     
-    // Step 2: Update contract number if provided
-    if (contractNumber) {
-      console.log(`Step 2: Updating contract number to: ${contractNumber}`);
-      await Tickets.updateContractNumber(ticket.ticketid, contractNumber);
-      console.log(`Step 2 - Contract number updated`);
-    }
+    // Step 3: Create payment record
+    console.log(`Step 3: Creating payment record`);
+    const payment = await Payments.create(
+      paymentReference, 
+      date, 
+      amount, 
+      'Completed', // Default status
+      fileUrl, 
+      ticket.createdby || 1, 
+      ticket.updatedby || 1
+    );
+    console.log(`Step 3 - Payment created:`, payment);
     
-    // Step 3: Calculate amount requested
-    const amountRequested = actualQuantity * itemUnitPrice;
-    console.log(`Step 3: Calculated amount requested: ${actualQuantity} * ${itemUnitPrice} = ${amountRequested}`);
+    // Step 4: Update ticket with paymentId
+    console.log(`Step 4: Updating ticket with paymentId`);
+    await Tickets.updatePaymentId(ticket.ticketid, payment.checkid);
+    console.log(`Step 4 - Ticket updated with paymentId: ${payment.checkid}`);
     
-    // Step 4: Check Payline Item Code consistency
-    let paylineConsistent = true;
-    if (paylineCode) {
-      console.log(`Step 4: Checking payline item code: ${paylineCode}`);
-      const contractUnit = await ContractUnits.findByItemCode(paylineCode);
-      if (!contractUnit) {
-        paylineConsistent = false;
-        console.log(`Step 4 - Payline item code not found in ContractUnits`);
-      } else {
-        console.log(`Step 4 - Payline item code found in ContractUnits`);
-      }
-    }
-    
-    // Step 5: Create or update invoice
-    console.log(`Step 5: Processing invoice for ticket ${ticket.ticketid}`);
-    let invoice = await Invoices.findByTicketId(ticket.ticketid);
-    
-    if (invoice) {
-      console.log(`Step 5 - Updating existing invoice ID: ${invoice.invoiceid}`);
-      await Invoices.update(
-        invoice.invoiceid, 
-        ticket.ticketid, 
-        invoiceNumber, 
-        invoiceDateRequested, 
-        amountRequested, 
-        status, 
-        fileUrl, 
-        ticket.updatedby
-      );
-    } else {
-      console.log(`Step 5 - Creating new invoice`);
-      invoice = await Invoices.create(
-        ticket.ticketid, 
-        invoiceNumber, 
-        invoiceDateRequested, 
-        amountRequested, 
-        status, 
-        fileUrl, 
-        ticket.createdby, 
-        ticket.updatedby
-      );
-    }
-    
-    console.log(`=== Invoice Row Processing Complete ===`);
+    console.log(`=== Payment Row Processing Complete ===`);
     
     return {
       success: true,
       row: headerRowIndex + 1 + rowIndex,
-      ticketCode,
+      paymentReference,
+      lineItemInvoiceNumber,
+      amount,
+      date,
       ticketId: ticket.ticketid,
-      invoiceId: invoice.invoiceid,
-      invoiceNumber,
-      amountRequested,
-      paylineConsistent,
-      message: 'Invoice processed successfully'
+      ticketCode: ticket.ticketcode,
+      paymentId: payment.checkid,
+      message: 'Payment processed successfully'
     };
     
   } catch (error) {
-    console.error(`=== Error Processing Invoice Row ${rowIndex + 1} ===`);
+    console.error(`=== Error Processing Payment Row ${rowIndex + 1} ===`);
     console.error(`Error details:`, error);
     console.error(`Error message:`, error.message);
     console.error(`Row data:`, row);
@@ -248,52 +212,25 @@ async function processInvoiceRow(row, indexes, headerRowIndex, rowIndex, fileUrl
     return {
       success: false,
       row: headerRowIndex + 1 + rowIndex,
-      ticketCode: indexes['ticketCode'] !== undefined ? row[indexes['ticketCode']] : 'Unknown',
+      paymentReference: indexes['paymentReference'] !== undefined ? row[indexes['paymentReference']] : 'Unknown',
+      lineItemInvoiceNumber: indexes['lineItemInvoiceNumber'] !== undefined ? row[indexes['lineItemInvoiceNumber']] : 'Unknown',
       error: error.message,
       data: row
     };
   }
 }
 
-// New endpoint to get all available payline item codes
-exports.getAvailableItemCodes = async (req, res) => {
-  try {
-    console.log('=== Getting Available Item Codes ===');
-    
-    const itemCodes = await ContractUnits.getAllItemCodes();
-    
-    console.log(`Found ${itemCodes.length} available item codes`);
-    
-    res.json({
-      success: true,
-      itemCodes: itemCodes,
-      count: itemCodes.length
-    });
-  } catch (err) {
-    console.error('=== Get Available Item Codes Error ===');
-    console.error('Error details:', err);
-    console.error('Error message:', err.message);
-    res.status(500).json({ 
-      error: 'Failed to get available item codes', 
-      details: err.message 
-    });
-  }
-};
-
 // Columns of interest for preview
 const PREVIEW_COLUMNS = [
-  { excel: 'Contract Number', key: 'contractNumber' },
-  { excel: 'SIP Number', key: 'invoiceNumber' },
-  { excel: 'SIP ST Description', key: 'status' },
-  { excel: 'SIP Creation Date', key: 'invoiceDateRequested', isDate: true },
-  { excel: 'Planned', key: 'ticketCode' },
-  { excel: 'Cost Object', key: 'costObject' },
-  { excel: 'Payline Item Code', key: 'paylineItemCode' }
+  { excel: 'Amount', key: 'amount' },
+  { excel: 'Payment Reference', key: 'paymentReference' },
+  { excel: 'LineItem.InvoiceNumber', key: 'lineItemInvoiceNumber' },
+  { excel: 'Date', key: 'date', isDate: true }
 ];
 
 exports.analyzeExcel = async (req, res) => {
   try {
-    console.log('=== Starting Invoices Excel Analysis ===');
+    console.log('=== Starting Payments Excel Analysis ===');
     console.log('File received:', req.file ? 'Yes' : 'No');
     console.log('File size:', req.file ? req.file.size : 'No file');
     
@@ -343,43 +280,37 @@ exports.analyzeExcel = async (req, res) => {
       return obj;
     });
     
-    // Check Payline Item Code and Ticket consistency for all data rows
-    console.log('Checking payline item code and ticket consistency...');
+    // Check invoice consistency for all data rows
+    console.log('Checking invoice consistency...');
     const inconsistencies = [];
     const consistentItems = [];
-    const missingItemCodes = new Set(); // Use Set to collect unique missing item codes
-    const missingTickets = new Set(); // Use Set to collect unique missing tickets
+    const missingInvoices = new Set(); // Use Set to collect unique missing invoices
     
     for (let i = 0; i < dataRows.length; i++) {
       const row = dataRows[i];
       const rowNumber = bestHeader.rowIdx + 1 + i;
       
-      // Extract ticket code and payline code for this row
-      const ticketIdx = indexes['ticketCode'];
-      const paylineIdx = indexes['paylineItemCode'];
-      const ticketCode = ticketIdx !== undefined ? row[ticketIdx] : undefined;
-      const paylineCode = paylineIdx !== undefined ? row[paylineIdx] : undefined;
+      // Extract invoice number for this row
+      const invoiceIdx = indexes['lineItemInvoiceNumber'];
+      const lineItemInvoiceNumber = invoiceIdx !== undefined ? row[invoiceIdx] : undefined;
       
       let rowInconsistencies = [];
       let isConsistent = true;
       
-      // Check payline item codes
-      if (paylineCode) {
-        const exists = await ContractUnits.findByItemCode(paylineCode);
-        if (!exists) {
-          rowInconsistencies.push({ type: 'payline', code: paylineCode, message: 'Payline item code not found' });
-          missingItemCodes.add(paylineCode);
+      // Check if invoice exists
+      if (lineItemInvoiceNumber) {
+        const invoice = await Invoices.findByInvoiceNumber(lineItemInvoiceNumber);
+        if (!invoice) {
+          rowInconsistencies.push({ type: 'invoice', code: lineItemInvoiceNumber, message: 'Invoice not found' });
+          missingInvoices.add(lineItemInvoiceNumber);
           isConsistent = false;
-        }
-      }
-      
-      // Check tickets
-      if (ticketCode) {
-        const ticket = await Tickets.findByCode(ticketCode);
-        if (!ticket) {
-          rowInconsistencies.push({ type: 'ticket', code: ticketCode, message: 'Ticket not found' });
-          missingTickets.add(ticketCode);
-          isConsistent = false;
+        } else {
+          // Check if ticket exists for this invoice
+          const ticket = await Tickets.findById(invoice.ticketid);
+          if (!ticket) {
+            rowInconsistencies.push({ type: 'ticket', code: lineItemInvoiceNumber, message: 'Ticket not found for invoice' });
+            isConsistent = false;
+          }
         }
       }
       
@@ -387,29 +318,25 @@ exports.analyzeExcel = async (req, res) => {
       if (isConsistent) {
         consistentItems.push({
           row: rowNumber,
-          ticketCode,
-          paylineCode,
+          lineItemInvoiceNumber,
           message: 'All checks passed'
         });
       } else {
         inconsistencies.push({
           row: rowNumber,
-          ticketCode,
-          paylineCode,
+          lineItemInvoiceNumber,
           inconsistencies: rowInconsistencies
         });
       }
     }
     
     // Convert Sets to Arrays and sort for consistent output
-    const uniqueMissingItemCodes = Array.from(missingItemCodes).sort();
-    const uniqueMissingTickets = Array.from(missingTickets).sort();
+    const uniqueMissingInvoices = Array.from(missingInvoices).sort();
     
     console.log('Analysis completed successfully');
     console.log(`Found ${consistentItems.length} consistent items`);
     console.log(`Found ${inconsistencies.length} inconsistent items`);
-    console.log(`Found ${uniqueMissingItemCodes.length} unique missing item codes:`, uniqueMissingItemCodes);
-    console.log(`Found ${uniqueMissingTickets.length} unique missing tickets:`, uniqueMissingTickets);
+    console.log(`Found ${uniqueMissingInvoices.length} unique missing invoices:`, uniqueMissingInvoices);
     
     res.json({ 
       headerRow: bestHeader.rowIdx, 
@@ -422,20 +349,17 @@ exports.analyzeExcel = async (req, res) => {
       totalDataRows: dataRows.length,
       consistentCount: consistentItems.length,
       inconsistentCount: inconsistencies.length,
-      missingItemCodes: uniqueMissingItemCodes,
-      missingItemCodesCount: uniqueMissingItemCodes.length,
-      missingTickets: uniqueMissingTickets,
-      missingTicketsCount: uniqueMissingTickets.length,
+      missingInvoices: uniqueMissingInvoices,
+      missingInvoicesCount: uniqueMissingInvoices.length,
       summary: {
         total: dataRows.length,
         consistent: consistentItems.length,
         inconsistent: inconsistencies.length,
-        missingItemCodes: uniqueMissingItemCodes.length,
-        missingTickets: uniqueMissingTickets.length
+        missingInvoices: uniqueMissingInvoices.length
       }
     });
   } catch (err) {
-    console.error('=== Invoices Excel Analysis Error ===');
+    console.error('=== Payments Excel Analysis Error ===');
     console.error('Error details:', err);
     console.error('Error message:', err.message);
     console.error('Error stack:', err.stack);
@@ -445,7 +369,7 @@ exports.analyzeExcel = async (req, res) => {
 
 exports.uploadExcel = async (req, res) => {
   try {
-    console.log('=== Starting Invoices Excel Upload ===');
+    console.log('=== Starting Payments Excel Upload ===');
     console.log('File received:', req.file ? 'Yes' : 'No');
     console.log('File size:', req.file ? req.file.size : 'No file');
     
@@ -456,8 +380,8 @@ exports.uploadExcel = async (req, res) => {
     // Step 1: Save file to MinIO
     console.log('Step 1: Saving file to MinIO...');
     const bucket = 'uploads';
-    const folder = 'invoices/uploaded';
-    const originalName = req.file.originalname || 'invoices-upload.xlsx';
+    const folder = 'payments/uploaded';
+    const originalName = req.file.originalname || 'payments-upload.xlsx';
     const objectName = `${folder}/${Date.now()}_${originalName}`;
     
     // Ensure bucket exists
@@ -494,48 +418,48 @@ exports.uploadExcel = async (req, res) => {
     
     console.log(`Step 3 - Found ${dataRows.length} data rows to process`);
     
-    // Step 4: Collect missing item codes first (still block on these)
-    console.log('Step 4: Collecting missing item codes...');
-    const missingItemCodes = new Set();
-    const rowsWithMissingCodes = [];
+    // Step 4: Collect missing invoices first (block on these)
+    console.log('Step 4: Collecting missing invoices...');
+    const missingInvoices = new Set();
+    const rowsWithMissingInvoices = [];
     
     for (let i = 0; i < dataRows.length; i++) {
       const row = dataRows[i];
       
-      // Check for missing payline item codes
-      const paylineIdx = indexes['paylineItemCode'];
-      const paylineCode = paylineIdx !== undefined ? row[paylineIdx] : undefined;
-      if (paylineCode) {
-        const exists = await ContractUnits.findByItemCode(paylineCode);
+      // Check for missing invoices
+      const invoiceIdx = indexes['lineItemInvoiceNumber'];
+      const lineItemInvoiceNumber = invoiceIdx !== undefined ? row[invoiceIdx] : undefined;
+      if (lineItemInvoiceNumber) {
+        const exists = await Invoices.findByInvoiceNumber(lineItemInvoiceNumber);
         if (!exists) {
-          missingItemCodes.add(paylineCode);
-          rowsWithMissingCodes.push({ row: bestHeader.rowIdx + 1 + i, paylineCode });
+          missingInvoices.add(lineItemInvoiceNumber);
+          rowsWithMissingInvoices.push({ row: bestHeader.rowIdx + 1 + i, lineItemInvoiceNumber });
         }
       }
     }
     
-    const uniqueMissingItemCodes = Array.from(missingItemCodes).sort();
+    const uniqueMissingInvoices = Array.from(missingInvoices).sort();
     
-    // If there are missing item codes, return error with details
-    if (uniqueMissingItemCodes.length > 0) {
-      console.log(`Step 4 - Found ${uniqueMissingItemCodes.length} missing item codes:`, uniqueMissingItemCodes);
+    // If there are missing invoices, return error with details
+    if (uniqueMissingInvoices.length > 0) {
+      console.log(`Step 4 - Found ${uniqueMissingInvoices.length} missing invoices:`, uniqueMissingInvoices);
       return res.status(400).json({
-        error: 'Missing Payline Item Codes',
-        message: `The following ${uniqueMissingItemCodes.length} payline item codes are not found in the system:`,
-        missingItemCodes: uniqueMissingItemCodes,
-        missingItemCodesCount: uniqueMissingItemCodes.length,
-        rowsWithMissingCodes: rowsWithMissingCodes,
+        error: 'Missing Invoices',
+        message: `The following ${uniqueMissingInvoices.length} invoices are not found in the system:`,
+        missingInvoices: uniqueMissingInvoices,
+        missingInvoicesCount: uniqueMissingInvoices.length,
+        rowsWithMissingInvoices: rowsWithMissingInvoices,
         totalRowsChecked: dataRows.length,
         fileUrl: fileUrl
       });
     }
     
-    // Step 5: Process each row (only if no missing item codes)
+    // Step 5: Process each row (only if no missing invoices)
     console.log('Step 5: Processing individual rows...');
     const results = [];
     for (let i = 0; i < dataRows.length; i++) {
       const row = dataRows[i];
-      const result = await processInvoiceRow(row, indexes, bestHeader.rowIdx, i, fileUrl);
+      const result = await processPaymentRow(row, indexes, bestHeader.rowIdx, i, fileUrl);
       results.push(result);
     }
     
@@ -543,37 +467,37 @@ exports.uploadExcel = async (req, res) => {
     const successful = results.filter(r => r.success).length;
     const failed = results.filter(r => !r.success).length;
     
-    // Count missing tickets from failed results
-    const missingTickets = new Set();
-    const rowsWithMissingTickets = [];
+    // Count missing invoices from failed results
+    const missingInvoicesFromFailed = new Set();
+    const rowsWithMissingInvoicesFromFailed = [];
     const processingErrors = [];
     
     results.forEach(result => {
       if (!result.success) {
-        if (result.error && result.error.includes('Ticket not found')) {
-          const ticketCode = result.ticketCode;
-          if (ticketCode && ticketCode !== 'Unknown') {
-            missingTickets.add(ticketCode);
-            rowsWithMissingTickets.push({ row: result.row, ticketCode });
+        if (result.error && result.error.includes('Invoice not found')) {
+          const lineItemInvoiceNumber = result.lineItemInvoiceNumber;
+          if (lineItemInvoiceNumber && lineItemInvoiceNumber !== 'Unknown') {
+            missingInvoicesFromFailed.add(lineItemInvoiceNumber);
+            rowsWithMissingInvoicesFromFailed.push({ row: result.row, lineItemInvoiceNumber });
           }
         } else {
           // Other processing errors
           processingErrors.push({
             row: result.row,
-            ticketCode: result.ticketCode,
+            lineItemInvoiceNumber: result.lineItemInvoiceNumber,
             error: result.error
           });
         }
       }
     });
     
-    const uniqueMissingTickets = Array.from(missingTickets).sort();
+    const uniqueMissingInvoicesFromFailed = Array.from(missingInvoicesFromFailed).sort();
     
-    console.log(`=== Invoices Excel Upload Complete ===`);
+    console.log(`=== Payments Excel Upload Complete ===`);
     console.log(`Total rows processed: ${results.length}`);
     console.log(`Successful: ${successful}`);
     console.log(`Failed: ${failed}`);
-    console.log(`Missing tickets: ${uniqueMissingTickets.length}`);
+    console.log(`Missing invoices: ${uniqueMissingInvoicesFromFailed.length}`);
     console.log(`Processing errors: ${processingErrors.length}`);
     
     res.json({ 
@@ -582,21 +506,21 @@ exports.uploadExcel = async (req, res) => {
       totalDataRows: dataRows.length,
       processedRows: successful,
       skippedRows: failed,
-      missingTickets: uniqueMissingTickets,
-      missingTicketsCount: uniqueMissingTickets.length,
-      rowsWithMissingTickets: rowsWithMissingTickets,
+      missingInvoices: uniqueMissingInvoicesFromFailed,
+      missingInvoicesCount: uniqueMissingInvoicesFromFailed.length,
+      rowsWithMissingInvoices: rowsWithMissingInvoicesFromFailed,
       processingErrors: processingErrors,
       summary: {
         total: results.length,
         successful,
         failed,
-        missingTickets: uniqueMissingTickets.length,
+        missingInvoices: uniqueMissingInvoicesFromFailed.length,
         processingErrors: processingErrors.length,
         successRate: results.length > 0 ? Math.round((successful / results.length) * 100) : 0
       }
     });
   } catch (err) {
-    console.error('=== Invoices Excel Upload Error ===');
+    console.error('=== Payments Excel Upload Error ===');
     console.error('Error details:', err);
     console.error('Error message:', err.message);
     console.error('Error stack:', err.stack);

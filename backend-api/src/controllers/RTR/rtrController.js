@@ -927,12 +927,23 @@ function compareTicketData(excelData, databaseTicket) {
     'TASK_WO_NUM': 'ticketcode',  // Compare TASK_WO_NUM with database ticketcode
     'PGL ComD:Wments': 'partnercomment',  // PGL comments go to partnerComment field
     'Contractor Comments': 'comment7d',   // Contractor comments go to comment7d field
-    'NOTES2_RES': 'partnersupervisorcomment'
+    'NOTES2_RES': 'partnersupervisorcomment'  // NOTES2_RES goes to PartnerSupervisorComment field
   };
 
   for (const [excelField, dbField] of Object.entries(fieldMappings)) {
     const excelValue = excelData[excelField];
     const dbValue = databaseTicket[dbField];
+    
+    // Debug logging for NOTES2_RES field
+    if (excelField === 'NOTES2_RES') {
+      console.log(`=== DEBUG NOTES2_RES ===`);
+      console.log(`Excel field: ${excelField}`);
+      console.log(`Database field: ${dbField}`);
+      console.log(`Excel value: "${excelValue}"`);
+      console.log(`Database value: "${dbValue}"`);
+      console.log(`Available database fields:`, Object.keys(databaseTicket));
+      console.log(`========================`);
+    }
     
     // Skip if both values are null/undefined/empty
     if ((!excelValue || excelValue === '') && (!dbValue || dbValue === '')) continue;
@@ -1049,7 +1060,10 @@ function getDatabaseFieldMapping(excelField) {
     'SQ_MI': 'quantity',
     'Earliest_Rpt_Dt': 'earliestRptDate',
     'ADDRESS': 'address',
-    'SAP_ITEM_NUM': 'sapItemNum'
+    'SAP_ITEM_NUM': 'sapItemNum',
+    'AGENCY_NO': 'agencyNo',
+    'START_DATE': 'startDate',
+    'EXP_DATE': 'expDate'
   };
   
   return fieldMappings[excelField] || null;
@@ -1065,7 +1079,10 @@ function getExcelFieldMapping(dbField) {
     'quantity': 'SQ_MI',
     'earliestRptDate': 'Earliest_Rpt_Dt',
     'address': 'ADDRESS',
-    'sapItemNum': 'SAP_ITEM_NUM'
+    'sapItemNum': 'SAP_ITEM_NUM',
+    'agencyNo': 'AGENCY_NO',
+    'startDate': 'START_DATE',
+    'expDate': 'EXP_DATE'
   };
   
   return reverseMappings[dbField] || null;
@@ -1118,6 +1135,34 @@ async function updateTicketWithData(ticketId, finalData, updatedBy) {
       updateData.ticketType,
       updatedBy
     );
+
+    // Handle permit updates for existing tickets
+    if (finalData.agencyNo && finalData.startDate && finalData.expDate) {
+      try {
+        console.log(`Updating permit for existing ticket ${ticketId}: AGENCY_NO=${finalData.agencyNo}, START_DATE=${finalData.startDate}, EXP_DATE=${finalData.expDate}`);
+        
+        // Determine permit status based on expiration date
+        const permitStatus = RTR.determinePermitStatus(finalData.expDate);
+        
+        // Update or create permit for this ticket
+        const permitId = await RTR.findOrCreatePermit(
+          finalData.agencyNo,
+          finalData.startDate,
+          finalData.expDate,
+          permitStatus,
+          updatedBy,
+          updatedBy
+        );
+        
+        // Ensure the ticket is associated with this permit
+        await RTR.createPermitedTicket(permitId, ticketId, updatedBy, updatedBy);
+        
+        console.log(`Successfully updated permit ${permitId} for ticket ${ticketId} with status: ${permitStatus}`);
+      } catch (permitError) {
+        console.error(`Error updating permit for ticket ${ticketId}:`, permitError);
+        // Don't fail the entire operation if permit update fails
+      }
+    }
 
   return {
     ticketId: ticketId,
@@ -1349,6 +1394,44 @@ exports.analyzeForStepper = async (req, res) => {
           ticketId: existingTicket.ticketid,
           ticketCode: existingTicket.ticketcode
         });
+        
+        // Get permit information for existing ticket
+        try {
+          const permitRes = await db.query(`
+            SELECT 
+              p.PermitId,
+              p.permitNumber,
+              p.startDate,
+              p.expireDate,
+              p.status
+            FROM Permits p
+            INNER JOIN PermitedTickets pt ON p.PermitId = pt.permitId
+            WHERE pt.ticketId = $1 
+              AND p.deletedAt IS NULL 
+              AND pt.deletedAt IS NULL
+            ORDER BY p.createdAt DESC
+            LIMIT 1
+          `, [existingTicket.ticketid]);
+          
+          if (permitRes.rows.length > 0) {
+            const permit = permitRes.rows[0];
+            existingTicket.agencyNo = permit.permitnumber;
+            existingTicket.startDate = permit.startdate;
+            existingTicket.expDate = permit.expiredate;
+            existingTicket.permitStatus = permit.status;
+            console.log(`Found permit for ticket:`, {
+              permitId: permit.permitid,
+              permitNumber: permit.permitnumber,
+              startDate: permit.startdate,
+              expireDate: permit.expiredate,
+              status: permit.status
+            });
+          } else {
+            console.log(`No permit found for ticket ${existingTicket.ticketid}`);
+          }
+        } catch (permitError) {
+          console.error(`Error getting permit for ticket ${existingTicket.ticketid}:`, permitError);
+        }
       } else {
         console.log(`No existing ticket found - this should be a NEW ticket`);
       }

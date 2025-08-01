@@ -19,6 +19,12 @@ class Payments {
     return res.rows;
   }
 
+  // Find payment by payment number
+  static async findByPaymentNumber(paymentNumber) {
+    const res = await db.query('SELECT * FROM Payments WHERE paymentNumber = $1 AND deletedAt IS NULL;', [paymentNumber]);
+    return res.rows[0];
+  }
+
   static async update(checkId, paymentNumber, datePaid, amountPaid, status, paymentURL, updatedBy) {
     const res = await db.query(
       'UPDATE Payments SET paymentNumber = $1, datePaid = $2, amountPaid = $3, status = $4, paymentURL = $5, updatedAt = CURRENT_TIMESTAMP, updatedBy = $6 WHERE checkId = $7 AND deletedAt IS NULL RETURNING *;',

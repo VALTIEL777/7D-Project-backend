@@ -376,24 +376,13 @@ router.get('/expired', TicketsController.getExpiredTickets);
  *                         description: The payment status
  *                         example: "PAID"
  *                         nullable: true
- *       500:
- *         description: Server error
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: false
- *                 message:
- *                   type: string
- *                   example: "Error fetching ticket payment and invoice information"
- *                 error:
- *                   type: string
- *                   example: "Database connection failed"
+ *                       shop:
+ *                         type: string
+ *                         description: The shop from the associated quadrant
+ *                         example: "Shop A"
+ *                         nullable: true
  */
-router.get('/payment-invoice-info', TicketsController.getTicketPaymentInvoiceInfo);
+
 
 /**
  * @swagger
@@ -1029,6 +1018,202 @@ router.get('/gallery/:ticketCode', TicketsController.getTicketGallery);
  *                   example: "Database connection failed"
  */
 router.get('/coordinates/:ticketCode', TicketsController.getTicketCoordinates);
+
+/**
+ * @swagger
+ * /tickets/payment-invoice-info:
+ *   get:
+ *     summary: Get ticket information with related payment and invoice data (tickets with payments only)
+ *     tags: [Tickets]
+ *     description: Retrieve ticket codes, amounts, and related payment and invoice information for tickets that have associated payments
+ *     responses:
+ *       200:
+ *         description: Ticket payment and invoice information retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Ticket payment and invoice information retrieved successfully (tickets with payments only)"
+ *                 count:
+ *                   type: integer
+ *                   description: Total number of tickets returned
+ *                   example: 3
+ *                 data:
+ *                   type: array
+ *                   description: Array of tickets with payment and invoice information
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       ticketCode:
+ *                         type: string
+ *                         description: The ticket code
+ *                         example: "TK6514243"
+ *                       amountToPay:
+ *                         type: number
+ *                         description: The amount to pay for the ticket
+ *                         example: 1500.00
+ *                         nullable: true
+ *                       calculatedCost:
+ *                         type: number
+ *                         description: The calculated cost for the ticket
+ *                         example: 1200.00
+ *                         nullable: true
+ *                       invoiceNumber:
+ *                         type: string
+ *                         description: The invoice number associated with the ticket
+ *                         example: "INV-2024-001"
+ *                         nullable: true
+ *                       amountRequested:
+ *                         type: number
+ *                         description: The amount requested in the invoice
+ *                         example: 1500.00
+ *                         nullable: true
+ *                       paymentNumber:
+ *                         type: string
+ *                         description: The payment number associated with the ticket
+ *                         example: "PAY-2024-001"
+ *                         nullable: true
+ *                       amountPaid:
+ *                         type: number
+ *                         description: The amount paid for the ticket
+ *                         example: 1500.00
+ *                         nullable: true
+ *                       statusPaid:
+ *                         type: string
+ *                         description: The payment status
+ *                         example: "PAID"
+ *                         nullable: true
+ *                       shop:
+ *                         type: string
+ *                         description: The shop from the associated quadrant
+ *                         example: "Shop A"
+ *                         nullable: true
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Error fetching ticket payment and invoice information"
+ *                 error:
+ *                   type: string
+ *                   example: "Database connection failed"
+ */
+router.get('/payment-invoice-info', TicketsController.getTicketPaymentInvoiceInfo);
+
+/**
+ * @swagger
+ * /tickets/all-payment-invoice-info:
+ *   get:
+ *     summary: Get all ticket information with related payment and invoice data
+ *     tags: [Tickets]
+ *     description: Retrieve all ticket codes, amounts, and related payment and invoice information (including tickets without payments)
+ *     responses:
+ *       200:
+ *         description: All ticket payment and invoice information retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "All ticket payment and invoice information retrieved successfully"
+ *                 count:
+ *                   type: integer
+ *                   description: Total number of tickets returned
+ *                   example: 1797
+ *                 ticketsWithPayments:
+ *                   type: integer
+ *                   description: Number of tickets that have associated payments
+ *                   example: 3
+ *                 ticketsWithoutPayments:
+ *                   type: integer
+ *                   description: Number of tickets that don't have associated payments
+ *                   example: 1794
+ *                 data:
+ *                   type: array
+ *                   description: Array of tickets with payment and invoice information
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       ticketCode:
+ *                         type: string
+ *                         description: The ticket code
+ *                         example: "TK6514243"
+ *                       amountToPay:
+ *                         type: number
+ *                         description: The amount to pay for the ticket
+ *                         example: 1500.00
+ *                         nullable: true
+ *                       calculatedCost:
+ *                         type: number
+ *                         description: The calculated cost for the ticket
+ *                         example: 1200.00
+ *                         nullable: true
+ *                       invoiceNumber:
+ *                         type: string
+ *                         description: The invoice number associated with the ticket
+ *                         example: "INV-2024-001"
+ *                         nullable: true
+ *                       amountRequested:
+ *                         type: number
+ *                         description: The amount requested in the invoice
+ *                         example: 1500.00
+ *                         nullable: true
+ *                       paymentNumber:
+ *                         type: string
+ *                         description: The payment number associated with the ticket
+ *                         example: "PAY-2024-001"
+ *                         nullable: true
+ *                       amountPaid:
+ *                         type: number
+ *                         description: The amount paid for the ticket
+ *                         example: 1500.00
+ *                         nullable: true
+ *                       statusPaid:
+ *                         type: string
+ *                         description: The payment status
+ *                         example: "PAID"
+ *                         nullable: true
+ *                       shop:
+ *                         type: string
+ *                         description: The shop from the associated quadrant
+ *                         example: "Shop A"
+ *                         nullable: true
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Error fetching all ticket payment and invoice information"
+ *                 error:
+ *                   type: string
+ *                   example: "Database connection failed"
+ */
+router.get('/all-payment-invoice-info', TicketsController.getAllTicketPaymentInvoiceInfo);
 
 /**
  * @swagger

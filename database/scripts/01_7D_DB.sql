@@ -129,6 +129,7 @@ CREATE TABLE Tickets (
     contractNumber VARCHAR(128),
     amountToPay DECIMAL,
     calculatedCost DECIMAL,
+    amountPaid DECIMAL,
     ticketType VARCHAR(64), -- mobilization, regular
     createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

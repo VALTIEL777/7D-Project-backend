@@ -467,6 +467,16 @@ const TicketsController = {
     try {
       const ticketData = await Tickets.getTicketPaymentInvoiceInfo();
       
+      // Debug: Log the first few records to see what data is returned
+      console.log('Raw ticket data (first 3 records):', ticketData.slice(0, 3));
+      
+      // Check if paymentNumber field exists in the first record
+      if (ticketData.length > 0) {
+        console.log('First record keys:', Object.keys(ticketData[0]));
+        console.log('First record paymentNumber value:', ticketData[0].paymentnumber);
+        console.log('First record paymentId value:', ticketData[0].paymentid);
+      }
+      
       // Normalize the data to camelCase
       const normalizedData = ticketData.map(row => ({
         ticketCode: row.ticketcode,
@@ -474,13 +484,22 @@ const TicketsController = {
         calculatedCost: row.calculatedcost ? Number(row.calculatedcost) : null,
         invoiceNumber: row.invoicenumber,
         amountRequested: row.amountrequested ? Number(row.amountrequested) : null,
+        paymentNumber: row.paymentnumber,
         amountPaid: row.amountpaid ? Number(row.amountpaid) : null,
-        statusPaid: row.statuspaid
+        statusPaid: row.statuspaid,
+        shop: row.shop
       }));
+      
+      // Debug: Log the normalized data to see if paymentNumber is present
+      console.log('Normalized data (first 3 records):', normalizedData.slice(0, 3));
+      
+      // Count how many records have paymentNumber
+      const recordsWithPaymentNumber = normalizedData.filter(record => record.paymentNumber !== null).length;
+      console.log(`Records with paymentNumber: ${recordsWithPaymentNumber} out of ${normalizedData.length}`);
       
       res.status(200).json({
         success: true,
-        message: 'Ticket payment and invoice information retrieved successfully',
+        message: 'Ticket payment and invoice information retrieved successfully (tickets with payments only)',
         count: normalizedData.length,
         data: normalizedData
       });
@@ -489,6 +508,45 @@ const TicketsController = {
       res.status(500).json({ 
         success: false,
         message: 'Error fetching ticket payment and invoice information', 
+        error: error.message 
+      });
+    }
+  },
+
+  // Get all ticket payment and invoice information (including tickets without payments)
+  async getAllTicketPaymentInvoiceInfo(req, res) {
+    try {
+      const ticketData = await Tickets.getAllTicketPaymentInvoiceInfo();
+      
+      // Normalize the data to camelCase
+      const normalizedData = ticketData.map(row => ({
+        ticketCode: row.ticketcode,
+        amountToPay: row.amounttopay ? Number(row.amounttopay) : null,
+        calculatedCost: row.calculatedcost ? Number(row.calculatedcost) : null,
+        invoiceNumber: row.invoicenumber,
+        amountRequested: row.amountrequested ? Number(row.amountrequested) : null,
+        paymentNumber: row.paymentnumber,
+        amountPaid: row.amountpaid ? Number(row.amountpaid) : null,
+        statusPaid: row.statuspaid,
+        shop: row.shop
+      }));
+      
+      // Count how many records have paymentNumber
+      const recordsWithPaymentNumber = normalizedData.filter(record => record.paymentNumber !== null).length;
+      
+      res.status(200).json({
+        success: true,
+        message: 'All ticket payment and invoice information retrieved successfully',
+        count: normalizedData.length,
+        ticketsWithPayments: recordsWithPaymentNumber,
+        ticketsWithoutPayments: normalizedData.length - recordsWithPaymentNumber,
+        data: normalizedData
+      });
+    } catch (error) {
+      console.error('Error fetching all ticket payment and invoice information:', error);
+      res.status(500).json({ 
+        success: false,
+        message: 'Error fetching all ticket payment and invoice information', 
         error: error.message 
       });
     }

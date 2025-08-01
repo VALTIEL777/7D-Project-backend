@@ -79,6 +79,24 @@ class Tickets {
     return result.rows[0];
   }
 
+  // Update payment ID for a ticket
+  static async updatePaymentId(ticketId, paymentId) {
+    const result = await db.query(
+      'UPDATE Tickets SET paymentId = $1, updatedAt = CURRENT_TIMESTAMP WHERE ticketId = $2 AND deletedAt IS NULL RETURNING *',
+      [paymentId, ticketId]
+    );
+    return result.rows[0];
+  }
+
+  // Update amount paid for a ticket
+  static async updateAmountPaid(ticketId, amountPaid) {
+    const result = await db.query(
+      'UPDATE Tickets SET amountPaid = $1, updatedAt = CURRENT_TIMESTAMP WHERE ticketId = $2 AND deletedAt IS NULL RETURNING *',
+      [amountPaid, ticketId]
+    );
+    return result.rows[0];
+  }
+
   // Find tickets expiring in specific number of days
   static async findExpiringInDays(days) {
     const result = await db.query(`
@@ -621,23 +639,65 @@ class Tickets {
     return result.rows;
   }
 
-  // Get ticket information with related payment and invoice data
+  // Get ticket information with related payment and invoice data (only tickets with payments)
   static async getTicketPaymentInvoiceInfo() {
     const result = await db.query(`
       SELECT 
+        t.ticketId,
         t.ticketCode,
         t.amountToPay,
         t.calculatedCost,
+        t.paymentId,
         i.invoiceNumber,
         i.amountRequested,
-        p.amountPaid,
-        p.status as statusPaid
+        p.paymentNumber,
+        t.amountPaid,
+        p.status as statusPaid,
+        q.shop
       FROM Tickets t
       LEFT JOIN Invoices i ON t.ticketId = i.ticketId AND i.deletedAt IS NULL
-      LEFT JOIN Payments p ON t.paymentId = p.checkId AND p.deletedAt IS NULL
+      INNER JOIN Payments p ON t.paymentId = p.checkId AND p.deletedAt IS NULL
+      LEFT JOIN Quadrants q ON t.cuadranteId = q.quadrantId AND q.deletedAt IS NULL
       WHERE t.deletedAt IS NULL
       ORDER BY t.ticketId ASC
     `);
+    
+    // Debug: Log the first few results to see what's being returned
+    console.log('SQL query results (first 3 records):', result.rows.slice(0, 3));
+    console.log('Sample record keys:', result.rows.length > 0 ? Object.keys(result.rows[0]) : 'No records');
+    
+    // Check how many records have paymentId and paymentNumber
+    const recordsWithPaymentId = result.rows.filter(row => row.paymentid !== null).length;
+    const recordsWithPaymentNumber = result.rows.filter(row => row.paymentnumber !== null).length;
+    console.log(`Records with paymentId: ${recordsWithPaymentId} out of ${result.rows.length}`);
+    console.log(`Records with paymentNumber: ${recordsWithPaymentNumber} out of ${result.rows.length}`);
+    
+    return result.rows;
+  }
+
+  // Get all ticket information with related payment and invoice data (including tickets without payments)
+  static async getAllTicketPaymentInvoiceInfo() {
+    const result = await db.query(`
+      SELECT 
+        t.ticketId,
+        t.ticketCode,
+        t.amountToPay,
+        t.calculatedCost,
+        t.paymentId,
+        i.invoiceNumber,
+        i.amountRequested,
+        p.paymentNumber,
+        t.amountPaid,
+        p.status as statusPaid,
+        q.shop
+      FROM Tickets t
+      LEFT JOIN Invoices i ON t.ticketId = i.ticketId AND i.deletedAt IS NULL
+      LEFT JOIN Payments p ON t.paymentId = p.checkId AND p.deletedAt IS NULL
+      LEFT JOIN Quadrants q ON t.cuadranteId = q.quadrantId AND q.deletedAt IS NULL
+      WHERE t.deletedAt IS NULL
+      ORDER BY t.ticketId ASC
+    `);
+    
     return result.rows;
   }
 }

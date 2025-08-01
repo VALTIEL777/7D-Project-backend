@@ -2305,7 +2305,7 @@ class RouteOptimizationService {
     }
 
     /**
-     * Cancel a route by removing endingDate from all ticket statuses
+     * Cancel a route by updating comment7d only (preserves endingDate)
      * @param {number} routeId - Route ID
      * @param {Array<number>} ticketIds - Array of ticket IDs in the route
      * @param {number} updatedBy - User ID
@@ -2313,7 +2313,7 @@ class RouteOptimizationService {
      */
     async cancelRoute(routeId, ticketIds, updatedBy = 1) {
         try {
-            console.log(`Canceling route ${routeId} with ${ticketIds.length} tickets`);
+            console.log(`Canceling route ${routeId} with ${ticketIds.length} tickets (comment-only)`);
 
             // Start a transaction
             const client = await db.pool.connect();
@@ -2321,23 +2321,10 @@ class RouteOptimizationService {
             try {
                 await client.query('BEGIN');
 
-                // 1. Update all ticket statuses to remove endingDate (set to NULL)
-                const ticketStatusResult = await client.query(`
-                    UPDATE TicketStatus 
-                    SET endingDate = NULL, 
-                        updatedAt = CURRENT_TIMESTAMP, 
-                        updatedBy = $1 
-                    WHERE ticketId = ANY($2) 
-                        AND deletedAt IS NULL
-                    RETURNING taskStatusId, ticketId, endingDate
-                `, [updatedBy, ticketIds]);
-
-                const updatedTicketStatuses = ticketStatusResult.rows.length;
-
-                // 2. Update comment7d to 'TK - ON LAYOUT' for tickets that don't have 'TK - ON SCHEDULE' or 'TK - ON PROGRESS'
+                // 1. Update comment7d to 'TK - LAYOUT' for tickets that don't have 'TK - ON SCHEDULE' or 'TK - ON PROGRESS'
                 const commentUpdateResult = await client.query(`
                     UPDATE Tickets 
-                    SET comment7d = 'TK - ON LAYOUT',
+                    SET comment7d = 'TK - LAYOUT',
                         updatedAt = CURRENT_TIMESTAMP, 
                         updatedBy = $1 
                     WHERE ticketId = ANY($2) 
@@ -2350,7 +2337,7 @@ class RouteOptimizationService {
 
                 const updatedComments = commentUpdateResult.rows.length;
 
-                // 3. Update the route's endDate to NULL (mark as not completed)
+                // 2. Update the route's endDate to NULL (mark as not completed)
                 const routeResult = await client.query(`
                     UPDATE Routes 
                     SET endDate = NULL, 
@@ -2363,15 +2350,16 @@ class RouteOptimizationService {
 
                 await client.query('COMMIT');
 
-                console.log(`Updated ${updatedTicketStatuses} ticket statuses, ${updatedComments} ticket comments, and route ${routeId} for cancellation`);
+                console.log(`Updated ${updatedComments} ticket comments and route ${routeId} for cancellation`);
 
                 return {
                     routeId: routeId,
-                    message: `Route canceled successfully. Updated ${updatedTicketStatuses} ticket statuses and ${updatedComments} ticket comments to 'TK - ON LAYOUT'.`,
-                    updatedTicketStatuses: updatedTicketStatuses,
+                    message: `Route canceled successfully. Updated ${updatedComments} ticket comments to 'TK - LAYOUT' (endingDate preserved).`,
+                    updatedTicketStatuses: 0,
                     updatedComments: updatedComments,
                     totalTickets: ticketIds.length,
                     routeUpdated: routeResult.rows.length > 0,
+                    endingDatePreserved: true,
                     timestamp: new Date().toISOString()
                 };
 
@@ -2419,10 +2407,10 @@ class RouteOptimizationService {
 
                 const updatedSpottingStatuses = spottingStatusResult.rows.length;
 
-                // 2. Update comment7d to 'TK - ON LAYOUT' for tickets that don't have 'TK - ON SCHEDULE' or 'TK - ON PROGRESS'
+                // 2. Update comment7d to 'TK - LAYOUT' for tickets that don't have 'TK - ON SCHEDULE' or 'TK - ON PROGRESS'
                 const commentUpdateResult = await client.query(`
                     UPDATE Tickets 
-                    SET comment7d = 'TK - ON LAYOUT',
+                    SET comment7d = 'TK - LAYOUT',
                         updatedAt = CURRENT_TIMESTAMP, 
                         updatedBy = $1 
                     WHERE ticketId = ANY($2) 
@@ -2464,7 +2452,7 @@ class RouteOptimizationService {
 
                 return {
                     routeId: routeId,
-                    message: `Spotting route canceled successfully. Reset ${updatedSpottingStatuses} SPOTTING statuses, updated ${updatedComments} ticket comments to 'TK - ON LAYOUT', and soft deleted route.`,
+                    message: `Spotting route canceled successfully. Reset ${updatedSpottingStatuses} SPOTTING statuses, updated ${updatedComments} ticket comments to 'TK - LAYOUT', and soft deleted route.`,
                     updatedSpottingStatuses: updatedSpottingStatuses,
                     updatedComments: updatedComments,
                     totalTickets: ticketIds.length,
@@ -2517,10 +2505,10 @@ class RouteOptimizationService {
 
                 const updatedSawcutStatuses = sawcutStatusResult.rows.length;
 
-                // 2. Update comment7d to 'TK - ON LAYOUT' for tickets that don't have 'TK - ON SCHEDULE' or 'TK - ON PROGRESS'
+                // 2. Update comment7d to 'TK - LAYOUT' for tickets that don't have 'TK - ON SCHEDULE' or 'TK - ON PROGRESS'
                 const commentUpdateResult = await client.query(`
                     UPDATE Tickets 
-                    SET comment7d = 'TK - ON LAYOUT',
+                    SET comment7d = 'TK - LAYOUT',
                         updatedAt = CURRENT_TIMESTAMP, 
                         updatedBy = $1 
                     WHERE ticketId = ANY($2) 
@@ -2562,7 +2550,7 @@ class RouteOptimizationService {
 
                 return {
                     routeId: routeId,
-                    message: `Concrete route canceled successfully. Reset ${updatedSawcutStatuses} SAWCUT statuses, updated ${updatedComments} ticket comments to 'TK - ON LAYOUT', and soft deleted route.`,
+                    message: `Concrete route canceled successfully. Reset ${updatedSawcutStatuses} SAWCUT statuses, updated ${updatedComments} ticket comments to 'TK - LAYOUT', and soft deleted route.`,
                     updatedSawcutStatuses: updatedSawcutStatuses,
                     updatedComments: updatedComments,
                     totalTickets: ticketIds.length,
@@ -2615,10 +2603,10 @@ class RouteOptimizationService {
 
                 const updatedFramingStatuses = framingStatusResult.rows.length;
 
-                // 2. Update comment7d to 'TK - ON LAYOUT' for tickets that don't have 'TK - ON SCHEDULE' or 'TK - ON PROGRESS'
+                // 2. Update comment7d to 'TK - LAYOUT' for tickets that don't have 'TK - ON SCHEDULE' or 'TK - ON PROGRESS'
                 const commentUpdateResult = await client.query(`
                     UPDATE Tickets 
-                    SET comment7d = 'TK - ON LAYOUT',
+                    SET comment7d = 'TK - LAYOUT',
                         updatedAt = CURRENT_TIMESTAMP, 
                         updatedBy = $1 
                     WHERE ticketId = ANY($2) 
@@ -2660,7 +2648,7 @@ class RouteOptimizationService {
 
                 return {
                     routeId: routeId,
-                    message: `Asphalt route canceled successfully. Reset ${updatedFramingStatuses} FRAMING statuses, updated ${updatedComments} ticket comments to 'TK - ON LAYOUT', and soft deleted route.`,
+                    message: `Asphalt route canceled successfully. Reset ${updatedFramingStatuses} FRAMING statuses, updated ${updatedComments} ticket comments to 'TK - LAYOUT', and soft deleted route.`,
                     updatedFramingStatuses: updatedFramingStatuses,
                     updatedComments: updatedComments,
                     totalTickets: ticketIds.length,
@@ -3002,6 +2990,298 @@ class RouteOptimizationService {
         console.log('========================\n');
         
         return results;
+    }
+
+    /**
+     * Complete a concrete route by completing the current phase and moving to the next phase
+     * @param {number} routeId - Route ID
+     * @param {Array<number>} ticketIds - Array of ticket IDs in the route
+     * @param {number} updatedBy - User ID
+     * @returns {Promise<Object>} - Result of the completion operation
+     */
+    async completeConcreteRoute(routeId, ticketIds, updatedBy = 1) {
+        try {
+            console.log(`Completing concrete route ${routeId} with ${ticketIds.length} tickets`);
+
+            // Start a transaction
+            const client = await db.pool.connect();
+            
+            try {
+                await client.query('BEGIN');
+
+                // Get the current phase for each ticket and complete it, then move to next phase
+                let completedPhases = 0;
+                let movedToNextPhase = 0;
+
+                for (const ticketId of ticketIds) {
+                    // Get current incomplete phases for this ticket
+                    const currentPhasesResult = await client.query(`
+                        SELECT 
+                            tks.taskStatusId,
+                            tks.ticketId,
+                            ts.name as taskName,
+                            tks.startingDate,
+                            tks.endingDate
+                        FROM TicketStatus tks
+                        JOIN TaskStatus ts ON tks.taskStatusId = ts.taskStatusId
+                        WHERE tks.ticketId = $1
+                        AND tks.endingDate IS NULL
+                        AND tks.deletedAt IS NULL
+                        AND ts.deletedAt IS NULL
+                        AND ts.name IN ('Sawcut', 'Removal', 'Framing', 'Pour', 'Clean')
+                        ORDER BY 
+                            CASE ts.name
+                                WHEN 'Sawcut' THEN 1
+                                WHEN 'Removal' THEN 2
+                                WHEN 'Framing' THEN 3
+                                WHEN 'Pour' THEN 4
+                                WHEN 'Clean' THEN 5
+                                ELSE 6
+                            END
+                        LIMIT 1
+                    `, [ticketId]);
+
+                    if (currentPhasesResult.rows.length > 0) {
+                        const currentPhase = currentPhasesResult.rows[0];
+                        
+                        // Complete the current phase
+                        await client.query(`
+                            UPDATE TicketStatus 
+                            SET endingDate = CURRENT_TIMESTAMP, 
+                                updatedAt = CURRENT_TIMESTAMP, 
+                                updatedBy = $1 
+                            WHERE taskStatusId = $2 
+                                AND ticketId = $3
+                                AND deletedAt IS NULL
+                        `, [updatedBy, currentPhase.taskStatusId, ticketId]);
+
+                        completedPhases++;
+
+                        // Check if there's a next phase to start
+                        const nextPhaseName = this.getNextPhaseName(currentPhase.taskName);
+                        if (nextPhaseName) {
+                            // Get the taskStatusId for the next phase
+                            const nextPhaseResult = await client.query(`
+                                SELECT taskStatusId FROM TaskStatus 
+                                WHERE name = $1 AND deletedAt IS NULL
+                            `, [nextPhaseName]);
+
+                            if (nextPhaseResult.rows.length > 0) {
+                                const nextTaskStatusId = nextPhaseResult.rows[0].taskStatusId;
+                                
+                                // Check if this phase already exists for this ticket
+                                const existingPhaseResult = await client.query(`
+                                    SELECT taskStatusId FROM TicketStatus 
+                                    WHERE ticketId = $1 AND taskStatusId = $2 AND deletedAt IS NULL
+                                `, [ticketId, nextTaskStatusId]);
+
+                                if (existingPhaseResult.rows.length === 0) {
+                                    // Create the next phase
+                                    await client.query(`
+                                        INSERT INTO TicketStatus (taskStatusId, ticketId, startingDate, createdAt, updatedAt, createdBy, updatedBy)
+                                        VALUES ($1, $2, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, $3, $3)
+                                    `, [nextTaskStatusId, ticketId, updatedBy]);
+                                    
+                                    movedToNextPhase++;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Update the route's endDate to current timestamp (mark as completed)
+                const routeResult = await client.query(`
+                    UPDATE Routes 
+                    SET endDate = CURRENT_DATE, 
+                        updatedAt = CURRENT_TIMESTAMP, 
+                        updatedBy = $1 
+                    WHERE routeId = $2 
+                        AND deletedAt IS NULL
+                    RETURNING routeId, endDate
+                `, [updatedBy, routeId]);
+
+                await client.query('COMMIT');
+
+                console.log(`Completed concrete route ${routeId}: ${completedPhases} phases completed, ${movedToNextPhase} moved to next phase`);
+
+                return {
+                    routeId: routeId,
+                    message: `Concrete route completed successfully. Completed ${completedPhases} phases, moved ${movedToNextPhase} to next phase.`,
+                    completedPhases: completedPhases,
+                    movedToNextPhase: movedToNextPhase,
+                    totalTickets: ticketIds.length,
+                    routeUpdated: routeResult.rows.length > 0,
+                    completionTimestamp: new Date().toISOString()
+                };
+
+            } catch (error) {
+                await client.query('ROLLBACK');
+                throw error;
+            } finally {
+                client.release();
+            }
+
+        } catch (error) {
+            console.error('Failed to complete concrete route:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Get the next phase name in the concrete workflow
+     * @param {string} currentPhase - Current phase name
+     * @returns {string|null} - Next phase name or null if no next phase
+     */
+    getNextPhaseName(currentPhase) {
+        const phaseOrder = {
+            'Sawcut': 'Removal',
+            'Removal': 'Framing',
+            'Framing': 'Pour',
+            'Pour': 'Clean',
+            'Clean': null // Clean is the final phase
+        };
+        return phaseOrder[currentPhase] || null;
+    }
+
+    /**
+     * Complete a spotting route by completing the SPOTTING phase
+     * @param {number} routeId - Route ID
+     * @param {Array<number>} ticketIds - Array of ticket IDs in the route
+     * @param {number} updatedBy - User ID
+     * @returns {Promise<Object>} - Result of the completion operation
+     */
+    async completeSpottingRoute(routeId, ticketIds, updatedBy = 1) {
+        try {
+            console.log(`Completing spotting route ${routeId} with ${ticketIds.length} tickets`);
+
+            // Start a transaction
+            const client = await db.pool.connect();
+            
+            try {
+                await client.query('BEGIN');
+
+                // Complete SPOTTING phase for all tickets
+                const spottingStatusResult = await client.query(`
+                    UPDATE TicketStatus 
+                    SET endingDate = CURRENT_TIMESTAMP, 
+                        updatedAt = CURRENT_TIMESTAMP, 
+                        updatedBy = $1 
+                    WHERE ticketId = ANY($2) 
+                        AND taskStatusId = (SELECT taskStatusId FROM TaskStatus WHERE name = 'Spotting' AND deletedAt IS NULL)
+                        AND deletedAt IS NULL
+                    RETURNING taskStatusId, ticketId, endingDate
+                `, [updatedBy, ticketIds]);
+
+                const updatedSpottingStatuses = spottingStatusResult.rows.length;
+
+                // Update the route's endDate to current timestamp (mark as completed)
+                const routeResult = await client.query(`
+                    UPDATE Routes 
+                    SET endDate = CURRENT_DATE, 
+                        updatedAt = CURRENT_TIMESTAMP, 
+                        updatedBy = $1 
+                    WHERE routeId = $2 
+                        AND deletedAt IS NULL
+                    RETURNING routeId, endDate
+                `, [updatedBy, routeId]);
+
+                await client.query('COMMIT');
+
+                console.log(`Completed spotting route ${routeId}: ${updatedSpottingStatuses} SPOTTING statuses completed`);
+
+                return {
+                    routeId: routeId,
+                    message: `Spotting route completed successfully. Completed ${updatedSpottingStatuses} SPOTTING statuses.`,
+                    updatedSpottingStatuses: updatedSpottingStatuses,
+                    totalTickets: ticketIds.length,
+                    routeUpdated: routeResult.rows.length > 0,
+                    completionTimestamp: new Date().toISOString()
+                };
+
+            } catch (error) {
+                await client.query('ROLLBACK');
+                throw error;
+            } finally {
+                client.release();
+            }
+
+        } catch (error) {
+            console.error('Failed to complete spotting route:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Complete an asphalt route by completing the current asphalt phase
+     * @param {number} routeId - Route ID
+     * @param {Array<number>} ticketIds - Array of ticket IDs in the route
+     * @param {number} updatedBy - User ID
+     * @returns {Promise<Object>} - Result of the completion operation
+     */
+    async completeAsphaltRoute(routeId, ticketIds, updatedBy = 1) {
+        try {
+            console.log(`Completing asphalt route ${routeId} with ${ticketIds.length} tickets`);
+
+            // Start a transaction
+            const client = await db.pool.connect();
+            
+            try {
+                await client.query('BEGIN');
+
+                // Complete current asphalt phases (Grind, Asphalt, Crack Seal, etc.) for all tickets
+                const asphaltStatusResult = await client.query(`
+                    UPDATE TicketStatus 
+                    SET endingDate = CURRENT_TIMESTAMP, 
+                        updatedAt = CURRENT_TIMESTAMP, 
+                        updatedBy = $1 
+                    WHERE ticketId = ANY($2) 
+                        AND taskStatusId IN (
+                            SELECT taskStatusId FROM TaskStatus 
+                            WHERE name IN ('Grind', 'Asphalt', 'Crack Seal', 'Install Signs', 'Steel Plate Pick Up') 
+                            AND deletedAt IS NULL
+                        )
+                        AND endingDate IS NULL
+                        AND deletedAt IS NULL
+                    RETURNING taskStatusId, ticketId, endingDate
+                `, [updatedBy, ticketIds]);
+
+                const updatedAsphaltStatuses = asphaltStatusResult.rows.length;
+
+                // Update the route's endDate to current timestamp (mark as completed)
+                const routeResult = await client.query(`
+                    UPDATE Routes 
+                    SET endDate = CURRENT_DATE, 
+                        updatedAt = CURRENT_TIMESTAMP, 
+                        updatedBy = $1 
+                    WHERE routeId = $2 
+                        AND deletedAt IS NULL
+                    RETURNING routeId, endDate
+                `, [updatedBy, routeId]);
+
+                await client.query('COMMIT');
+
+                console.log(`Completed asphalt route ${routeId}: ${updatedAsphaltStatuses} asphalt statuses completed`);
+
+                return {
+                    routeId: routeId,
+                    message: `Asphalt route completed successfully. Completed ${updatedAsphaltStatuses} asphalt statuses.`,
+                    updatedAsphaltStatuses: updatedAsphaltStatuses,
+                    totalTickets: ticketIds.length,
+                    routeUpdated: routeResult.rows.length > 0,
+                    completionTimestamp: new Date().toISOString()
+                };
+
+            } catch (error) {
+                await client.query('ROLLBACK');
+                throw error;
+            } finally {
+                client.release();
+            }
+
+        } catch (error) {
+            console.error('Failed to complete asphalt route:', error);
+            throw error;
+        }
     }
 }
 

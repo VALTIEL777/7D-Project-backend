@@ -113,6 +113,7 @@ const statisticsRoutes = require('./routes/ticket-logic/StatisticsRoutes');
 const rtrRoutes = require('./routes/RTR/rtrRoutes');
 const notificationsRoutes = require('./routes/notifications/NotificationsRoutes');
 const routeOptimizationRoutes = require('./routes/route/RouteOptimizationRoutes');
+const unifiedExcelRoutes = require('./routes/payments/UnifiedExcelRoutes');
 
 app.get('/api/health', (req, res) => {
   res.status(200).json({ status: 'OK' });
@@ -167,6 +168,7 @@ app.use('/api/statistics', statisticsRoutes);
 app.use('/api/rtr', rtrRoutes);
 app.use('/api/notifications', notificationsRoutes);
 app.use('/api/route-optimization', routeOptimizationRoutes);
+app.use('/api/unified', unifiedExcelRoutes);
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server listening on port ${PORT}`);

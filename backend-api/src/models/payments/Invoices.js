@@ -43,6 +43,12 @@ class Invoices {
     const res = await db.query('SELECT * FROM Invoices WHERE ticketId = $1 AND deletedAt IS NULL;', [ticketId]);
     return res.rows[0];
   }
+
+  // Find invoice by invoice number
+  static async findByInvoiceNumber(invoiceNumber) {
+    const res = await db.query('SELECT * FROM Invoices WHERE invoiceNumber = $1 AND deletedAt IS NULL;', [invoiceNumber]);
+    return res.rows[0];
+  }
 }
 
 module.exports = Invoices; 
