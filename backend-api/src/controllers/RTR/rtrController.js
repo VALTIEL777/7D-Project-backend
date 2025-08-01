@@ -1477,7 +1477,8 @@ exports.analyzeForStepper = async (req, res) => {
           // Skip auto-correction for specific status comments - show as inconsistencies for manual review
           else if (processedRow['Contractor Comments'].toLowerCase().includes('tk - on hold off') ||
                    processedRow['Contractor Comments'].toLowerCase().includes('tk - on progress') ||
-                   processedRow['Contractor Comments'].toLowerCase().includes('tk - on schedule')) {
+                   processedRow['Contractor Comments'].toLowerCase().includes('tk - on schedule') ||
+                   processedRow['Contractor Comments'].toLowerCase().includes('tk - cancelled')) {
             console.log(`Skipping auto-correction for ticket ${existingTicket.ticketId} - ticket has status comment: "${processedRow['Contractor Comments']}"`);
             // Continue with normal processing without auto-correction
           }
@@ -1530,7 +1531,8 @@ exports.analyzeForStepper = async (req, res) => {
               // Skip auto-correction for specific status comments in database
               if (existingTicket.comment7d.toLowerCase().includes('tk - on hold off') ||
                   existingTicket.comment7d.toLowerCase().includes('tk - on progress') ||
-                  existingTicket.comment7d.toLowerCase().includes('tk - on schedule')) {
+                  existingTicket.comment7d.toLowerCase().includes('tk - on schedule') ||
+                  existingTicket.comment7d.toLowerCase().includes('tk - cancelled')) {
                 console.log(`Skipping database auto-correction for ticket ${existingTicket.ticketId} - ticket has status comment: "${existingTicket.comment7d}"`);
               } else {
                 console.log(`Auto-updating database for ticket ${existingTicket.ticketId} from "${existingTicket.comment7d}" to "TK - LAYOUT" (permit expires in ${daysUntilExpiry} days)`);
@@ -1634,7 +1636,7 @@ exports.validateStepperData = async (req, res) => {
     // Validate new tickets
     if (newTickets && Array.isArray(newTickets)) {
       for (const ticket of newTickets) {
-        const ticketValidation = validateTicketData(ticket.excelData);
+        const ticketValidation = validateTicketData(ticket.excelData, false); // New tickets should have all required fields
         if (!ticketValidation.isValid) {
           validation.isValid = false;
           validation.errors.push({
@@ -1660,12 +1662,38 @@ exports.validateStepperData = async (req, res) => {
         
         // Apply user decisions to Excel data (keep Excel field names for validation)
         if (decisions && ticket.ticketId && decisions[ticket.ticketId]) {
+          // Define vital fields that should not be set to null/empty (same as in applyUserDecisions)
+          const vitalFields = [
+            'TASK_WO_NUM',
+            'RESTN_WO_NUM', 
+            'ADDRESS',
+            'SAP_ITEM_NUM'
+          ];
+          
           for (const [field, choice] of Object.entries(decisions[ticket.ticketId])) {
             if (choice === 'database' && ticket.databaseData) {
               // Map database field back to Excel field name
               const excelField = getExcelFieldMapping(field);
               if (excelField && ticket.databaseData[field] !== undefined) {
                 finalData[excelField] = ticket.databaseData[field];
+              }
+            } else if (choice === 'excel') {
+              // Use the Excel value for this field, but protect vital fields
+              if (ticket.excelData[field] !== undefined) {
+                // Check if this is a vital field and Excel value is null/empty
+                const isVitalField = vitalFields.includes(field);
+                const excelValue = ticket.excelData[field];
+                const isExcelValueEmpty = !excelValue || excelValue === '' || excelValue === null;
+                
+                if (isVitalField && isExcelValueEmpty) {
+                  // For vital fields, keep database value if Excel value is empty
+                  console.log(`Validation: Keeping database value for vital field "${field}" because Excel value is empty`);
+                  // Don't update the field, keep the database value
+                  continue;
+                }
+                
+                // Use Excel value for non-vital fields or when Excel value is not empty
+                finalData[field] = excelValue;
               }
             }
             // If choice is 'excel', keep the Excel value (already in finalData)
@@ -1691,7 +1719,7 @@ exports.validateStepperData = async (req, res) => {
           finalData = { ...req.body.originalParsedTickets[ticketCode], ...finalData };
         }
         
-        const ticketValidation = validateTicketData(finalData);
+        const ticketValidation = validateTicketData(finalData, true); // Allow database values for inconsistent tickets
         if (!ticketValidation.isValid) {
           validation.isValid = false;
           validation.errors.push({
@@ -1717,7 +1745,7 @@ exports.validateStepperData = async (req, res) => {
           finalData = { ...req.body.originalParsedTickets[filledInfo.ticketCode], ...finalData };
         }
         
-        const ticketValidation = validateTicketData(finalData);
+        const ticketValidation = validateTicketData(finalData, false); // Filled missing info should have all required fields
         if (!ticketValidation.isValid) {
           validation.isValid = false;
           validation.errors.push({
@@ -2249,7 +2277,7 @@ function checkMissingRequiredFields(row) {
 }
 
 // Helper function to validate ticket data
-function validateTicketData(data) {
+function validateTicketData(data, allowDatabaseValues = false) {
   const validation = {
     isValid: true,
     errors: []
@@ -2265,6 +2293,11 @@ function validateTicketData(data) {
 
   for (const required of requiredFields) {
     if (!data[required.field] || data[required.field] === '' || data[required.field] === null) {
+      // If we're allowing database values and this is a vital field, be more lenient
+      if (allowDatabaseValues && ['TASK_WO_NUM', 'RESTN_WO_NUM', 'ADDRESS', 'SAP_ITEM_NUM'].includes(required.field)) {
+        console.log(`Validation: Allowing empty vital field "${required.field}" because database values are allowed`);
+        continue; // Skip validation for this field
+      }
       validation.isValid = false;
       validation.errors.push(`Missing required field: ${required.name}`);
     }

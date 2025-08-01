@@ -97,6 +97,15 @@ class Tickets {
     return result.rows[0];
   }
 
+  // Update comment7d for a ticket
+  static async updateComment7d(ticketId, comment7d, updatedBy) {
+    const result = await db.query(
+      'UPDATE Tickets SET comment7d = $1, updatedBy = $2, updatedAt = CURRENT_TIMESTAMP WHERE ticketId = $3 AND deletedAt IS NULL RETURNING *',
+      [comment7d, updatedBy, ticketId]
+    );
+    return result.rows[0];
+  }
+
   // Find tickets expiring in specific number of days
   static async findExpiringInDays(days) {
     const result = await db.query(`

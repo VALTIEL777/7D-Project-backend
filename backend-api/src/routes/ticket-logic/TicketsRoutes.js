@@ -1510,6 +1510,62 @@ router.put('/:ticketId', TicketsController.updateTicket);
 
 /**
  * @swagger
+ * /tickets/{ticketId}/comment:
+ *   put:
+ *     summary: Update only the comment7d field for a ticket
+ *     tags: [Tickets]
+ *     parameters:
+ *       - in: path
+ *         name: ticketId
+ *         schema:
+ *           type: integer
+ *         required: true
+ *         description: The ID of the ticket
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - comment7d
+ *             properties:
+ *               comment7d:
+ *                 type: string
+ *                 description: The new comment7d value
+ *                 example: "TK - COMPLETED"
+ *               updatedBy:
+ *                 type: integer
+ *                 description: The user ID making the update
+ *                 example: 1
+ *     responses:
+ *       200:
+ *         description: The ticket comment was successfully updated
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Ticket comment updated successfully"
+ *                 data:
+ *                   type: object
+ *                   description: The updated ticket data
+ *       400:
+ *         description: Bad request - comment7d is required
+ *       404:
+ *         description: Ticket not found
+ *       500:
+ *         description: Server error
+ */
+router.put('/:ticketId/comment', TicketsController.updateTicketComment);
+
+/**
+ * @swagger
  * /tickets/{ticketId}:
  *   delete:
  *     summary: Delete a ticket by ID

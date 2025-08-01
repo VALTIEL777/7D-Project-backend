@@ -89,6 +89,31 @@ const TicketsController = {
     }
   },
 
+  // Update only the comment7d field for a ticket
+  async updateTicketComment(req, res) {
+    try {
+      const { ticketId } = req.params;
+      const { comment7d, updatedBy } = req.body;
+      
+      if (!comment7d) {
+        return res.status(400).json({ message: 'comment7d is required' });
+      }
+      
+      const updatedTicket = await Tickets.updateComment7d(ticketId, comment7d, updatedBy || 1);
+      if (!updatedTicket) {
+        return res.status(404).json({ message: 'Ticket not found' });
+      }
+      res.status(200).json({
+        success: true,
+        message: 'Ticket comment updated successfully',
+        data: normalizeTicketData(updatedTicket)
+      });
+    } catch (error) {
+      console.error('Error updating ticket comment:', error);
+      res.status(500).json({ message: 'Error updating ticket comment', error: error.message });
+    }
+  },
+
   async deleteTicket(req, res) {
     try {
       const { ticketId } = req.params;

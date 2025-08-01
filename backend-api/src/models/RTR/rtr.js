@@ -410,7 +410,14 @@ class RTR {
         const daysUntilExpiry = Math.ceil((new Date(row.expiredate) - currentDate) / (1000 * 60 * 60 * 24));
         
         // Only update if comment7d is null, empty, or already has the extension message
-        if (!row.comment7d || row.comment7d === '' || row.comment7d.toLowerCase().includes('tk - needs permit extension')) {
+        // But skip if comment contains specific status comments that should not be changed
+        const comment = row.comment7d || '';
+        const shouldSkip = comment.toLowerCase().includes('tk - on hold off') ||
+                          comment.toLowerCase().includes('tk - on progress') ||
+                          comment.toLowerCase().includes('tk - on schedule') ||
+                          comment.toLowerCase().includes('tk - cancelled');
+        
+        if ((!row.comment7d || row.comment7d === '' || row.comment7d.toLowerCase().includes('tk - needs permit extension')) && !shouldSkip) {
           // Update the ticket's comment7d
           const updateRes = await db.query(
             'UPDATE Tickets SET comment7d = $1, updatedBy = $2 WHERE ticketId = $3 RETURNING ticketId, comment7d;',
@@ -430,6 +437,20 @@ class RTR {
             location: row.location
           });
           
+        } else if (shouldSkip) {
+          results.push({
+            ticketId: row.ticketid,
+            ticketCode: row.ticketcode,
+            permitId: row.permitid,
+            permitNumber: row.permitnumber,
+            expireDate: row.expiredate,
+            daysUntilExpiry: daysUntilExpiry,
+            oldComment: row.comment7d,
+            newComment: row.comment7d,
+            updated: false,
+            reason: `Skipped: Comment has status "${comment}" that should not be changed`,
+            location: row.location
+          });
         } else {
           results.push({
             ticketId: row.ticketid,
@@ -497,24 +518,47 @@ class RTR {
       for (const row of ticketsRes.rows) {
         const daysUntilExpiry = Math.ceil((new Date(row.expiredate) - currentDate) / (1000 * 60 * 60 * 24));
         
-        // Update to LAYOUT since permit is valid and more than 7 days away
-        await db.query(
-          'UPDATE Tickets SET comment7d = $1, updatedBy = $2 WHERE ticketId = $3;',
-          ['TK - LAYOUT', updatedBy, row.ticketid]
-        );
+        // Check if comment contains specific status comments that should not be changed
+        const comment = row.comment7d || '';
+        const shouldSkip = comment.toLowerCase().includes('tk - on hold off') ||
+                          comment.toLowerCase().includes('tk - on progress') ||
+                          comment.toLowerCase().includes('tk - on schedule') ||
+                          comment.toLowerCase().includes('tk - cancelled');
         
-        results.push({
-          ticketId: row.ticketid,
-          ticketCode: row.ticketcode,
-          permitId: row.permitid,
-          permitNumber: row.permitnumber,
-          expireDate: row.expiredate,
-          daysUntilExpiry: daysUntilExpiry,
-          oldComment: row.comment7d,
-          newComment: 'TK - LAYOUT',
-          updated: true,
-          location: row.location
-        });
+        if (!shouldSkip) {
+          // Update to LAYOUT since permit is valid and more than 7 days away
+          await db.query(
+            'UPDATE Tickets SET comment7d = $1, updatedBy = $2 WHERE ticketId = $3;',
+            ['TK - LAYOUT', updatedBy, row.ticketid]
+          );
+          
+          results.push({
+            ticketId: row.ticketid,
+            ticketCode: row.ticketcode,
+            permitId: row.permitid,
+            permitNumber: row.permitnumber,
+            expireDate: row.expiredate,
+            daysUntilExpiry: daysUntilExpiry,
+            oldComment: row.comment7d,
+            newComment: 'TK - LAYOUT',
+            updated: true,
+            location: row.location
+          });
+        } else {
+          results.push({
+            ticketId: row.ticketid,
+            ticketCode: row.ticketcode,
+            permitId: row.permitid,
+            permitNumber: row.permitnumber,
+            expireDate: row.expiredate,
+            daysUntilExpiry: daysUntilExpiry,
+            oldComment: row.comment7d,
+            newComment: row.comment7d,
+            updated: false,
+            reason: `Skipped: Comment has status "${comment}" that should not be changed`,
+            location: row.location
+          });
+        }
       }
       
       return results;
