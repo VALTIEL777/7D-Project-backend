@@ -66,10 +66,16 @@ class Routes {
         rt.queue,
         t.ticketCode,
         t.quantity,
-        t.amountToPay
+        t.amountToPay,
+        -- Get coordinates from Addresses table
+        a.latitude,
+        a.longitude,
+        a.placeid
       FROM Routes r
       LEFT JOIN RouteTickets rt ON r.routeId = rt.routeId
       LEFT JOIN Tickets t ON rt.ticketId = t.ticketId
+      LEFT JOIN TicketAddresses ta ON t.ticketId = ta.ticketId AND ta.deletedAt IS NULL
+      LEFT JOIN Addresses a ON ta.addressId = a.addressId AND a.deletedAt IS NULL
       WHERE r.routeId = $1 AND r.deletedAt IS NULL
       ORDER BY rt.queue ASC
     `, [routeId]);
@@ -85,7 +91,13 @@ class Routes {
         address: row.address,
         queue: row.queue,
         quantity: row.quantity,
-        amountToPay: row.amountToPay
+        amountToPay: row.amountToPay,
+        // Add coordinates for Leaflet marker placement
+        coordinates: {
+          latitude: row.latitude,
+          longitude: row.longitude,
+          placeid: row.placeid
+        }
       }))
     };
     
@@ -103,10 +115,16 @@ class Routes {
           rt.queue,
           t.ticketCode,
           t.quantity,
-          t.amountToPay
+          t.amountToPay,
+          -- Get coordinates from Addresses table
+          a.latitude,
+          a.longitude,
+          a.placeid
         FROM Routes r
         LEFT JOIN RouteTickets rt ON r.routeId = rt.routeId AND rt.deletedAt IS NULL
         LEFT JOIN Tickets t ON rt.ticketId = t.ticketId AND t.deletedAt IS NULL
+        LEFT JOIN TicketAddresses ta ON t.ticketId = ta.ticketId AND ta.deletedAt IS NULL
+        LEFT JOIN Addresses a ON ta.addressId = a.addressId AND a.deletedAt IS NULL
         WHERE r.type = $1 
           AND r.deletedAt IS NULL
           AND (
@@ -185,7 +203,13 @@ class Routes {
             address: row.address,
             queue: row.queue,
             quantity: row.quantity,
-            amountToPay: row.amounttopay
+            amountToPay: row.amounttopay,
+            // Add coordinates for Leaflet marker placement
+            coordinates: {
+              latitude: row.latitude,
+              longitude: row.longitude,
+              placeid: row.placeid
+            }
           };
           routesMap.get(routeId).tickets.push(ticket);
         }
@@ -210,10 +234,16 @@ class Routes {
           rt.queue,
           t.ticketCode,
           t.quantity,
-          t.amountToPay
+          t.amountToPay,
+          -- Get coordinates from Addresses table
+          a.latitude,
+          a.longitude,
+          a.placeid
         FROM Routes r
         LEFT JOIN RouteTickets rt ON r.routeId = rt.routeId AND rt.deletedAt IS NULL
         LEFT JOIN Tickets t ON rt.ticketId = t.ticketId AND t.deletedAt IS NULL
+        LEFT JOIN TicketAddresses ta ON t.ticketId = ta.ticketId AND ta.deletedAt IS NULL
+        LEFT JOIN Addresses a ON ta.addressId = a.addressId AND a.deletedAt IS NULL
         WHERE r.type = $1 
           AND r.deletedAt IS NULL
           AND r.endDate IS NOT NULL
@@ -275,7 +305,13 @@ class Routes {
             address: row.address,
             queue: row.queue,
             quantity: row.quantity,
-            amountToPay: row.amounttopay
+            amountToPay: row.amounttopay,
+            // Add coordinates for Leaflet marker placement
+            coordinates: {
+              latitude: row.latitude,
+              longitude: row.longitude,
+              placeid: row.placeid
+            }
           };
           routesMap.get(routeId).tickets.push(ticket);
         }
@@ -305,10 +341,16 @@ class Routes {
           CASE 
             WHEN rt.address IS NOT NULL AND rt.address != '' THEN rt.address
             ELSE NULL
-          END as fullAddress
+          END as fullAddress,
+          -- Get coordinates from Addresses table
+          a.latitude,
+          a.longitude,
+          a.placeid
         FROM Routes r
         LEFT JOIN RouteTickets rt ON r.routeId = rt.routeId AND rt.deletedAt IS NULL
         LEFT JOIN Tickets t ON rt.ticketId = t.ticketId AND t.deletedAt IS NULL
+        LEFT JOIN TicketAddresses ta ON t.ticketId = ta.ticketId AND ta.deletedAt IS NULL
+        LEFT JOIN Addresses a ON ta.addressId = a.addressId AND a.deletedAt IS NULL
         ORDER BY r.createdAt DESC, rt.queue ASC
       `);
       
@@ -355,7 +397,13 @@ class Routes {
             queue: row.queue,
             quantity: row.quantity,
             amountToPay: row.amounttopay,
-            comment7d: row.comment7d
+            comment7d: row.comment7d,
+            // Add coordinates for Leaflet marker placement
+            coordinates: {
+              latitude: row.latitude,
+              longitude: row.longitude,
+              placeid: row.placeid
+            }
           };
           
           routesMap.get(routeId).tickets.push(ticket);

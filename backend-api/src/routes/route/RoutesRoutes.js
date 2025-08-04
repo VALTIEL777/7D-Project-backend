@@ -80,9 +80,9 @@ router.post('/', RoutesController.createRoute);
  * @swagger
  * /routes:
  *   get:
- *     summary: Get all active routes
+ *     summary: Get all active routes with coordinates
  *     tags: [Routes]
- *     description: Retrieves all active routes regardless of their type. Returns routes ordered by creation date (newest first).
+ *     description: Retrieves all active routes regardless of their type with coordinates for Leaflet marker placement. Returns routes ordered by creation date (newest first).
  *     responses:
  *       200:
  *         description: Active routes retrieved successfully
@@ -241,7 +241,7 @@ router.get('/', RoutesController.getAllActiveRoutes);
  *                         example: 1
  *                       tickets:
  *                         type: array
- *                         description: Array of tickets in this route with addresses
+ *                         description: Array of tickets in this route with addresses and coordinates
  *                         items:
  *                           type: object
  *                           properties:
@@ -277,6 +277,22 @@ router.get('/', RoutesController.getAllActiveRoutes);
  *                               type: string
  *                               description: 7D comment for this ticket
  *                               example: "TK - ON LAYOUT"
+ *                             coordinates:
+ *                               type: object
+ *                               description: Geographic coordinates for Leaflet marker placement
+ *                               properties:
+ *                                 latitude:
+ *                                   type: number
+ *                                   description: Latitude coordinate
+ *                                   example: 41.8781
+ *                                 longitude:
+ *                                   type: number
+ *                                   description: Longitude coordinate
+ *                                   example: -87.6298
+ *                                 placeid:
+ *                                   type: string
+ *                                   description: Google Places ID (if available)
+ *                                   example: "ChIJN1t_tDeuEmsRUsoyG83frY4"
  *                       addressCount:
  *                         type: integer
  *                         description: Number of addresses in this route
@@ -1318,7 +1334,7 @@ router.get('/test', RoutesController.testRoutesTable);
  * @swagger
  * /routes/{routeId}:
  *   get:
- *     summary: Get a route record by ID
+ *     summary: Get a route record by ID with coordinates
  *     tags: [Routes]
  *     parameters:
  *       - in: path
@@ -1329,7 +1345,7 @@ router.get('/test', RoutesController.testRoutesTable);
  *         description: The ID of the route.
  *     responses:
  *       200:
- *         description: Route record found.
+ *         description: Route record found with coordinates for Leaflet markers.
  *         content:
  *           application/json:
  *             schema:
@@ -1341,6 +1357,34 @@ router.get('/test', RoutesController.testRoutesTable);
  *                 routeCode:
  *                   type: string
  *                   example: 'ROUTE001'
+ *                 tickets:
+ *                   type: array
+ *                   description: Array of tickets with coordinates for map display
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       ticketId:
+ *                         type: integer
+ *                         example: 101
+ *                       ticketCode:
+ *                         type: string
+ *                         example: "TK6514243"
+ *                       address:
+ *                         type: string
+ *                         example: "123 N Main St, Chicago, IL"
+ *                       coordinates:
+ *                         type: object
+ *                         description: Geographic coordinates for Leaflet marker placement
+ *                         properties:
+ *                           latitude:
+ *                             type: number
+ *                             example: 41.8781
+ *                           longitude:
+ *                             type: number
+ *                             example: -87.6298
+ *                           placeid:
+ *                             type: string
+ *                             example: "ChIJN1t_tDeuEmsRUsoyG83frY4"
  *       404:
  *         description: Route not found
  *       500:

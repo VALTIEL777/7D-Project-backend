@@ -380,7 +380,7 @@ router.put('/:employeeId/with-user', PeopleController.updatePersonWithUser);
  *             properties:
  *               deleteUser:
  *                 type: boolean
- *                 description: Whether to also soft delete the associated user account (default: false).
+ *                 description: "Whether to also soft delete the associated user account (default: false)."
  *                 example: true
  *               updatedBy:
  *                 type: integer
