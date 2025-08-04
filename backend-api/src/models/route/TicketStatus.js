@@ -29,7 +29,7 @@ class TicketStatus {
 
   static async findByTicketAndCrew(ticketId, crewId) {
   const res = await db.query(
-    'SELECT * FROM TicketStatus WHERE ticketId = $1 AND crewId = $2;',
+    'SELECT * FROM TicketStatus WHERE ticketId = $1 AND crewId = $2 AND deletedAt IS NULL;',
     [ticketId, crewId]
   );
   return res.rows[0]; 

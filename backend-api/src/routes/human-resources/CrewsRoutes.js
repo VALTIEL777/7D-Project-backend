@@ -302,6 +302,9 @@ router.delete('/:crewId', CrewsController.deleteCrews);
  *                     type: string
  *                   ticketid:
  *                     type: integer
+ *                   ticketcode:
+ *                     type: string
+ *                     nullable: true
  *                   taskstatusid:
  *                     type: integer
  *                     nullable: true

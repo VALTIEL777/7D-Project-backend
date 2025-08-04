@@ -757,7 +757,10 @@ VALUES
     ('Removal', 'Removing materials, debris, or temporary installations from the work site'),
     ('No Parking Signs', 'Installing No Parking Signs at designated locations');
 
-
+--repair ids
+SELECT setval(pg_get_serial_sequence('users', 'userid'), COALESCE(MAX(userid), 0) + 1, false) FROM users;
+  SELECT setval(pg_get_serial_sequence('people', 'employeeid'), COALESCE(MAX(employeeid), 0) + 1, false) FROM people;
+  SELECT setval(pg_get_serial_sequence('payments', 'checkid'), COALESCE(MAX(checkid), 0) + 1, false) FROM payments;
 
 
 

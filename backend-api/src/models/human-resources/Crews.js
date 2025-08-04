@@ -64,6 +64,7 @@ static async getCrewDetailsById(crewId) {
       r.routeid,
       r.routecode,
       t.ticketid,
+      t.ticketcode,
       ta.taskstatusid,
       ts.name AS taskstatusname,
       addr.addressnumber,
