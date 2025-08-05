@@ -1,5 +1,7 @@
 const People = require('../../models/human-resources/People');
 const Quadrants = require('../../models/location/Quadrants');
+const User = require('../../models/human-resources/User');
+const db = require('../../config/db');
 
 // Helper function to normalize database response to camelCase
 const normalizePerson = (dbRecord) => {
@@ -55,6 +57,30 @@ const normalizePersonWithQuadrants = (dbRecord) => {
   return {
     ...normalizedPerson,
     assignedQuadrants
+  };
+};
+
+// Helper function to normalize person with user information
+const normalizePersonWithUser = (dbRecord) => {
+  if (!dbRecord) return null;
+  
+  const normalizedPerson = normalizePerson(dbRecord);
+  
+  // Add user information if available
+  let user = null;
+  if (dbRecord.userid) {
+    user = {
+      userId: Number(dbRecord.userid),
+      username: dbRecord.username,
+      createdAt: dbRecord.user_createdat,
+      updatedAt: dbRecord.user_updatedat,
+      deletedAt: dbRecord.user_deletedat
+    };
+  }
+  
+  return {
+    ...normalizedPerson,
+    user
   };
 };
 
@@ -293,6 +319,295 @@ const PeopleController = {
     } catch (error) {
       console.error('Error updating quadrant assignments:', error);
       res.status(500).json({ message: 'Error updating quadrant assignments', error: error.message });
+    }
+  },
+
+  // New endpoint: Create person with user simultaneously
+  async createPersonWithUser(req, res) {
+    try {
+      const { 
+        username, 
+        password, 
+        firstname, 
+        lastname, 
+        role, 
+        phone, 
+        email, 
+        createdBy, 
+        updatedBy 
+      } = req.body;
+      
+      // Validate required fields
+      if (!username || !password || !firstname || !lastname || !role) {
+        return res.status(400).json({ 
+          message: 'Missing required fields: username, password, firstname, lastname, role are required' 
+        });
+      }
+
+      // Convert numeric values
+      const numericCreatedBy = createdBy ? Number(createdBy) : null;
+      const numericUpdatedBy = updatedBy ? Number(updatedBy) : null;
+
+      // Check if username already exists
+      const existingUser = await User.findByUsername(username);
+      if (existingUser) {
+        return res.status(409).json({ 
+          message: 'Username already exists',
+          error: 'USERNAME_EXISTS'
+        });
+      }
+
+      // Start database transaction
+      const client = await db.pool.connect();
+      
+      try {
+        await client.query('BEGIN');
+
+        // 1. Create the user first
+        const newUser = await client.query(
+          'INSERT INTO Users(username, password) VALUES($1, $2) RETURNING *;',
+          [username, password]
+        );
+
+        // 2. Create the person with the new user's ID
+        const newPerson = await client.query(
+          'INSERT INTO People(userid, firstname, lastname, role, phone, email, createdby, updatedby) VALUES($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *;',
+          [newUser.rows[0].userid, firstname, lastname, role, phone, email, numericCreatedBy, numericUpdatedBy]
+        );
+
+        await client.query('COMMIT');
+
+        // Return combined response
+        res.status(201).json({
+          message: 'Person and user created successfully',
+          user: {
+            userId: newUser.rows[0].userid,
+            username: newUser.rows[0].username,
+            createdAt: newUser.rows[0].createdat
+          },
+          person: normalizePerson(newPerson.rows[0])
+        });
+
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
+
+    } catch (error) {
+      console.error('Error creating person with user:', error);
+      res.status(500).json({ 
+        message: 'Error creating person with user', 
+        error: error.message 
+      });
+    }
+  },
+
+  // New endpoint: Update both user and person simultaneously
+  async updatePersonWithUser(req, res) {
+    try {
+      const { employeeId } = req.params;
+      const { 
+        username, 
+        password, 
+        firstname, 
+        lastname, 
+        role, 
+        phone, 
+        email, 
+        updatedBy 
+      } = req.body;
+      
+      // Validate required fields
+      if (!firstname || !lastname || !role) {
+        return res.status(400).json({ 
+          message: 'Missing required fields: firstname, lastname, role are required' 
+        });
+      }
+
+      // Convert numeric values
+      const numericUpdatedBy = updatedBy ? Number(updatedBy) : null;
+
+      // Get the current person to find the associated user
+      const currentPerson = await People.findById(employeeId);
+      if (!currentPerson) {
+        return res.status(404).json({ 
+          message: 'Person not found' 
+        });
+      }
+
+      // Check if username is being changed and if it already exists
+      if (username) {
+        const existingUser = await User.findByUsername(username);
+        if (existingUser && existingUser.userid !== currentPerson.userid) {
+          return res.status(409).json({ 
+            message: 'Username already exists',
+            error: 'USERNAME_EXISTS'
+          });
+        }
+      }
+
+      // Start database transaction
+      const client = await db.pool.connect();
+      
+      try {
+        await client.query('BEGIN');
+
+        // 1. Update the user if username or password provided
+        if (username || password) {
+          const updateFields = [];
+          const updateValues = [];
+          let paramCount = 1;
+
+          if (username) {
+            updateFields.push(`username = $${paramCount}`);
+            updateValues.push(username);
+            paramCount++;
+          }
+          if (password) {
+            updateFields.push(`password = $${paramCount}`);
+            updateValues.push(password);
+            paramCount++;
+          }
+
+          updateValues.push(currentPerson.userid);
+          await client.query(
+            `UPDATE Users SET ${updateFields.join(', ')}, updatedat = CURRENT_TIMESTAMP WHERE userid = $${paramCount} RETURNING *;`,
+            updateValues
+          );
+        }
+
+        // 2. Update the person
+        const updatedPerson = await client.query(
+          'UPDATE People SET firstname = $1, lastname = $2, role = $3, phone = $4, email = $5, updatedat = CURRENT_TIMESTAMP, updatedby = $6 WHERE employeeid = $7 RETURNING *;',
+          [firstname, lastname, role, phone, email, numericUpdatedBy, employeeId]
+        );
+
+        await client.query('COMMIT');
+
+        // Get the updated user data
+        const updatedUser = await User.findById(currentPerson.userid);
+
+        // Return combined response
+        res.status(200).json({
+          message: 'Person and user updated successfully',
+          user: updatedUser ? {
+            userId: updatedUser.userid,
+            username: updatedUser.username,
+            updatedAt: updatedUser.updatedat
+          } : null,
+          person: normalizePerson(updatedPerson.rows[0])
+        });
+
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
+
+    } catch (error) {
+      console.error('Error updating person with user:', error);
+      res.status(500).json({ 
+        message: 'Error updating person with user', 
+        error: error.message 
+      });
+    }
+  },
+
+  // New endpoint: Soft delete person and optionally user
+  async softDeletePersonWithUser(req, res) {
+    try {
+      const { employeeId } = req.params;
+      const { deleteUser = false, updatedBy } = req.body;
+
+      // Convert numeric values
+      const numericUpdatedBy = updatedBy ? Number(updatedBy) : null;
+
+      // Get the current person to find the associated user
+      const currentPerson = await People.findById(employeeId);
+      if (!currentPerson) {
+        return res.status(404).json({ 
+          message: 'Person not found' 
+        });
+      }
+
+      // Start database transaction
+      const client = await db.pool.connect();
+      
+      try {
+        await client.query('BEGIN');
+
+        // 1. Soft delete the person
+        const deletedPerson = await client.query(
+          'UPDATE People SET deletedat = CURRENT_TIMESTAMP, updatedby = $1 WHERE employeeid = $2 RETURNING *;',
+          [numericUpdatedBy, employeeId]
+        );
+
+        // 2. Optionally soft delete the user
+        let deletedUser = null;
+        if (deleteUser && currentPerson.userid) {
+          deletedUser = await client.query(
+            'UPDATE Users SET deletedat = CURRENT_TIMESTAMP WHERE userid = $1 RETURNING *;',
+            [currentPerson.userid]
+          );
+        }
+
+        await client.query('COMMIT');
+
+        // Return combined response
+        res.status(200).json({
+          message: 'Person and user soft deleted successfully',
+          person: normalizePerson(deletedPerson.rows[0]),
+          user: deletedUser ? {
+            userId: deletedUser.rows[0].userid,
+            username: deletedUser.rows[0].username,
+            deletedAt: deletedUser.rows[0].deletedat
+          } : null,
+          deleteUser: deleteUser
+        });
+
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
+
+    } catch (error) {
+      console.error('Error soft deleting person with user:', error);
+      res.status(500).json({ 
+        message: 'Error soft deleting person with user', 
+        error: error.message 
+      });
+    }
+  },
+
+  // New endpoint: Get all people with their associated user information
+  async getAllPeopleWithUsers(req, res) {
+    try {
+      const peopleWithUsers = await People.findWithUsers();
+      const normalizedPeople = peopleWithUsers.map(person => normalizePersonWithUser(person));
+      res.status(200).json(normalizedPeople);
+    } catch (error) {
+      console.error('Error fetching people with users:', error);
+      res.status(500).json({ message: 'Error fetching people with users', error: error.message });
+    }
+  },
+
+  // New endpoint: Get specific person with their associated user information
+  async getPeopleByIdWithUser(req, res) {
+    try {
+      const { employeeId } = req.params;
+      const personWithUser = await People.findByIdWithUser(employeeId);
+      if (!personWithUser) {
+        return res.status(404).json({ message: 'People not found' });
+      }
+      res.status(200).json(normalizePersonWithUser(personWithUser));
+    } catch (error) {
+      console.error('Error fetching person with user:', error);
+      res.status(500).json({ message: 'Error fetching person with user', error: error.message });
     }
   },
 };

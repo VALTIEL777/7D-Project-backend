@@ -262,6 +262,7 @@ INSERT INTO Fines (
 INSERT INTO TicketStatus (taskStatusId, ticketId, crewId, createdBy, updatedBy)
 VALUES (8, 1, 1, 1, 1);
 
+
 -- Grind
 INSERT INTO TicketStatus (taskStatusId, ticketId, crewId, createdBy, updatedBy)
 VALUES (6, 1, 1, 1, 1);

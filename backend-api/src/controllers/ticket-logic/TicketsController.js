@@ -77,8 +77,8 @@ const TicketsController = {
   async updateTicket(req, res) {
     try {
       const { ticketId } = req.params;
-      const { incidentId, cuadranteId, contractUnitId, wayfindingId, paymentId, mobilizationId, ticketCode, quantity, daysOutstanding, comment7d, PeopleGasComment, contractNumber, amountToPay, ticketType, updatedBy } = req.body;
-      const updatedTicket = await Tickets.update(ticketId, incidentId, cuadranteId, contractUnitId, wayfindingId, paymentId, mobilizationId, ticketCode, quantity, daysOutstanding, comment7d, PeopleGasComment, contractNumber, amountToPay, ticketType, updatedBy);
+      const { incidentId, cuadranteId, contractUnitId, wayfindingId, paymentId, mobilizationId, ticketCode, quantity, daysOutstanding, comment7d, PeopleGasComment, partnerSupervisorComment, contractNumber, amountToPay, ticketType, updatedBy } = req.body;
+      const updatedTicket = await Tickets.update(incidentId, cuadranteId, contractUnitId, wayfindingId, paymentId, mobilizationId, ticketCode, quantity, daysOutstanding, comment7d, PeopleGasComment,partnerSupervisorComment, contractNumber, amountToPay, ticketType, updatedBy, ticketId);
       if (!updatedTicket) {
         return res.status(404).json({ message: 'Ticket not found' });
       }
