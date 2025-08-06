@@ -571,24 +571,80 @@ const RoutesController = {
   // Get tickets ready for spotting routes
   async getTicketsReadyForSpotting(req, res) {
     try {
+      console.log('=== DEBUG: Starting getTicketsReadyForSpotting ===');
+      
       const tickets = await RouteOptimizationService.getSpottingTickets();
+      console.log(`=== DEBUG: Found ${tickets.length} tickets eligible for spotting routes ===`);
       
       // Get addresses for each ticket
       const ticketsWithAddresses = [];
+      const ticketsWithoutAddresses = [];
+      
       for (const ticket of tickets) {
-        const address = await RouteOptimizationService.getTicketAddress(ticket);
-        ticketsWithAddresses.push({
-          ...ticket,
-          address: address || 'Address not found'
+        console.log(`=== DEBUG: Processing ticket ${ticket.ticketid} (${ticket.ticketcode}) ===`);
+        
+        try {
+          const address = await RouteOptimizationService.getTicketAddress(ticket);
+          
+          if (address && address !== 'Address not found') {
+            console.log(`  + Ticket ${ticket.ticketid} (${ticket.ticketcode}): Address found - "${address}"`);
+            ticketsWithAddresses.push({
+              ...ticket,
+              address: address
+            });
+          } else {
+            console.log(`  - Ticket ${ticket.ticketid} (${ticket.ticketcode}): NO ADDRESS FOUND - Using fallback`);
+            ticketsWithoutAddresses.push({
+              ticketId: ticket.ticketid,
+              ticketCode: ticket.ticketcode,
+              comment7d: ticket.comment7d,
+              reason: 'No address found in database'
+            });
+            ticketsWithAddresses.push({
+              ...ticket,
+              address: address || 'Address not found'
+            });
+          }
+        } catch (addressError) {
+          console.error(`  - Ticket ${ticket.ticketid} (${ticket.ticketcode}): ERROR getting address - ${addressError.message}`);
+          ticketsWithoutAddresses.push({
+            ticketId: ticket.ticketid,
+            ticketCode: ticket.ticketcode,
+            comment7d: ticket.comment7d,
+            reason: `Error: ${addressError.message}`
+          });
+          ticketsWithAddresses.push({
+            ...ticket,
+            address: 'Address not found'
+          });
+        }
+      }
+      
+      console.log(`=== DEBUG: Address retrieval summary ===`);
+      console.log(`  - Tickets with addresses: ${ticketsWithAddresses.length - ticketsWithoutAddresses.length}`);
+      console.log(`  - Tickets without addresses: ${ticketsWithoutAddresses.length}`);
+      
+      if (ticketsWithoutAddresses.length > 0) {
+        console.log(`=== DEBUG: Tickets without addresses ===`);
+        ticketsWithoutAddresses.forEach(ticket => {
+          console.log(`  - Ticket ${ticket.ticketId} (${ticket.ticketCode}): ${ticket.reason}`);
         });
       }
+      
+      console.log('=== DEBUG: Finished getTicketsReadyForSpotting ===');
       
       res.status(200).json({
         message: 'Tickets ready for spotting routes retrieved successfully',
         type: 'SPOTTER',
         count: ticketsWithAddresses.length,
         criteria: 'comment7d is NULL, empty, TK - PERMIT EXTENDED, or TK - LAYOUT, and no endingDate for SPOTTING status',
-        tickets: ticketsWithAddresses
+        tickets: ticketsWithAddresses,
+        debug: {
+          totalEligible: tickets.length,
+          withAddresses: ticketsWithAddresses.length - ticketsWithoutAddresses.length,
+          withoutAddresses: ticketsWithoutAddresses.length,
+          addressIssues: ticketsWithoutAddresses
+        }
       });
     } catch (error) {
       console.error('Error getting tickets ready for spotting:', error);

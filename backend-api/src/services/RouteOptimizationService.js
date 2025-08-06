@@ -791,6 +791,8 @@ class RouteOptimizationService {
      */
     async getTicketAddress(ticket) {
         try {
+            console.log(`=== DEBUG: Getting address for ticket ${ticket.ticketid} (${ticket.ticketcode}) ===`);
+            
             // Use the same comprehensive query as TicketsController.js
             const addressQuery = await db.query(`
                 SELECT DISTINCT 
@@ -823,13 +825,17 @@ class RouteOptimizationService {
                 LIMIT 1
             `, [ticket.ticketid]);
 
+            console.log(`  - Found ${addressQuery.rows.length} address records for ticket ${ticket.ticketid}`);
+
             if (addressQuery.rows.length > 0) {
                 const addr = addressQuery.rows[0];
+                console.log(`  - Address details: ID=${addr.addressid}, Number=${addr.addressnumber}, Cardinal=${addr.addresscardinal}, Street=${addr.addressstreet}, Suffix=${addr.addressesuffix}`);
                 
                 // Use the fullAddress if available, otherwise construct it
                 let addressString;
                 if (addr.fulladdress) {
                     addressString = addr.fulladdress.trim();
+                    console.log(`  - Using fullAddress from database: "${addressString}"`);
                 } else {
                     // Fallback: construct address from individual components
                     const parts = [
@@ -840,18 +846,24 @@ class RouteOptimizationService {
                     ].filter(Boolean); // Filter out null/undefined/empty strings
 
                     addressString = parts.join(', ').replace(/,(\s*,){1,}/g, ',').replace(/,$/, '').trim();
+                    console.log(`  - Constructed address from parts: "${addressString}"`);
                 }
 
                 // Append "Chicago, Illinois" to all addresses for better geocoding accuracy
                 const fullAddress = `${addressString}, Chicago, Illinois`;
+                console.log(`  - Final address: "${fullAddress}"`);
                 
                 // If we have latitude and longitude, we can use them for more accurate geocoding
                 if (addr.latitude && addr.longitude) {
-                    return `${fullAddress} (${addr.latitude}, ${addr.longitude})`;
+                    const geoAddress = `${fullAddress} (${addr.latitude}, ${addr.longitude})`;
+                    console.log(`  - Address with coordinates: "${geoAddress}"`);
+                    return geoAddress;
                 }
 
                 return fullAddress;
             }
+            
+            console.log(`  - No address found in database for ticket ${ticket.ticketid}, using sample address`);
             
             // If no address found in database, generate a sample address for demonstration
             // This uses the ticket ID to create a deterministic but varied address
@@ -874,11 +886,13 @@ class RouteOptimizationService {
             // Construct the full address string with Chicago, Illinois
             const fullAddress = `${sampleAddr.number} ${sampleAddr.cardinal} ${sampleAddr.street} ${sampleAddr.suffix}, Chicago, Illinois`.trim();
             
-            console.log(`Generated sample address for ticket ${ticket.ticketid}: ${fullAddress}`);
+            console.log(`  - Generated sample address: "${fullAddress}"`);
             return fullAddress;
             
         } catch (error) {
-            console.error(`Error getting address for ticket ID ${ticket.ticketid}:`, error);
+            console.error(`=== DEBUG: Error getting address for ticket ${ticket.ticketid} (${ticket.ticketcode}) ===`);
+            console.error(`  - Error details: ${error.message}`);
+            console.error(`  - Error stack: ${error.stack}`);
             return null; // Return null on error so optimization can potentially continue with other tickets
         }
     }
@@ -910,6 +924,147 @@ class RouteOptimizationService {
      */
     async getSpottingTickets() {
         try {
+            console.log('=== DEBUG: Starting getSpottingTickets ===');
+            
+            // First, get ALL tickets to see what we're working with
+            const allTicketsQuery = await db.query(`
+                SELECT DISTINCT 
+                    t.ticketId,
+                    t.ticketCode,
+                    t.contractNumber,
+                    t.amountToPay,
+                    t.ticketType,
+                    t.daysOutstanding,
+                    t.comment7d,
+                    t.quantity,
+                    t.createdAt,
+                    t.updatedAt,
+                    cu.name as contractUnitName,
+                    i.name as incidentName
+                FROM Tickets t
+                LEFT JOIN ContractUnits cu ON t.contractUnitId = cu.contractUnitId AND cu.deletedAt IS NULL
+                LEFT JOIN IncidentsMx i ON t.incidentId = i.incidentId AND i.deletedAt IS NULL
+                WHERE t.deletedAt IS NULL
+                ORDER BY t.ticketId ASC
+            `);
+            
+            console.log(`=== DEBUG: Total tickets in system: ${allTicketsQuery.rows.length} ===`);
+            
+            // Check tickets excluded by comment7d criteria
+            const excludedByCommentQuery = await db.query(`
+                SELECT DISTINCT 
+                    t.ticketId,
+                    t.ticketCode,
+                    t.comment7d
+                FROM Tickets t
+                WHERE t.deletedAt IS NULL
+                    AND (
+                        NOT (
+                            t.comment7d IS NULL 
+                            OR t.comment7d = '' 
+                            OR t.comment7d = 'TK - PERMIT EXTENDED'
+                            OR t.comment7d = 'TK - LAYOUT'
+                        )
+                        OR t.comment7d IN ('TK - CANCELLED', 'TK - HOLD OFF', 'TK- ON HOLD OFF')
+                    )
+                ORDER BY t.ticketId ASC
+            `);
+            
+            console.log(`=== DEBUG: Tickets excluded by comment7d criteria: ${excludedByCommentQuery.rows.length} ===`);
+            excludedByCommentQuery.rows.forEach(ticket => {
+                console.log(`  - Ticket ${ticket.ticketid} (${ticket.ticketcode}): comment7d = "${ticket.comment7d}"`);
+            });
+            
+            // Check tickets excluded by missing SPOTTING status
+            const excludedByNoSpottingQuery = await db.query(`
+                SELECT DISTINCT 
+                    t.ticketId,
+                    t.ticketCode,
+                    t.comment7d
+                FROM Tickets t
+                WHERE t.deletedAt IS NULL
+                    AND (
+                        t.comment7d IS NULL 
+                        OR t.comment7d = '' 
+                        OR t.comment7d = 'TK - PERMIT EXTENDED'
+                        OR t.comment7d = 'TK - LAYOUT'
+                    )
+                    AND NOT EXISTS (
+                        SELECT 1 FROM TicketStatus tks2 
+                        JOIN TaskStatus ts2 ON tks2.taskStatusId = ts2.taskStatusId 
+                        WHERE tks2.ticketId = t.ticketId 
+                            AND ts2.name = 'Spotting'
+                            AND tks2.deletedAt IS NULL
+                            AND ts2.deletedAt IS NULL
+                    )
+                ORDER BY t.ticketId ASC
+            `);
+            
+            console.log(`=== DEBUG: Tickets excluded by missing SPOTTING status: ${excludedByNoSpottingQuery.rows.length} ===`);
+            excludedByNoSpottingQuery.rows.forEach(ticket => {
+                console.log(`  - Ticket ${ticket.ticketid} (${ticket.ticketcode}): comment7d = "${ticket.comment7d}" - No SPOTTING status found`);
+            });
+            
+            // Check tickets excluded by completed SPOTTING status
+            const excludedByCompletedSpottingQuery = await db.query(`
+                SELECT DISTINCT 
+                    t.ticketId,
+                    t.ticketCode,
+                    t.comment7d,
+                    tks2.endingdate as spottingEndDate
+                FROM Tickets t
+                JOIN TicketStatus tks2 ON tks2.ticketId = t.ticketId
+                JOIN TaskStatus ts2 ON tks2.taskStatusId = ts2.taskStatusId 
+                WHERE t.deletedAt IS NULL
+                    AND (
+                        t.comment7d IS NULL 
+                        OR t.comment7d = '' 
+                        OR t.comment7d = 'TK - PERMIT EXTENDED'
+                        OR t.comment7d = 'TK - LAYOUT'
+                    )
+                    AND t.comment7d NOT IN ('TK - CANCELLED', 'TK - HOLD OFF', 'TK- ON HOLD OFF')
+                    AND ts2.name = 'Spotting'
+                    AND tks2.endingdate IS NOT NULL
+                    AND tks2.deletedAt IS NULL
+                    AND ts2.deletedAt IS NULL
+                ORDER BY t.ticketId ASC
+            `);
+            
+            console.log(`=== DEBUG: Tickets excluded by completed SPOTTING status: ${excludedByCompletedSpottingQuery.rows.length} ===`);
+            excludedByCompletedSpottingQuery.rows.forEach(ticket => {
+                console.log(`  - Ticket ${ticket.ticketid} (${ticket.ticketcode}): comment7d = "${ticket.comment7d}" - SPOTTING completed on ${ticket.spottingenddate}`);
+            });
+            
+            // Check tickets excluded by already being in active routes
+            const excludedByActiveRouteQuery = await db.query(`
+                SELECT DISTINCT 
+                    t.ticketId,
+                    t.ticketCode,
+                    t.comment7d,
+                    r.routeId,
+                    r.routeCode
+                FROM Tickets t
+                JOIN RouteTickets rt ON rt.ticketId = t.ticketId
+                JOIN Routes r ON rt.routeId = r.routeId
+                WHERE t.deletedAt IS NULL
+                    AND (
+                        t.comment7d IS NULL 
+                        OR t.comment7d = '' 
+                        OR t.comment7d = 'TK - PERMIT EXTENDED'
+                        OR t.comment7d = 'TK - LAYOUT'
+                    )
+                    AND r.type = 'SPOTTER'
+                    AND r.deletedAt IS NULL
+                    AND rt.deletedAt IS NULL
+                ORDER BY t.ticketId ASC
+            `);
+            
+            console.log(`=== DEBUG: Tickets excluded by already being in active SPOTTER routes: ${excludedByActiveRouteQuery.rows.length} ===`);
+            excludedByActiveRouteQuery.rows.forEach(ticket => {
+                console.log(`  - Ticket ${ticket.ticketid} (${ticket.ticketcode}): comment7d = "${ticket.comment7d}" - Already in route ${ticket.routeid} (${ticket.routecode})`);
+            });
+            
+            // Now get the final result
             const result = await db.query(`
                 SELECT DISTINCT 
                     t.ticketId,
@@ -934,6 +1089,7 @@ class RouteOptimizationService {
                         OR t.comment7d = 'TK - PERMIT EXTENDED'
                         OR t.comment7d = 'TK - LAYOUT'
                     )
+                    AND t.comment7d NOT IN ('TK - CANCELLED', 'TK - HOLD OFF', 'TK- ON HOLD OFF')
                     AND EXISTS (
                         SELECT 1 FROM TicketStatus tks2 
                         JOIN TaskStatus ts2 ON tks2.taskStatusId = ts2.taskStatusId 
@@ -954,6 +1110,13 @@ class RouteOptimizationService {
                     )
                 ORDER BY t.ticketId ASC
             `);
+            
+            console.log(`=== DEBUG: Final tickets eligible for spotting routes: ${result.rows.length} ===`);
+            result.rows.forEach(ticket => {
+                console.log(`  + Ticket ${ticket.ticketid} (${ticket.ticketcode}): comment7d = "${ticket.comment7d}" - ELIGIBLE`);
+            });
+            
+            console.log('=== DEBUG: Finished getSpottingTickets ===');
             
             return result.rows;
         } catch (error) {
@@ -987,6 +1150,12 @@ class RouteOptimizationService {
             LEFT JOIN ContractUnits cu ON t.contractUnitId = cu.contractUnitId AND cu.deletedAt IS NULL
             LEFT JOIN IncidentsMx i ON t.incidentId = i.incidentId AND i.deletedAt IS NULL
             WHERE t.deletedAt IS NULL
+            AND (
+                -- Exclude tickets with specific comment7d values
+                t.comment7d IS NULL 
+                OR t.comment7d = '' 
+                OR t.comment7d NOT IN ('TK - CANCELLED', 'TK - HOLD OFF', 'TK- ON HOLD OFF')
+            )
             AND EXISTS (
                 -- SPOTTING completed (has endingDate)
                 SELECT 1 FROM TicketStatus tks1 
@@ -1061,6 +1230,7 @@ class RouteOptimizationService {
      * Criteria: 
      * 1. SPOTTING completed and has GRINDING status (no SAWCUT)
      * 2. OR all concrete phases completed (SAWCUT, REMOVAL, FRAMING, POURING)
+     * 3. comment7d must be TK- ON PROGRESS, TK - ON LAYOUT, or TK - LAYOUT
      * @returns {Promise<Array>} - Array of tickets eligible for asphalt routes
      */
     async getAsphaltTickets() {
@@ -1083,6 +1253,12 @@ class RouteOptimizationService {
                 LEFT JOIN ContractUnits cu ON t.contractUnitId = cu.contractUnitId AND cu.deletedAt IS NULL
                 LEFT JOIN IncidentsMx i ON t.incidentId = i.incidentId AND i.deletedAt IS NULL
                 WHERE t.deletedAt IS NULL
+                AND (
+                    -- Include only specific comment7d values
+                    t.comment7d = 'TK- ON PROGRESS'
+                    OR t.comment7d = 'TK - ON LAYOUT'
+                    OR t.comment7d = 'TK - LAYOUT'
+                )
                 AND EXISTS (
                     -- SPOTTING completed (has endingDate)
                     SELECT 1 FROM TicketStatus tks1 
@@ -1093,35 +1269,118 @@ class RouteOptimizationService {
                     AND tks1.deletedAt IS NULL
                     AND ts1.deletedAt IS NULL
                 )
-                AND EXISTS (
-                    -- Grind completed
-                    SELECT 1 FROM TicketStatus tks2 
-                    JOIN TaskStatus ts2 ON tks2.taskStatusId = ts2.taskStatusId 
-                    WHERE tks2.ticketId = t.ticketId 
-                    AND ts2.name = 'Grind'
-                    AND tks2.endingdate IS NOT NULL
-                    AND tks2.deletedAt IS NULL
-                    AND ts2.deletedAt IS NULL
+                AND (
+                    -- Option 1: Has GRINDING status (no SAWCUT) - ready for asphalt
+                    (
+                        NOT EXISTS (
+                            SELECT 1 FROM TicketStatus tks3 
+                            JOIN TaskStatus ts3 ON tks3.taskStatusId = ts3.taskStatusId 
+                            WHERE tks3.ticketId = t.ticketId 
+                            AND ts3.name = 'Sawcut'
+                            AND tks3.deletedAt IS NULL
+                            AND ts3.deletedAt IS NULL
+                        )
+                        AND (
+                            -- Grind is the first incomplete phase
+                            (
+                                EXISTS (
+                                    SELECT 1 FROM TicketStatus tks2 
+                                    JOIN TaskStatus ts2 ON tks2.taskStatusId = ts2.taskStatusId 
+                                    WHERE tks2.ticketId = t.ticketId 
+                                    AND ts2.name = 'Grind'
+                                    AND tks2.endingdate IS NULL
+                                    AND tks2.deletedAt IS NULL
+                                    AND ts2.deletedAt IS NULL
+                                )
+                            )
+                            OR
+                            -- Asphalt is the first incomplete phase
+                            (
+                                EXISTS (
+                                    SELECT 1 FROM TicketStatus tks9 
+                                    JOIN TaskStatus ts9 ON tks9.taskStatusId = ts9.taskStatusId 
+                                    WHERE tks9.ticketId = t.ticketId 
+                                    AND ts9.name = 'Asphalt'
+                                    AND tks9.endingdate IS NULL
+                                    AND tks9.deletedAt IS NULL
+                                    AND ts9.deletedAt IS NULL
+                                )
+                                AND EXISTS (
+                                    SELECT 1 FROM TicketStatus tks2 
+                                    JOIN TaskStatus ts2 ON tks2.taskStatusId = ts2.taskStatusId 
+                                    WHERE tks2.ticketId = t.ticketId 
+                                    AND ts2.name = 'Grind'
+                                    AND tks2.endingdate IS NOT NULL
+                                    AND tks2.deletedAt IS NULL
+                                    AND ts2.deletedAt IS NULL
+                                )
+                            )
+                            OR
+                            -- Crack Seal is the first incomplete phase
+                            (
+                                EXISTS (
+                                    SELECT 1 FROM TicketStatus tks10 
+                                    JOIN TaskStatus ts10 ON tks10.taskStatusId = ts10.taskStatusId 
+                                    WHERE tks10.ticketId = t.ticketId 
+                                    AND ts10.name = 'Crack Seal'
+                                    AND tks10.endingdate IS NULL
+                                    AND tks10.deletedAt IS NULL
+                                    AND ts10.deletedAt IS NULL
+                                )
+                                AND EXISTS (
+                                    SELECT 1 FROM TicketStatus tks2 
+                                    JOIN TaskStatus ts2 ON tks2.taskStatusId = ts2.taskStatusId 
+                                    WHERE tks2.ticketId = t.ticketId 
+                                    AND ts2.name = 'Grind'
+                                    AND tks2.endingdate IS NOT NULL
+                                    AND tks2.deletedAt IS NULL
+                                    AND ts2.deletedAt IS NULL
+                                )
+                                AND EXISTS (
+                                    SELECT 1 FROM TicketStatus tks9 
+                                    JOIN TaskStatus ts9 ON tks9.taskStatusId = ts9.taskStatusId 
+                                    WHERE tks9.ticketId = t.ticketId 
+                                    AND ts9.name = 'Asphalt'
+                                    AND tks9.endingdate IS NOT NULL
+                                    AND tks9.deletedAt IS NULL
+                                    AND ts9.deletedAt IS NULL
+                                )
+                            )
+                        )
+                    )
+                    AND
+                    -- Option 2: All concrete phases completed for tickets in the same incident with concrete contract units
+                    (
+                        -- Check if there are any concrete tickets in the same incident
+                        NOT EXISTS (
+                            SELECT 1 FROM Tickets t_concrete
+                            WHERE t_concrete.incidentId = t.incidentId
+                            AND t_concrete.deletedAt IS NULL
+                            AND t_concrete.contractUnitId IN (1,2,3,4,5,10,11,13,14,16,17,18,21,22,23,24,25,26,27,28,29,30,33)
+                            AND (
+                                -- Check if any concrete ticket has incomplete phases
+                                EXISTS (
+                                    SELECT 1 FROM TicketStatus tks_concrete
+                                    JOIN TaskStatus ts_concrete ON tks_concrete.taskStatusId = ts_concrete.taskStatusId
+                                    WHERE tks_concrete.ticketId = t_concrete.ticketId
+                                    AND ts_concrete.name IN ('Sawcut', 'Removal', 'Framing', 'Pour')
+                                    AND tks_concrete.endingdate IS NULL
+                                    AND tks_concrete.deletedAt IS NULL
+                                    AND ts_concrete.deletedAt IS NULL
+                                )
+                            )
+                        )
+                    )
                 )
-                AND EXISTS (
-                    -- Asphalt completed
-                    SELECT 1 FROM TicketStatus tks3 
-                    JOIN TaskStatus ts3 ON tks3.taskStatusId = ts3.taskStatusId 
-                    WHERE tks3.ticketId = t.ticketId 
-                    AND ts3.name = 'Asphalt'
-                    AND tks3.endingdate IS NOT NULL
-                    AND tks3.deletedAt IS NULL
-                    AND ts3.deletedAt IS NULL
-                )
-                AND EXISTS (
-                    -- Crack Seal completed
-                    SELECT 1 FROM TicketStatus tks4 
-                    JOIN TaskStatus ts4 ON tks4.taskStatusId = ts4.taskStatusId 
-                    WHERE tks4.ticketId = t.ticketId 
-                    AND ts4.name = 'Crack Seal'
-                    AND tks4.endingdate IS NOT NULL
-                    AND tks4.deletedAt IS NULL
-                    AND ts4.deletedAt IS NULL
+                AND NOT EXISTS (
+                    -- Exclude tickets where all asphalt phases are completed
+                    SELECT 1 FROM TicketStatus tks11 
+                    JOIN TaskStatus ts11 ON tks11.taskStatusId = ts11.taskStatusId 
+                    WHERE tks11.ticketId = t.ticketId 
+                    AND ts11.name = 'Crack Seal'
+                    AND tks11.endingdate IS NOT NULL
+                    AND tks11.deletedAt IS NULL
+                    AND ts11.deletedAt IS NULL
                 )
                 AND NOT EXISTS (
                     -- Exclude tickets already assigned to an active asphalt route
