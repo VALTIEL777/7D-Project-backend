@@ -1507,6 +1507,7 @@ router.get('/', TicketsController.getAllTickets);
  *         description: Server error
  */
 router.put('/:ticketId', TicketsController.updateTicket);
+router.put('/:ticketId', TicketsController.updateTicketB);
 
 /**
  * @swagger

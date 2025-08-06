@@ -77,8 +77,24 @@ const TicketsController = {
   async updateTicket(req, res) {
     try {
       const { ticketId } = req.params;
+      const { incidentId, cuadranteId, contractUnitId, wayfindingId, paymentId, mobilizationId, ticketCode, quantity, daysOutstanding, comment7d, PeopleGasComment, contractNumber, amountToPay, ticketType, updatedBy } = req.body;
+      const updatedTicket = await Tickets.update(ticketId, incidentId, cuadranteId, contractUnitId, wayfindingId, paymentId, mobilizationId, ticketCode, quantity, daysOutstanding, comment7d, PeopleGasComment, contractNumber, amountToPay, ticketType, updatedBy);
+      if (!updatedTicket) {
+        return res.status(404).json({ message: 'Ticket not found' });
+      }
+      res.status(200).json(normalizeTicketData(updatedTicket));
+    } catch (error) {
+      console.error('Error updating Ticket:', error);
+      res.status(500).json({ message: 'Error updating Ticket', error: error.message });
+    }
+  },
+
+  
+  async updateTicketB(req, res) {
+    try {
+      const { ticketId } = req.params;
       const { incidentId, cuadranteId, contractUnitId, wayfindingId, paymentId, mobilizationId, ticketCode, quantity, daysOutstanding, comment7d, PeopleGasComment, partnerSupervisorComment, contractNumber, amountToPay, ticketType, updatedBy } = req.body;
-      const updatedTicket = await Tickets.update(incidentId, cuadranteId, contractUnitId, wayfindingId, paymentId, mobilizationId, ticketCode, quantity, daysOutstanding, comment7d, PeopleGasComment,partnerSupervisorComment, contractNumber, amountToPay, ticketType, updatedBy, ticketId);
+      const updatedTicket = await Tickets.updateB(incidentId, cuadranteId, contractUnitId, wayfindingId, paymentId, mobilizationId, ticketCode, quantity, daysOutstanding, comment7d, PeopleGasComment,partnerSupervisorComment, contractNumber, amountToPay, ticketType, updatedBy, ticketId);
       if (!updatedTicket) {
         return res.status(404).json({ message: 'Ticket not found' });
       }
