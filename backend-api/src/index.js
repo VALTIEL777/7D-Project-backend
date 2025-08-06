@@ -10,6 +10,8 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 const allowedOrigins = [
+  'http://13.221.110.249:3000',
+  'http://13.221.110.249',
   'https://7d-compass-api.christba.com',  // for Swagger
   'https://7d-compass.christba.com',       // for your frontend
   'http://localhost:3005',
@@ -43,6 +45,7 @@ const allowedOrigins = [
 
 app.use(cors({
   origin: function (origin, callback) {
+    console.log('Incoming Origin:', origin);  // <-- add this log
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
