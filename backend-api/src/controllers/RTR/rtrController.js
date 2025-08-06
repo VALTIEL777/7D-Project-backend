@@ -1155,7 +1155,7 @@ async function updateTicketWithData(ticketId, finalData, updatedBy) {
         );
         
         // Ensure the ticket is associated with this permit
-        await RTR.createPermitedTicket(permitId, ticketId, updatedBy, updatedBy);
+        await RTR.findOrCreatePermitedTicket(permitId, ticketId, updatedBy, updatedBy);
         
         console.log(`Successfully updated permit ${permitId} for ticket ${ticketId} with status: ${permitStatus}`);
       } catch (permitError) {

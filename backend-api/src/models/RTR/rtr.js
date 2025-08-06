@@ -607,6 +607,27 @@ class RTR {
     return res.rows[0];
   }
 
+  static async findPermitedTicket(permitId, ticketId) {
+    const res = await db.query(
+      'SELECT * FROM PermitedTickets WHERE permitId = $1 AND ticketId = $2 AND deletedAt IS NULL;',
+      [permitId, ticketId]
+    );
+    return res.rows[0];
+  }
+
+  static async findOrCreatePermitedTicket(permitId, ticketId, createdBy, updatedBy) {
+    // First try to find existing permitted ticket association
+    const existingPermitedTicket = await this.findPermitedTicket(permitId, ticketId);
+    
+    if (existingPermitedTicket) {
+      return existingPermitedTicket;
+    }
+    
+    // If not found, create new association
+    const newPermitedTicket = await this.createPermitedTicket(permitId, ticketId, createdBy, updatedBy);
+    return newPermitedTicket;
+  }
+
   static async findContractUnitByItemCode(itemCode) {
     if (!itemCode) {
       return null;
@@ -764,7 +785,7 @@ class RTR {
         );
 
         // Step 10: Create PermitedTicket
-        await this.createPermitedTicket(permitId, ticketId, createdBy, updatedBy);
+        await this.findOrCreatePermitedTicket(permitId, ticketId, createdBy, updatedBy);
 
         const result = {
           success: true,
