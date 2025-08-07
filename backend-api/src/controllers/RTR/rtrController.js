@@ -75,17 +75,35 @@ function getClosestHeaderIndex(target, headers) {
 
   headers.forEach((header, idx) => {
     const normHeader = normalize(header);
-    if (normHeader.includes(normalizedTarget)) {
-      bestMatch = { index: idx, score: 0 };
-      return;
-    }
-    const score = levenshtein(normHeader, normalizedTarget);
-    if (score < bestMatch.score) {
-      bestMatch = { index: idx, score };
+    
+    // For date columns, be more strict to avoid mixing up START_DATE and EXP_DATE
+    if (target === 'START_DATE' || target === 'EXP_DATE') {
+      // Exact match or very close match only for date columns
+      if (normHeader === normalizedTarget) {
+        bestMatch = { index: idx, score: 0 };
+        return;
+      }
+      // Allow only very close matches (1 character difference max) for date columns
+      const score = levenshtein(normHeader, normalizedTarget);
+      if (score <= 1 && score < bestMatch.score) {
+        bestMatch = { index: idx, score };
+      }
+    } else {
+      // For non-date columns, use the original logic
+      if (normHeader.includes(normalizedTarget)) {
+        bestMatch = { index: idx, score: 0 };
+        return;
+      }
+      const score = levenshtein(normHeader, normalizedTarget);
+      if (score < bestMatch.score) {
+        bestMatch = { index: idx, score };
+      }
     }
   });
 
-  return bestMatch.score <= 4 ? bestMatch.index : -1;
+  // Use stricter threshold for date columns
+  const maxScore = (target === 'START_DATE' || target === 'EXP_DATE') ? 1 : 4;
+  return bestMatch.score <= maxScore ? bestMatch.index : -1;
 }
 
 function extractDimensions(value) {
@@ -970,6 +988,47 @@ function compareTicketData(excelData, databaseTicket) {
   return inconsistencies;
 }
 
+// Helper function to compare ticket data excluding Contractor Comments (for auto-corrected tickets)
+function compareTicketDataExcludingComments(excelData, databaseTicket) {
+  const inconsistencies = [];
+  
+  // Define the fields to compare and their mappings to actual database fields
+  // Exclude 'Contractor Comments' since it's handled by auto-correction
+  const fieldMappings = {
+    'TASK_WO_NUM': 'ticketcode',  // Compare TASK_WO_NUM with database ticketcode
+    'PGL ComD:Wments': 'partnercomment',  // PGL comments go to partnerComment field
+    'NOTES2_RES': 'partnersupervisorcomment'  // NOTES2_RES goes to PartnerSupervisorComment field
+  };
+
+  for (const [excelField, dbField] of Object.entries(fieldMappings)) {
+    const excelValue = excelData[excelField];
+    const dbValue = databaseTicket[dbField];
+    
+    // Skip if both values are null/undefined/empty
+    if ((!excelValue || excelValue === '') && (!dbValue || dbValue === '')) continue;
+    
+    // Normalize values for comparison
+    const normalizedExcel = normalizeValue(excelValue);
+    const normalizedDb = normalizeValue(dbValue);
+    
+    if (normalizedExcel !== normalizedDb) {
+      inconsistencies.push({
+        field: excelField,
+        databaseField: dbField,
+        excelValue: excelValue,
+        databaseValue: dbValue,
+        type: getFieldType(excelField),
+        // Add additional context information
+        taskWoNum: excelData.TASK_WO_NUM || databaseTicket.ticketcode,
+        address: excelData.ADDRESS || databaseTicket.address || 'N/A',
+        restWoNum: excelData.RESTN_WO_NUM || 'N/A'
+      });
+    }
+  }
+
+  return inconsistencies;
+}
+
 // Helper function to normalize values for comparison
 function normalizeValue(value) {
   if (value === null || value === undefined) return '';
@@ -1468,84 +1527,127 @@ exports.analyzeForStepper = async (req, res) => {
         let wasAutoCorrected = false;
         const inconsistencies = [];
         
-        if (processedRow['Contractor Comments'] && processedRow.EXP_DATE) {
+        if (processedRow.EXP_DATE && existingTicket.comment7d) {
+          const currentDate = new Date();
+          currentDate.setHours(0, 0, 0, 0);
+          const expirationDate = new Date(processedRow.EXP_DATE);
+          expirationDate.setHours(0, 0, 0, 0);
+          
+          const daysUntilExpiry = Math.ceil((expirationDate - currentDate) / (1000 * 60 * 60 * 24));
+          
+          console.log(`Ticket ${existingTicket.ticketid}: Current comment="${existingTicket.comment7d}", Days until expiry: ${daysUntilExpiry}`);
+          
+          // Handle specific status comments from Excel - update database to match Excel
+          if (processedRow['Contractor Comments'] && (
+              processedRow['Contractor Comments'].toLowerCase().includes('tk - on hold off') ||
+              processedRow['Contractor Comments'].toLowerCase().includes('tk - on progress') ||
+              processedRow['Contractor Comments'].toLowerCase().includes('tk - on schedule') ||
+              processedRow['Contractor Comments'].toLowerCase().includes('tk - cancelled'))) {
+            
+            console.log(`Auto-updating database for ticket ${existingTicket.ticketid} from "${existingTicket.comment7d}" to "${processedRow['Contractor Comments']}" (Excel status comment)`);
+            
+            // Update the database to match the Excel value
+            await db.query(
+              'UPDATE Tickets SET comment7d = $1, updatedBy = $2 WHERE ticketId = $3;',
+              [processedRow['Contractor Comments'], 1, existingTicket.ticketid]
+            );
+            
+            // Update the existingTicket object to reflect the change
+            const oldComment = existingTicket.comment7d;
+            existingTicket.comment7d = processedRow['Contractor Comments'];
+            wasAutoCorrected = true;
+            console.log(`Database updated for ticket ${existingTicket.ticketid}`);
+            
+            // Check if permit extension is needed even for status comments
+            // Only check for TK - ON PROGRESS and TK - ON SCHEDULE (not TK - ON HOLD OFF or TK - CANCELLED)
+            if (processedRow['Contractor Comments'].toLowerCase().includes('tk - on progress') ||
+                processedRow['Contractor Comments'].toLowerCase().includes('tk - on schedule')) {
+              
+              // If permit is expiring soon (≤ 7 days), update to TK - NEEDS PERMIT EXTENSION
+              if (daysUntilExpiry <= 7 && daysUntilExpiry >= 0) {
+                console.log(`Auto-updating ticket ${existingTicket.ticketid} from "${processedRow['Contractor Comments']}" to "TK - NEEDS PERMIT EXTENSION" (permit expires in ${daysUntilExpiry} days)`);
+                
+                // Update the database to TK - NEEDS PERMIT EXTENSION
+                await db.query(
+                  'UPDATE Tickets SET comment7d = $1, updatedBy = $2 WHERE ticketId = $3;',
+                  ['TK - NEEDS PERMIT EXTENSION', 1, existingTicket.ticketid]
+                );
+                
+                // Update the existingTicket object to reflect the change
+                existingTicket.comment7d = 'TK - NEEDS PERMIT EXTENSION';
+                console.log(`Database updated for ticket ${existingTicket.ticketid} - permit extension needed`);
+              } else if (daysUntilExpiry > 7) {
+                console.log(`Ticket ${existingTicket.ticketid} has status "${processedRow['Contractor Comments']}" but permit is valid (expires in ${daysUntilExpiry} days) - keeping status comment`);
+              }
+            }
+          }
           // Skip if comment contains "TK - COMPLETED" or any variant
-          if (processedRow['Contractor Comments'].toLowerCase().includes('tk - completed')) {
-            console.log(`Skipping auto-correction for ticket ${existingTicket.ticketId} - ticket is completed`);
-            // Continue with normal processing without auto-correction
+          else if (existingTicket.comment7d.toLowerCase().includes('tk - completed')) {
+            console.log(`Skipping auto-correction for ticket ${existingTicket.ticketid} - ticket is completed`);
           }
-          // Skip auto-correction for specific status comments - show as inconsistencies for manual review
-          else if (processedRow['Contractor Comments'].toLowerCase().includes('tk - on hold off') ||
-                   processedRow['Contractor Comments'].toLowerCase().includes('tk - on progress') ||
-                   processedRow['Contractor Comments'].toLowerCase().includes('tk - on schedule') ||
-                   processedRow['Contractor Comments'].toLowerCase().includes('tk - cancelled')) {
-            console.log(`Skipping auto-correction for ticket ${existingTicket.ticketId} - ticket has status comment: "${processedRow['Contractor Comments']}"`);
-            // Continue with normal processing without auto-correction
-          }
+          // Helper function to check if comment is eligible for auto-correction
           else {
-            const currentDate = new Date();
-            currentDate.setHours(0, 0, 0, 0);
-            const expirationDate = new Date(processedRow.EXP_DATE);
-            expirationDate.setHours(0, 0, 0, 0);
+            // Check if comment is eligible for auto-correction (TK - LAYOUT, empty, or TK - NEEDS PERMIT EXTENSION)
+            const isCommentEligibleForAutoCorrection = () => {
+              const comment = existingTicket.comment7d || '';
+              const commentLower = comment.toLowerCase().trim();
+              return commentLower === '' || commentLower === 'tk - layout' || commentLower === 'tk - needs permit extension';
+            };
             
-            const daysUntilExpiry = Math.ceil((expirationDate - currentDate) / (1000 * 60 * 60 * 24));
-            
-            // If permit is valid (more than 7 days away) but comment says it needs extension
-            if (daysUntilExpiry > 7 && processedRow['Contractor Comments'].toLowerCase().includes('tk - needs permit extension')) {
-              console.log(`Auto-correcting ticket ${existingTicket.ticketId} comment from "${processedRow['Contractor Comments']}" to "TK - LAYOUT" (permit expires in ${daysUntilExpiry} days)`);
-              // Update the processed row to reflect the correction
-              processedRow['Contractor Comments'] = 'TK - LAYOUT';
-              // Only add inconsistency if database value is different
-              if (existingTicket.comment7d !== 'TK - LAYOUT') {
-                inconsistencies.push({
-                  field: 'Contractor Comments',
-                  databaseField: 'comment7d',
-                  excelValue: processedRow['Contractor Comments'],
-                  databaseValue: existingTicket.comment7d,
-                  type: 'text',
-                  autoCorrected: true,
-                  reason: `Auto-corrected: Permit is valid (expires in ${daysUntilExpiry} days)`
-                });
-              }
-            }
-            // If permit is expiring soon (≤ 7 days) but comment doesn't mention it
-            else if (daysUntilExpiry <= 7 && daysUntilExpiry >= 0 && !processedRow['Contractor Comments'].toLowerCase().includes('tk - needs permit extension')) {
-              console.log(`Auto-correcting ticket ${existingTicket.ticketId} comment to "TK - NEEDS PERMIT EXTENSION" (permit expires in ${daysUntilExpiry} days)`);
-              // Update the processed row to reflect the correction
-              processedRow['Contractor Comments'] = 'TK - NEEDS PERMIT EXTENSION';
-              // Only add inconsistency if database value is different
-              if (existingTicket.comment7d !== 'TK - NEEDS PERMIT EXTENSION') {
-                inconsistencies.push({
-                  field: 'Contractor Comments',
-                  databaseField: 'comment7d',
-                  excelValue: processedRow['Contractor Comments'],
-                  databaseValue: existingTicket.comment7d,
-                  type: 'text',
-                  autoCorrected: true,
-                  reason: `Auto-corrected: Permit expires in ${daysUntilExpiry} days`
-                });
-              }
-            }
-            // NEW: If database has "TK - NEEDS PERMIT EXTENSION" but permit is valid, auto-update database
-            else if (daysUntilExpiry > 7 && existingTicket.comment7d && existingTicket.comment7d.toLowerCase().includes('tk - needs permit extension')) {
-              // Skip auto-correction for specific status comments in database
-              if (existingTicket.comment7d.toLowerCase().includes('tk - on hold off') ||
-                  existingTicket.comment7d.toLowerCase().includes('tk - on progress') ||
-                  existingTicket.comment7d.toLowerCase().includes('tk - on schedule') ||
-                  existingTicket.comment7d.toLowerCase().includes('tk - cancelled')) {
-                console.log(`Skipping database auto-correction for ticket ${existingTicket.ticketId} - ticket has status comment: "${existingTicket.comment7d}"`);
-              } else {
-                console.log(`Auto-updating database for ticket ${existingTicket.ticketId} from "${existingTicket.comment7d}" to "TK - LAYOUT" (permit expires in ${daysUntilExpiry} days)`);
+            // Only proceed with auto-correction if comment is eligible
+            if (isCommentEligibleForAutoCorrection()) {
+              // Check if permit is valid (> 7 days) and comment is TK - NEEDS PERMIT EXTENSION
+              if (daysUntilExpiry > 7 && existingTicket.comment7d.toLowerCase().includes('tk - needs permit extension')) {
+                console.log(`Auto-updating database for ticket ${existingTicket.ticketid} from "${existingTicket.comment7d}" to "TK - LAYOUT" (permit expires in ${daysUntilExpiry} days)`);
+                
                 // Update the database directly
                 await db.query(
                   'UPDATE Tickets SET comment7d = $1, updatedBy = $2 WHERE ticketId = $3;',
-                  ['TK - LAYOUT', 1, existingTicket.ticketId] // Using 1 as default updatedBy
+                  ['TK - LAYOUT', 1, existingTicket.ticketid]
                 );
+                
                 // Update the existingTicket object to reflect the change
+                const oldComment = existingTicket.comment7d;
                 existingTicket.comment7d = 'TK - LAYOUT';
                 wasAutoCorrected = true;
-                console.log(`Database updated for ticket ${existingTicket.ticketId}`);
+                console.log(`Database updated for ticket ${existingTicket.ticketid}`);
               }
+              // Check if permit is expiring (≤ 7 days) and comment is TK - LAYOUT or empty
+              else if (daysUntilExpiry <= 7 && daysUntilExpiry >= 0 && !existingTicket.comment7d.toLowerCase().includes('tk - needs permit extension')) {
+                console.log(`Auto-updating database for ticket ${existingTicket.ticketid} from "${existingTicket.comment7d}" to "TK - NEEDS PERMIT EXTENSION" (permit expires in ${daysUntilExpiry} days)`);
+                
+                // Update the database directly
+                await db.query(
+                  'UPDATE Tickets SET comment7d = $1, updatedBy = $2 WHERE ticketId = $3;',
+                  ['TK - NEEDS PERMIT EXTENSION', 1, existingTicket.ticketid]
+                );
+                
+                // Update the existingTicket object to reflect the change
+                const oldComment = existingTicket.comment7d;
+                existingTicket.comment7d = 'TK - NEEDS PERMIT EXTENSION';
+                wasAutoCorrected = true;
+                console.log(`Database updated for ticket ${existingTicket.ticketid}`);
+              }
+              // Check if permit is expired (< 0 days) and comment is TK - LAYOUT or empty
+              else if (daysUntilExpiry < 0 && !existingTicket.comment7d.toLowerCase().includes('tk - needs permit extension')) {
+                console.log(`Auto-updating database for ticket ${existingTicket.ticketid} from "${existingTicket.comment7d}" to "TK - NEEDS PERMIT EXTENSION" (permit expired ${Math.abs(daysUntilExpiry)} days ago)`);
+                
+                // Update the database directly
+                await db.query(
+                  'UPDATE Tickets SET comment7d = $1, updatedBy = $2 WHERE ticketId = $3;',
+                  ['TK - NEEDS PERMIT EXTENSION', 1, existingTicket.ticketid]
+                );
+                
+                // Update the existingTicket object to reflect the change
+                const oldComment = existingTicket.comment7d;
+                existingTicket.comment7d = 'TK - NEEDS PERMIT EXTENSION';
+                wasAutoCorrected = true;
+                console.log(`Database updated for ticket ${existingTicket.ticketid}`);
+              } else {
+                console.log(`No auto-correction needed for ticket ${existingTicket.ticketid} - current comment: "${existingTicket.comment7d}", days until expiry: ${daysUntilExpiry}`);
+              }
+            } else {
+              console.log(`Skipping auto-correction for ticket ${existingTicket.ticketid} - comment "${existingTicket.comment7d}" is not eligible for auto-correction (must be "TK - LAYOUT", "TK - NEEDS PERMIT EXTENSION", or empty)`);
             }
           }
         }
@@ -1558,6 +1660,10 @@ exports.analyzeForStepper = async (req, res) => {
           inconsistencies.push(...dataInconsistencies);
         } else {
           console.log(`Skipping data comparison for auto-corrected ticket`);
+          // For auto-corrected tickets, only compare non-comment fields
+          const dataInconsistencies = compareTicketDataExcludingComments(processedRow, existingTicket);
+          console.log(`Found ${dataInconsistencies.length} non-comment inconsistencies:`, dataInconsistencies);
+          inconsistencies.push(...dataInconsistencies);
         }
         
         if (inconsistencies.length > 0) {
@@ -2070,13 +2176,22 @@ exports.saveStepperData = async (req, res) => {
     }
 
     // Step 7: Update permit statuses based on expiration dates
+    // PARTIALLY RE-ENABLED: Only updateTicketCommentsToLayout to handle TK - NEEDS PERMIT EXTENSION → TK - LAYOUT
     let permitStatusResults = null;
     try {
-      console.log('Updating permit statuses and checking for permits expiring within 7 days...');
-      permitStatusResults = await RTR.updatePermitStatusesAndCheckExpiring(updatedBy || 1);
-      console.log(`Comprehensive permit update completed: ${permitStatusResults.summary.permitsStatusUpdated} permits updated, ${permitStatusResults.summary.ticketsCommentUpdated} tickets updated`);
+      console.log('Updating tickets with TK - NEEDS PERMIT EXTENSION to TK - LAYOUT if permits are valid...');
+      // Only call updateTicketCommentsToLayout, not the full updatePermitStatusesAndCheckExpiring
+      const layoutResults = await RTR.updateTicketCommentsToLayout(updatedBy || 1);
+      console.log(`Ticket comment updates completed: ${layoutResults.length} tickets updated from TK - NEEDS PERMIT EXTENSION to TK - LAYOUT`);
+      
+      permitStatusResults = {
+        layoutUpdates: layoutResults,
+        summary: {
+          totalTicketsUpdatedToLayout: layoutResults.length
+        }
+      };
     } catch (permitError) {
-      console.error("Failed to update permit statuses and check expiring permits:", permitError);
+      console.error("Failed to update ticket comments to LAYOUT:", permitError);
       // Don't fail the entire operation if permit status update fails
     }
 
@@ -2104,22 +2219,8 @@ exports.saveStepperData = async (req, res) => {
           totalStatusesCreated: ticketStatusResults.summary.totalStatusesCreated
         } : null,
         permitStatusUpdate: permitStatusResults ? {
-          permits: {
-            total: permitStatusResults.summary.totalPermitsChecked,
-            statusUpdated: permitStatusResults.summary.permitsStatusUpdated,
-            unchanged: permitStatusResults.summary.totalPermitsChecked - permitStatusResults.summary.permitsStatusUpdated,
-            statusChanges: {
-              toExpired: permitStatusResults.statusUpdates.filter(r => r.updated && r.newStatus === 'EXPIRED').length,
-              toExpiresToday: permitStatusResults.statusUpdates.filter(r => r.updated && r.newStatus === 'EXPIRES_TODAY').length,
-              toActive: permitStatusResults.statusUpdates.filter(r => r.updated && r.newStatus === 'ACTIVE').length,
-              toPending: permitStatusResults.statusUpdates.filter(r => r.updated && r.newStatus === 'PENDING').length
-            }
-          },
-          tickets: {
-            total: permitStatusResults.summary.totalTicketsChecked,
-            commentUpdated: permitStatusResults.summary.ticketsCommentUpdated,
-            unchanged: permitStatusResults.summary.totalTicketsChecked - permitStatusResults.summary.ticketsCommentUpdated
-          }
+          layoutUpdates: permitStatusResults.layoutUpdates,
+          summary: permitStatusResults.summary
         } : null
       }
     });

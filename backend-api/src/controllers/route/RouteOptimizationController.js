@@ -477,24 +477,31 @@ const RouteOptimizationController = {
   },
 
   /**
-   * Complete a route by setting endingDate to current timestamp for all related ticket statuses
-   * @route POST /api/route-optimization/route/{routeId}/complete
-   * @desc Complete a route by setting endingDate to current timestamp for all ticket statuses for tickets in the route
+   * Complete a concrete route by completing the current phase and moving to the next phase
+   * @route POST /api/route-optimization/route/{routeId}/complete-concrete
+   * @desc Complete a concrete route by completing current phases and moving to next phases
    * @access Private
    */
-  async completeRoute(req, res) {
+  async completeConcreteRoute(req, res) {
     try {
       const { routeId } = req.params;
       const updatedBy = req.user?.id || 1;
 
-      console.log(`Completing route ${routeId}`);
+      console.log(`Completing concrete route ${routeId}`);
 
-      // Get route information to determine type
+      // Get route information to validate it's a concrete route
       const route = await Routes.findById(parseInt(routeId));
       if (!route) {
         return res.status(404).json({
           success: false,
           error: `Route ${routeId} not found`
+        });
+      }
+
+      if (route.type !== 'CONCRETE') {
+        return res.status(400).json({
+          success: false,
+          error: `Route ${routeId} is not a CONCRETE route. Route type: ${route.type}`
         });
       }
 
@@ -509,21 +516,201 @@ const RouteOptimizationController = {
       }
 
       const ticketIds = routeTickets.map(rt => rt.ticketid);
-      console.log(`Found ${ticketIds.length} tickets in route ${routeId} of type ${route.type}`);
+      console.log(`Found ${ticketIds.length} tickets in concrete route ${routeId}`);
 
-      let result;
-      
-      // Use specific completion method based on route type
-      if (route.type === 'CONCRETE') {
-        result = await RouteOptimizationService.completeConcreteRoute(parseInt(routeId), ticketIds, updatedBy);
-      } else if (route.type === 'SPOTTING') {
-        result = await RouteOptimizationService.completeSpottingRoute(parseInt(routeId), ticketIds, updatedBy);
-      } else if (route.type === 'ASPHALT') {
-        result = await RouteOptimizationService.completeAsphaltRoute(parseInt(routeId), ticketIds, updatedBy);
-      } else {
-        // For other route types, use the generic completion method
-        result = await RouteOptimizationService.completeRoute(parseInt(routeId), ticketIds, updatedBy);
+      const result = await RouteOptimizationService.completeConcreteRoute(parseInt(routeId), ticketIds, updatedBy);
+
+      res.status(200).json({
+        success: true,
+        message: 'Concrete route completed successfully',
+        data: result
+      });
+
+    } catch (error) {
+      console.error('Failed to complete concrete route:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to complete concrete route',
+        details: error.message
+      });
+    }
+  },
+
+  /**
+   * Complete a spotting route by completing the SPOTTING phase
+   * @route POST /api/route-optimization/route/{routeId}/complete-spotting
+   * @desc Complete a spotting route by completing SPOTTING phases
+   * @access Private
+   */
+  async completeSpottingRoute(req, res) {
+    try {
+      const { routeId } = req.params;
+      const updatedBy = req.user?.id || 1;
+
+      console.log(`Completing spotting route ${routeId}`);
+
+      // Get route information to validate it's a spotting route
+      const route = await Routes.findById(parseInt(routeId));
+      if (!route) {
+        return res.status(404).json({
+          success: false,
+          error: `Route ${routeId} not found`
+        });
       }
+
+      if (route.type !== 'SPOTTING') {
+        return res.status(400).json({
+          success: false,
+          error: `Route ${routeId} is not a SPOTTING route. Route type: ${route.type}`
+        });
+      }
+
+      // Get all tickets in the route
+      const routeTickets = await RouteTickets.findByRouteId(parseInt(routeId));
+      
+      if (routeTickets.length === 0) {
+        return res.status(404).json({
+          success: false,
+          error: `No tickets found for route ${routeId}`
+        });
+      }
+
+      const ticketIds = routeTickets.map(rt => rt.ticketid);
+      console.log(`Found ${ticketIds.length} tickets in spotting route ${routeId}`);
+
+      const result = await RouteOptimizationService.completeSpottingRoute(parseInt(routeId), ticketIds, updatedBy);
+
+      res.status(200).json({
+        success: true,
+        message: 'Spotting route completed successfully',
+        data: result
+      });
+
+    } catch (error) {
+      console.error('Failed to complete spotting route:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to complete spotting route',
+        details: error.message
+      });
+    }
+  },
+
+  /**
+   * Complete an asphalt route by completing asphalt phases
+   * @route POST /api/route-optimization/route/{routeId}/complete-asphalt
+   * @desc Complete an asphalt route by completing asphalt phases
+   * @access Private
+   */
+  async completeAsphaltRoute(req, res) {
+    try {
+      const { routeId } = req.params;
+      const updatedBy = req.user?.id || 1;
+
+      console.log(`Completing asphalt route ${routeId}`);
+
+      // Get route information to validate it's an asphalt route
+      const route = await Routes.findById(parseInt(routeId));
+      if (!route) {
+        return res.status(404).json({
+          success: false,
+          error: `Route ${routeId} not found`
+        });
+      }
+
+      if (route.type !== 'ASPHALT') {
+        return res.status(400).json({
+          success: false,
+          error: `Route ${routeId} is not an ASPHALT route. Route type: ${route.type}`
+        });
+      }
+
+      // Get all tickets in the route
+      const routeTickets = await RouteTickets.findByRouteId(parseInt(routeId));
+      
+      if (routeTickets.length === 0) {
+        return res.status(404).json({
+          success: false,
+          error: `No tickets found for route ${routeId}`
+        });
+      }
+
+      const ticketIds = routeTickets.map(rt => rt.ticketid);
+      console.log(`Found ${ticketIds.length} tickets in asphalt route ${routeId}`);
+
+      const result = await RouteOptimizationService.completeAsphaltRoute(parseInt(routeId), ticketIds, updatedBy);
+
+      res.status(200).json({
+        success: true,
+        message: 'Asphalt route completed successfully',
+        data: result
+      });
+
+    } catch (error) {
+      console.error('Failed to complete asphalt route:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to complete asphalt route',
+        details: error.message
+      });
+    }
+  },
+
+  /**
+   * Complete a route by setting endingDate to current timestamp for all related ticket statuses
+   * @route POST /api/route-optimization/route/{routeId}/complete
+   * @desc Complete a route by setting endingDate to current timestamp for all ticket statuses for tickets in the route (generic for other route types)
+   * @access Private
+   */
+  async completeRoute(req, res) {
+    try {
+      const { routeId } = req.params;
+      const updatedBy = req.user?.id || 1;
+
+      console.log(`Completing generic route ${routeId}`);
+
+      // Get route information to determine type
+      const route = await Routes.findById(parseInt(routeId));
+      if (!route) {
+        return res.status(404).json({
+          success: false,
+          error: `Route ${routeId} not found`
+        });
+      }
+
+      // Check if it's a specific route type that should use dedicated endpoints
+      if (route.type === 'CONCRETE') {
+        return res.status(400).json({
+          success: false,
+          error: `Use /complete-concrete endpoint for CONCRETE routes. Route type: ${route.type}`
+        });
+      } else if (route.type === 'SPOTTING') {
+        return res.status(400).json({
+          success: false,
+          error: `Use /complete-spotting endpoint for SPOTTING routes. Route type: ${route.type}`
+        });
+      } else if (route.type === 'ASPHALT') {
+        return res.status(400).json({
+          success: false,
+          error: `Use /complete-asphalt endpoint for ASPHALT routes. Route type: ${route.type}`
+        });
+      }
+
+      // Get all tickets in the route
+      const routeTickets = await RouteTickets.findByRouteId(parseInt(routeId));
+      
+      if (routeTickets.length === 0) {
+        return res.status(404).json({
+          success: false,
+          error: `No tickets found for route ${routeId}`
+        });
+      }
+
+      const ticketIds = routeTickets.map(rt => rt.ticketid);
+      console.log(`Found ${ticketIds.length} tickets in generic route ${routeId} of type ${route.type}`);
+
+      // Use the generic completion method for other route types
+      const result = await RouteOptimizationService.completeRoute(parseInt(routeId), ticketIds, updatedBy);
 
       res.status(200).json({
         success: true,

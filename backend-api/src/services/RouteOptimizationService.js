@@ -1255,10 +1255,14 @@ class RouteOptimizationService {
                 WHERE t.deletedAt IS NULL
                 AND (
                     -- Include only specific comment7d values
-                    t.comment7d = 'TK- ON PROGRESS'
+                    t.comment7d = 'TK - ON PROGRESS'
                     OR t.comment7d = 'TK - ON LAYOUT'
                     OR t.comment7d = 'TK - LAYOUT'
+                    OR t.comment7d = 'TK- ON PROGRESS'
+                    OR t.comment7d = 'TK- ON LAYOUT'
+                    OR t.comment7d = 'TK- LAYOUT'
                 )
+                AND t.contractUnitId NOT IN (1,2,3,4,5,10,11,13,14,16,17,18,21,22,23,24,25,26,27,28,29,30,33)
                 AND EXISTS (
                     -- SPOTTING completed (has endingDate)
                     SELECT 1 FROM TicketStatus tks1 
@@ -1269,108 +1273,15 @@ class RouteOptimizationService {
                     AND tks1.deletedAt IS NULL
                     AND ts1.deletedAt IS NULL
                 )
-                AND (
-                    -- Option 1: Has GRINDING status (no SAWCUT) - ready for asphalt
-                    (
-                        NOT EXISTS (
-                            SELECT 1 FROM TicketStatus tks3 
-                            JOIN TaskStatus ts3 ON tks3.taskStatusId = ts3.taskStatusId 
-                            WHERE tks3.ticketId = t.ticketId 
-                            AND ts3.name = 'Sawcut'
-                            AND tks3.deletedAt IS NULL
-                            AND ts3.deletedAt IS NULL
-                        )
-                        AND (
-                            -- Grind is the first incomplete phase
-                            (
-                                EXISTS (
-                                    SELECT 1 FROM TicketStatus tks2 
-                                    JOIN TaskStatus ts2 ON tks2.taskStatusId = ts2.taskStatusId 
-                                    WHERE tks2.ticketId = t.ticketId 
-                                    AND ts2.name = 'Grind'
-                                    AND tks2.endingdate IS NULL
-                                    AND tks2.deletedAt IS NULL
-                                    AND ts2.deletedAt IS NULL
-                                )
-                            )
-                            OR
-                            -- Asphalt is the first incomplete phase
-                            (
-                                EXISTS (
-                                    SELECT 1 FROM TicketStatus tks9 
-                                    JOIN TaskStatus ts9 ON tks9.taskStatusId = ts9.taskStatusId 
-                                    WHERE tks9.ticketId = t.ticketId 
-                                    AND ts9.name = 'Asphalt'
-                                    AND tks9.endingdate IS NULL
-                                    AND tks9.deletedAt IS NULL
-                                    AND ts9.deletedAt IS NULL
-                                )
-                                AND EXISTS (
-                                    SELECT 1 FROM TicketStatus tks2 
-                                    JOIN TaskStatus ts2 ON tks2.taskStatusId = ts2.taskStatusId 
-                                    WHERE tks2.ticketId = t.ticketId 
-                                    AND ts2.name = 'Grind'
-                                    AND tks2.endingdate IS NOT NULL
-                                    AND tks2.deletedAt IS NULL
-                                    AND ts2.deletedAt IS NULL
-                                )
-                            )
-                            OR
-                            -- Crack Seal is the first incomplete phase
-                            (
-                                EXISTS (
-                                    SELECT 1 FROM TicketStatus tks10 
-                                    JOIN TaskStatus ts10 ON tks10.taskStatusId = ts10.taskStatusId 
-                                    WHERE tks10.ticketId = t.ticketId 
-                                    AND ts10.name = 'Crack Seal'
-                                    AND tks10.endingdate IS NULL
-                                    AND tks10.deletedAt IS NULL
-                                    AND ts10.deletedAt IS NULL
-                                )
-                                AND EXISTS (
-                                    SELECT 1 FROM TicketStatus tks2 
-                                    JOIN TaskStatus ts2 ON tks2.taskStatusId = ts2.taskStatusId 
-                                    WHERE tks2.ticketId = t.ticketId 
-                                    AND ts2.name = 'Grind'
-                                    AND tks2.endingdate IS NOT NULL
-                                    AND tks2.deletedAt IS NULL
-                                    AND ts2.deletedAt IS NULL
-                                )
-                                AND EXISTS (
-                                    SELECT 1 FROM TicketStatus tks9 
-                                    JOIN TaskStatus ts9 ON tks9.taskStatusId = ts9.taskStatusId 
-                                    WHERE tks9.ticketId = t.ticketId 
-                                    AND ts9.name = 'Asphalt'
-                                    AND tks9.endingdate IS NOT NULL
-                                    AND tks9.deletedAt IS NULL
-                                    AND ts9.deletedAt IS NULL
-                                )
-                            )
-                        )
-                    )
-                    AND
-                    -- Option 2: All concrete phases completed for tickets in the same incident with concrete contract units
-                    (
-                        -- Check if there are any concrete tickets in the same incident
-                        NOT EXISTS (
-                            SELECT 1 FROM Tickets t_concrete
-                            WHERE t_concrete.incidentId = t.incidentId
-                            AND t_concrete.deletedAt IS NULL
-                            AND t_concrete.contractUnitId IN (1,2,3,4,5,10,11,13,14,16,17,18,21,22,23,24,25,26,27,28,29,30,33)
-                            AND (
-                                -- Check if any concrete ticket has incomplete phases
-                                EXISTS (
-                                    SELECT 1 FROM TicketStatus tks_concrete
-                                    JOIN TaskStatus ts_concrete ON tks_concrete.taskStatusId = ts_concrete.taskStatusId
-                                    WHERE tks_concrete.ticketId = t_concrete.ticketId
-                                    AND ts_concrete.name IN ('Sawcut', 'Removal', 'Framing', 'Pour')
-                                    AND tks_concrete.endingdate IS NULL
-                                    AND tks_concrete.deletedAt IS NULL
-                                    AND ts_concrete.deletedAt IS NULL
-                                )
-                            )
-                        )
-                    )
+                AND EXISTS (
+                    -- Must have at least one incomplete asphalt phase (Grind, Asphalt, or Crack Seal)
+                    SELECT 1 FROM TicketStatus tks_asphalt 
+                    JOIN TaskStatus ts_asphalt ON tks_asphalt.taskStatusId = ts_asphalt.taskStatusId 
+                    WHERE tks_asphalt.ticketId = t.ticketId 
+                    AND ts_asphalt.name IN ('Grind', 'Asphalt', 'Crack Seal')
+                    AND tks_asphalt.endingdate IS NULL
+                    AND tks_asphalt.deletedAt IS NULL
+                    AND ts_asphalt.deletedAt IS NULL
                 )
                 AND NOT EXISTS (
                     -- Exclude tickets where all asphalt phases are completed
@@ -1391,6 +1302,34 @@ class RouteOptimizationService {
                     AND r.deletedAt IS NULL
                     AND rt.deletedAt IS NULL
                 )
+                AND NOT EXISTS (
+                    -- Exclude asphalt tickets if there are concrete tickets in the same incident with incomplete concrete phases
+                    SELECT 1 FROM Tickets t_concrete
+                    JOIN TicketStatus tks_concrete ON t_concrete.ticketId = tks_concrete.ticketId
+                    JOIN TaskStatus ts_concrete ON tks_concrete.taskStatusId = ts_concrete.taskStatusId
+                    JOIN IncidentsMx i_concrete ON t_concrete.incidentId = i_concrete.incidentId AND i_concrete.deletedAt IS NULL
+                    JOIN IncidentsMx i_current ON t.incidentId = i_current.incidentId AND i_current.deletedAt IS NULL
+                    WHERE i_concrete.name = i_current.name
+                    AND t_concrete.deletedAt IS NULL
+                    AND t_concrete.contractUnitId IN (1,2,3,4,5,10,11,13,14,16,17,18,21,22,23,24,25,26,27,28,29,30,33)
+                    AND ts_concrete.name IN ('Sawcut', 'Removal', 'Framing', 'Pour')
+                    AND tks_concrete.endingdate IS NULL
+                    AND tks_concrete.deletedAt IS NULL
+                    AND ts_concrete.deletedAt IS NULL
+                )
+                GROUP BY 
+                    t.ticketId,
+                    t.ticketCode,
+                    t.contractNumber,
+                    t.amountToPay,
+                    t.ticketType,
+                    t.daysOutstanding,
+                    t.comment7d,
+                    t.quantity,
+                    t.createdAt,
+                    t.updatedAt,
+                    cu.name,
+                    i.name
                 ORDER BY t.ticketId ASC
             `);
             
@@ -2953,6 +2892,7 @@ class RouteOptimizationService {
                         updatedAt = CURRENT_TIMESTAMP, 
                         updatedBy = $1 
                     WHERE ticketId = ANY($2) 
+                        AND endingDate IS NULL
                         AND deletedAt IS NULL
                     RETURNING taskStatusId, ticketId, endingDate
                 `, [updatedBy, ticketIds]);
@@ -3427,6 +3367,7 @@ class RouteOptimizationService {
                         updatedBy = $1 
                     WHERE ticketId = ANY($2) 
                         AND taskStatusId = (SELECT taskStatusId FROM TaskStatus WHERE name = 'Spotting' AND deletedAt IS NULL)
+                        AND endingDate IS NULL
                         AND deletedAt IS NULL
                     RETURNING taskStatusId, ticketId, endingDate
                 `, [updatedBy, ticketIds]);

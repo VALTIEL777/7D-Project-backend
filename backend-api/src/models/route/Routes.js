@@ -222,6 +222,157 @@ class Routes {
     }
   }
 
+  // Get routes by type with their tickets and addresses, only routes with incomplete phases
+  static async findByTypeWithIncompletePhases(type) {
+    try {
+      // Define the phases to check based on route type
+      let phasesToCheck = [];
+      let phaseCondition = '';
+      
+      switch (type.toUpperCase()) {
+        case 'SPOTTER':
+          phasesToCheck = ['Spotting'];
+          phaseCondition = `ts.name = 'Spotting'`;
+          break;
+        case 'CONCRETE':
+          phasesToCheck = ['Sawcut', 'Removal', 'Framing', 'Pour', 'Clean'];
+          phaseCondition = `ts.name IN ('Sawcut', 'Removal', 'Framing', 'Pour', 'Clean')`;
+          break;
+        case 'ASPHALT':
+          phasesToCheck = ['Grind', 'Asphalt', 'Crack Seal', 'Install Signs', 'Steel Plate Pick Up'];
+          phaseCondition = `ts.name IN ('Grind', 'Asphalt', 'Crack Seal', 'Install Signs', 'Steel Plate Pick Up')`;
+          break;
+        default:
+          // For other types, return all routes (no phase filtering)
+          return await this.findByTypeWithTickets(type);
+      }
+
+      const res = await db.query(`
+        SELECT DISTINCT
+          r.*,
+          rt.ticketId,
+          rt.address,
+          rt.queue,
+          t.ticketCode,
+          t.quantity,
+          t.amountToPay,
+          -- Get coordinates from Addresses table
+          a.latitude,
+          a.longitude,
+          a.placeid
+        FROM Routes r
+        LEFT JOIN RouteTickets rt ON r.routeId = rt.routeId AND rt.deletedAt IS NULL
+        LEFT JOIN Tickets t ON rt.ticketId = t.ticketId AND t.deletedAt IS NULL
+        LEFT JOIN TicketAddresses ta ON t.ticketId = ta.ticketId AND ta.deletedAt IS NULL
+        LEFT JOIN Addresses a ON ta.addressId = a.addressId AND a.deletedAt IS NULL
+        WHERE r.type = $1 
+          AND r.deletedAt IS NULL
+          AND (
+            r.endDate IS NULL 
+            OR r.endDate > CURRENT_DATE
+          )
+          -- Only include routes that have tickets with incomplete phases
+          AND EXISTS (
+            SELECT 1 
+            FROM TicketStatus tks
+            JOIN TaskStatus ts ON tks.taskStatusId = ts.taskStatusId
+            WHERE tks.ticketId = t.ticketId
+              AND ${phaseCondition}
+              AND tks.endingDate IS NULL
+              AND tks.deletedAt IS NULL
+              AND ts.deletedAt IS NULL
+          )
+        ORDER BY r.createdAt DESC, rt.queue ASC
+      `, [type]);
+      
+      if (res.rows.length === 0) return [];
+      
+      // Group routes with their tickets
+      const routesMap = new Map();
+      
+      res.rows.forEach(row => {
+        const routeId = row.routeid;
+        
+        if (!routesMap.has(routeId)) {
+          // Parse JSONB fields safely
+          let optimizedOrder = null;
+          let optimizationMetadata = null;
+          
+          try {
+            if (row.optimizedorder) {
+              try {
+                optimizedOrder = JSON.parse(row.optimizedorder);
+              } catch (e) {
+                // Fallback: try to parse as comma-separated numbers (legacy format)
+                if (typeof row.optimizedorder === 'string' && row.optimizedorder.match(/^\s*\d+(,\s*\d+)*\s*$/)) {
+                  optimizedOrder = row.optimizedorder.split(',').map(s => parseInt(s.trim(), 10));
+                } else {
+                  console.warn(`Failed to parse optimizedOrder for route ${routeId}:`, e.message);
+                  optimizedOrder = null;
+                }
+              }
+            } else {
+              optimizedOrder = null;
+            }
+          } catch (e) {
+            console.warn(`Failed to parse optimizedOrder for route ${routeId}:`, e.message);
+            optimizedOrder = null;
+          }
+          
+          try {
+            optimizationMetadata = row.optimizationmetadata ? JSON.parse(row.optimizationmetadata) : null;
+          } catch (e) {
+            console.warn(`Failed to parse optimizationMetadata for route ${routeId}:`, e.message);
+          }
+          
+          // Create route object without ticket-specific fields
+          const route = {
+            routeId: row.routeid,
+            routeCode: row.routecode,
+            type: row.type,
+            startDate: row.startdate,
+            endDate: row.enddate,
+            encodedPolyline: row.encodedpolyline,
+            totalDistance: row.totaldistance,
+            totalDuration: row.totalduration,
+            optimizedOrder: optimizedOrder,
+            optimizationMetadata: optimizationMetadata,
+            createdAt: row.createdat,
+            updatedAt: row.updatedat,
+            createdBy: row.createdby,
+            updatedBy: row.updatedby,
+            tickets: []
+          };
+          routesMap.set(routeId, route);
+        }
+        
+        // Add ticket if it exists
+        if (row.ticketid) {
+          const ticket = {
+            ticketId: row.ticketid,
+            ticketCode: row.ticketcode,
+            address: row.address,
+            queue: row.queue,
+            quantity: row.quantity,
+            amountToPay: row.amounttopay,
+            // Add coordinates for Leaflet marker placement
+            coordinates: {
+              latitude: row.latitude,
+              longitude: row.longitude,
+              placeid: row.placeid
+            }
+          };
+          routesMap.get(routeId).tickets.push(ticket);
+        }
+      });
+      
+      return Array.from(routesMap.values());
+    } catch (error) {
+      console.error('Error in findByTypeWithIncompletePhases:', error);
+      throw error;
+    }
+  }
+
   // Get completed routes by type with their tickets and addresses
   // A route is considered completed if it has an endDate set
   static async findCompletedByTypeWithTickets(type) {

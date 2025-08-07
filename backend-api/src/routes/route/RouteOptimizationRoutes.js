@@ -94,8 +94,29 @@ router.post('/route/:routeId/cancel-concrete', RouteOptimizationController.cance
 router.post('/route/:routeId/cancel-asphalt', RouteOptimizationController.cancelAsphaltRoute);
 
 /**
+ * @route POST /api/route-optimization/route/:routeId/complete-concrete
+ * @desc Complete a concrete route by completing current phases and moving to next phases
+ * @access Private (assuming you have auth middleware)
+ */
+router.post('/route/:routeId/complete-concrete', RouteOptimizationController.completeConcreteRoute);
+
+/**
+ * @route POST /api/route-optimization/route/:routeId/complete-spotting
+ * @desc Complete a spotting route by completing SPOTTING phases
+ * @access Private (assuming you have auth middleware)
+ */
+router.post('/route/:routeId/complete-spotting', RouteOptimizationController.completeSpottingRoute);
+
+/**
+ * @route POST /api/route-optimization/route/:routeId/complete-asphalt
+ * @desc Complete an asphalt route by completing asphalt phases
+ * @access Private (assuming you have auth middleware)
+ */
+router.post('/route/:routeId/complete-asphalt', RouteOptimizationController.completeAsphaltRoute);
+
+/**
  * @route POST /api/route-optimization/route/:routeId/complete
- * @desc Complete a route by setting endingDate to current timestamp for all ticket statuses
+ * @desc Complete a route by setting endingDate to current timestamp for all ticket statuses (generic for other route types)
  * @access Private (assuming you have auth middleware)
  */
 router.post('/route/:routeId/complete', RouteOptimizationController.completeRoute);

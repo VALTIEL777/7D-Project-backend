@@ -269,21 +269,49 @@ class RTR {
   // Helper method to determine permit status based on expiration date
   static determinePermitStatus(expireDate) {
     if (!expireDate) {
+      console.log(`[determinePermitStatus] No expiration date provided, returning PENDING`);
       return 'PENDING'; // No expiration date set
     }
     
-    const currentDate = new Date();
-    const expirationDate = new Date(expireDate);
+    // Create current date in UTC to avoid timezone issues
+    const now = new Date();
+    const currentDate = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
     
-    // Reset time to start of day for accurate date comparison
-    currentDate.setHours(0, 0, 0, 0);
-    expirationDate.setHours(0, 0, 0, 0);
+    // Parse expiration date and ensure it's in UTC
+    let expirationDate;
+    try {
+      expirationDate = new Date(expireDate);
+      // If the date is invalid, throw an error
+      if (isNaN(expirationDate.getTime())) {
+        throw new Error(`Invalid date: ${expireDate}`);
+      }
+      // Convert to UTC date (start of day)
+      expirationDate = new Date(Date.UTC(expirationDate.getFullYear(), expirationDate.getMonth(), expirationDate.getDate()));
+    } catch (error) {
+      console.error(`[determinePermitStatus] Error parsing expiration date: ${expireDate}`, error);
+      return 'PENDING';
+    }
+    
+    // Add comprehensive logging to debug the date comparison
+    console.log(`[determinePermitStatus] ===== DATE COMPARISON DEBUG =====`);
+    console.log(`[determinePermitStatus] Raw expireDate input: ${expireDate}`);
+    console.log(`[determinePermitStatus] Current date (UTC): ${currentDate.toISOString()}`);
+    console.log(`[determinePermitStatus] Expiration date (UTC): ${expirationDate.toISOString()}`);
+    console.log(`[determinePermitStatus] Current date (local): ${currentDate.toLocaleDateString()}`);
+    console.log(`[determinePermitStatus] Expiration date (local): ${expirationDate.toLocaleDateString()}`);
+    console.log(`[determinePermitStatus] Current date timestamp: ${currentDate.getTime()}`);
+    console.log(`[determinePermitStatus] Expiration date timestamp: ${expirationDate.getTime()}`);
+    console.log(`[determinePermitStatus] Is expiration < current? ${expirationDate < currentDate}`);
+    console.log(`[determinePermitStatus] Is expiration === current? ${expirationDate.getTime() === currentDate.getTime()}`);
     
     if (expirationDate < currentDate) {
+      console.log(`[determinePermitStatus] ❌ Permit EXPIRED - expiration date (${expirationDate.toISOString()}) is before current date (${currentDate.toISOString()})`);
       return 'EXPIRED';
     } else if (expirationDate.getTime() === currentDate.getTime()) {
+      console.log(`[determinePermitStatus] ⚠️ Permit EXPIRES_TODAY - expiration date (${expirationDate.toISOString()}) equals current date (${currentDate.toISOString()})`);
       return 'EXPIRES_TODAY';
     } else {
+      console.log(`[determinePermitStatus] ✅ Permit ACTIVE - expiration date (${expirationDate.toISOString()}) is after current date (${currentDate.toISOString()})`);
       return 'ACTIVE';
     }
   }
@@ -377,6 +405,7 @@ class RTR {
       
       // Get permits expiring within 7 days and their associated tickets
       // EXCLUDE tickets that are on private property (no permits needed)
+      // EXCLUDE tickets that already have the correct extension comment
       const permitsRes = await db.query(
         `SELECT 
            p.PermitId,
@@ -397,8 +426,11 @@ class RTR {
          AND w.deletedAt IS NULL
          AND p.expireDate >= $1 
          AND p.expireDate <= $2
-         AND (t.comment7d IS NULL OR t.comment7d = '' OR t.comment7d ILIKE '%tk - needs permit extension%')
+         AND (t.comment7d IS NULL OR t.comment7d = '')
+         AND t.comment7d NOT ILIKE '%tk - needs permit extension%'
          AND t.comment7d NOT ILIKE '%tk - completed%'
+         AND t.comment7d NOT ILIKE '%tk - cancelled%'
+         AND t.comment7d NOT ILIKE '%tk - on hold off%'
          AND (w.location IS NULL OR LOWER(w.location) NOT LIKE '%private property%')
          ORDER BY p.expireDate ASC;`,
         [currentDate, sevenDaysFromNow]
@@ -409,15 +441,16 @@ class RTR {
       for (const row of permitsRes.rows) {
         const daysUntilExpiry = Math.ceil((new Date(row.expiredate) - currentDate) / (1000 * 60 * 60 * 24));
         
-        // Only update if comment7d is null, empty, or already has the extension message
-        // But skip if comment contains specific status comments that should not be changed
+        // Only update if comment7d is null or empty
+        // Additional check to avoid updating tickets that shouldn't be changed
         const comment = row.comment7d || '';
         const shouldSkip = comment.toLowerCase().includes('tk - on hold off') ||
                           comment.toLowerCase().includes('tk - on progress') ||
                           comment.toLowerCase().includes('tk - on schedule') ||
-                          comment.toLowerCase().includes('tk - cancelled');
+                          comment.toLowerCase().includes('tk - cancelled') ||
+                          comment.toLowerCase().includes('tk - needs permit extension');
         
-        if ((!row.comment7d || row.comment7d === '' || row.comment7d.toLowerCase().includes('tk - needs permit extension')) && !shouldSkip) {
+        if (!shouldSkip && (!row.comment7d || row.comment7d === '')) {
           // Update the ticket's comment7d
           const updateRes = await db.query(
             'UPDATE Tickets SET comment7d = $1, updatedBy = $2 WHERE ticketId = $3 RETURNING ticketId, comment7d;',
@@ -437,20 +470,6 @@ class RTR {
             location: row.location
           });
           
-        } else if (shouldSkip) {
-          results.push({
-            ticketId: row.ticketid,
-            ticketCode: row.ticketcode,
-            permitId: row.permitid,
-            permitNumber: row.permitnumber,
-            expireDate: row.expiredate,
-            daysUntilExpiry: daysUntilExpiry,
-            oldComment: row.comment7d,
-            newComment: row.comment7d,
-            updated: false,
-            reason: `Skipped: Comment has status "${comment}" that should not be changed`,
-            location: row.location
-          });
         } else {
           results.push({
             ticketId: row.ticketid,
@@ -462,7 +481,7 @@ class RTR {
             oldComment: row.comment7d,
             newComment: row.comment7d,
             updated: false,
-            reason: 'Comment already set to something other than extension message',
+            reason: shouldSkip ? `Skipped: Comment already has status "${comment}"` : 'Comment not null/empty',
             location: row.location
           });
         }
@@ -476,6 +495,7 @@ class RTR {
   }
 
   // Method to update ticket comments to LAYOUT when permits are valid
+// Method to update ticket comments to LAYOUT when permits are valid
   static async updateTicketCommentsToLayout(updatedBy) {
     try {
       const currentDate = new Date();
@@ -486,44 +506,86 @@ class RTR {
       sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7);
       sevenDaysFromNow.setHours(23, 59, 59, 999);
       
+      console.log(`[updateTicketCommentsToLayout] Looking for tickets with TK - NEEDS PERMIT EXTENSION and valid permits (> ${sevenDaysFromNow.toISOString()})`);
+      
       // Get tickets with valid permits (more than 7 days away) that have extension comments
+      // Exclude tickets with status comments that shouldn't be changed at SQL level
       const ticketsRes = await db.query(
         `SELECT 
-           p.PermitId,
-           p.permitNumber,
-           p.expireDate,
-           p.status,
-           t.ticketId,
-           t.ticketCode,
-           t.comment7d,
-           w.location
-         FROM Permits p
-         INNER JOIN PermitedTickets pt ON p.PermitId = pt.permitId
-         INNER JOIN Tickets t ON pt.ticketId = t.ticketId
-         INNER JOIN wayfinding w ON t.wayfindingId = w.wayfindingId
-         WHERE p.deletedAt IS NULL 
-         AND pt.deletedAt IS NULL
-         AND t.deletedAt IS NULL
-         AND w.deletedAt IS NULL
-         AND p.expireDate > $1
-         AND t.comment7d ILIKE '%tk - needs permit extension%'
-         AND t.comment7d NOT ILIKE '%tk - completed%'
-         AND (w.location IS NULL OR LOWER(w.location) NOT LIKE '%private property%')
-         ORDER BY p.expireDate ASC;`,
+          p.PermitId,
+          p.permitNumber,
+          p.expireDate,
+          p.status,
+          t.ticketId,
+          t.ticketCode,
+          t.comment7d,
+          COALESCE(w.location, 'Unknown') as location
+        FROM Permits p
+        INNER JOIN PermitedTickets pt ON p.PermitId = pt.permitId
+        INNER JOIN Tickets t ON pt.ticketId = t.ticketId
+        LEFT JOIN wayfinding w ON t.wayfindingId = w.wayfindingId AND w.deletedAt IS NULL
+        WHERE p.deletedAt IS NULL 
+        AND pt.deletedAt IS NULL
+        AND t.deletedAt IS NULL
+        AND p.expireDate > $1
+        AND t.comment7d ILIKE '%tk - needs permit extension%'
+        AND t.comment7d NOT ILIKE '%tk - completed%'
+        AND t.comment7d NOT ILIKE '%tk - cancelled%'
+        AND t.comment7d NOT ILIKE '%tk - on hold off%'
+        AND t.comment7d NOT ILIKE '%tk - on progress%'
+        AND t.comment7d NOT ILIKE '%tk - on schedule%'
+        AND (w.location IS NULL OR LOWER(w.location) NOT LIKE '%private property%')
+        ORDER BY p.expireDate ASC;`,
         [sevenDaysFromNow]
       );
+      
+      console.log(`[updateTicketCommentsToLayout] Found ${ticketsRes.rows.length} tickets with TK - NEEDS PERMIT EXTENSION and valid permits`);
+      
+      // If no tickets found, let's check if there are any tickets with TK - NEEDS PERMIT EXTENSION at all
+      if (ticketsRes.rows.length === 0) {
+        console.log(`[updateTicketCommentsToLayout] No tickets found with main query. Checking for any tickets with TK - NEEDS PERMIT EXTENSION...`);
+        
+        const checkRes = await db.query(
+          `SELECT 
+            t.ticketId,
+            t.ticketCode,
+            t.comment7d,
+            p.PermitId,
+            p.permitNumber,
+            p.expireDate,
+            p.status
+          FROM Tickets t
+          LEFT JOIN PermitedTickets pt ON t.ticketId = pt.ticketId AND pt.deletedAt IS NULL
+          LEFT JOIN Permits p ON pt.permitId = p.PermitId AND p.deletedAt IS NULL
+          WHERE t.deletedAt IS NULL
+          AND t.comment7d ILIKE '%tk - needs permit extension%'
+          ORDER BY t.ticketId ASC;`
+        );
+        
+        console.log(`[updateTicketCommentsToLayout] Found ${checkRes.rows.length} tickets with TK - NEEDS PERMIT EXTENSION (including those without valid permits or missing relationships)`);
+        
+        if (checkRes.rows.length > 0) {
+          console.log(`[updateTicketCommentsToLayout] Sample tickets with TK - NEEDS PERMIT EXTENSION:`);
+          checkRes.rows.slice(0, 5).forEach(row => {
+            console.log(`  - Ticket ${row.ticketid} (${row.ticketcode}): comment7d="${row.comment7d}", permitId=${row.permitid}, expireDate=${row.expiredate}`);
+          });
+        }
+      }
       
       const results = [];
       
       for (const row of ticketsRes.rows) {
         const daysUntilExpiry = Math.ceil((new Date(row.expiredate) - currentDate) / (1000 * 60 * 60 * 24));
         
-        // Check if comment contains specific status comments that should not be changed
+        console.log(`[updateTicketCommentsToLayout] Processing ticket ${row.ticketid} (${row.ticketcode}): comment7d="${row.comment7d}", expires in ${daysUntilExpiry} days`);
+        
+        // Double check (though SQL should have filtered these out already)
         const comment = row.comment7d || '';
         const shouldSkip = comment.toLowerCase().includes('tk - on hold off') ||
                           comment.toLowerCase().includes('tk - on progress') ||
                           comment.toLowerCase().includes('tk - on schedule') ||
-                          comment.toLowerCase().includes('tk - cancelled');
+                          comment.toLowerCase().includes('tk - cancelled') ||
+                          comment.toLowerCase().includes('tk - completed');
         
         if (!shouldSkip) {
           // Update to LAYOUT since permit is valid and more than 7 days away
@@ -531,6 +593,8 @@ class RTR {
             'UPDATE Tickets SET comment7d = $1, updatedBy = $2 WHERE ticketId = $3;',
             ['TK - LAYOUT', updatedBy, row.ticketid]
           );
+          
+          console.log(`[updateTicketCommentsToLayout] ✅ Updated ticket ${row.ticketid} (${row.ticketcode}) from "${row.comment7d}" to "TK - LAYOUT"`);
           
           results.push({
             ticketId: row.ticketid,
@@ -545,6 +609,9 @@ class RTR {
             location: row.location
           });
         } else {
+          // This should rarely happen due to SQL filtering, but kept for safety
+          console.log(`[updateTicketCommentsToLayout] ⚠️ Skipped ticket ${row.ticketid} (${row.ticketcode}): comment "${comment}" should not be changed`);
+          
           results.push({
             ticketId: row.ticketid,
             ticketCode: row.ticketcode,
@@ -561,6 +628,7 @@ class RTR {
         }
       }
       
+      console.log(`[updateTicketCommentsToLayout] Completed: ${results.filter(r => r.updated).length} tickets updated to TK - LAYOUT`);
       return results;
     } catch (error) {
       console.error('Error updating ticket comments to LAYOUT:', error);
