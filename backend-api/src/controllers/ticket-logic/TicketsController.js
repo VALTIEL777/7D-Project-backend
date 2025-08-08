@@ -539,8 +539,10 @@ const TicketsController = {
       
       res.status(200).json({
         success: true,
-        message: 'Ticket payment and invoice information retrieved successfully (tickets with payments only)',
+        message: 'Ticket payment and invoice information retrieved successfully (all tickets)',
         count: normalizedData.length,
+        ticketsWithPayments: recordsWithPaymentNumber,
+        ticketsWithoutPayments: normalizedData.length - recordsWithPaymentNumber,
         data: normalizedData
       });
     } catch (error) {

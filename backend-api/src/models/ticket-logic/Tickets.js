@@ -685,7 +685,7 @@ class Tickets {
     return result.rows;
   }
 
-  // Get ticket information with related payment and invoice data (only tickets with payments)
+  // Get ticket information with related payment and invoice data (all tickets, including those without payments)
   static async getTicketPaymentInvoiceInfo() {
     const result = await db.query(`
       SELECT 
@@ -702,7 +702,7 @@ class Tickets {
         q.shop
       FROM Tickets t
       LEFT JOIN Invoices i ON t.ticketId = i.ticketId AND i.deletedAt IS NULL
-      INNER JOIN Payments p ON t.paymentId = p.checkId AND p.deletedAt IS NULL
+      LEFT JOIN Payments p ON t.paymentId = p.checkId AND p.deletedAt IS NULL
       LEFT JOIN Quadrants q ON t.cuadranteId = q.quadrantId AND q.deletedAt IS NULL
       WHERE t.deletedAt IS NULL
       ORDER BY t.ticketId ASC
