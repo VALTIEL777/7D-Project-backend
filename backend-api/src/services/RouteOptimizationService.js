@@ -919,7 +919,7 @@ class RouteOptimizationService {
 
     /**
      * Get tickets for spotting routes
-     * Criteria: comment7d is NULL, empty, TK - PERMIT EXTENDED, or TK - LAYOUT, and SPOTTING status exists but has no endingDate (not completed)
+     * Criteria: comment7d is NULL, empty, TK - PERMIT EXTENDED, TK - LAYOUT, or TK - LAY OUT, and SPOTTING status exists but has no endingDate (not completed)
      * @returns {Promise<Array>} - Array of tickets eligible for spotting routes
      */
     async getSpottingTickets() {
@@ -964,6 +964,7 @@ class RouteOptimizationService {
                             OR t.comment7d = '' 
                             OR t.comment7d = 'TK - PERMIT EXTENDED'
                             OR t.comment7d = 'TK - LAYOUT'
+                            OR t.comment7d = 'TK - LAY OUT'
                         )
                         OR t.comment7d IN ('TK - CANCELLED', 'TK - HOLD OFF', 'TK- ON HOLD OFF')
                     )
@@ -988,6 +989,7 @@ class RouteOptimizationService {
                         OR t.comment7d = '' 
                         OR t.comment7d = 'TK - PERMIT EXTENDED'
                         OR t.comment7d = 'TK - LAYOUT'
+                        OR t.comment7d = 'TK - LAY OUT'
                     )
                     AND NOT EXISTS (
                         SELECT 1 FROM TicketStatus tks2 
@@ -1021,6 +1023,7 @@ class RouteOptimizationService {
                         OR t.comment7d = '' 
                         OR t.comment7d = 'TK - PERMIT EXTENDED'
                         OR t.comment7d = 'TK - LAYOUT'
+                        OR t.comment7d = 'TK - LAY OUT'
                     )
                     AND t.comment7d NOT IN ('TK - CANCELLED', 'TK - HOLD OFF', 'TK- ON HOLD OFF')
                     AND ts2.name = 'Spotting'
@@ -1052,6 +1055,7 @@ class RouteOptimizationService {
                         OR t.comment7d = '' 
                         OR t.comment7d = 'TK - PERMIT EXTENDED'
                         OR t.comment7d = 'TK - LAYOUT'
+                        OR t.comment7d = 'TK - LAY OUT'
                     )
                     AND r.type = 'SPOTTER'
                     AND r.deletedAt IS NULL
@@ -1088,6 +1092,7 @@ class RouteOptimizationService {
                         OR t.comment7d = '' 
                         OR t.comment7d = 'TK - PERMIT EXTENDED'
                         OR t.comment7d = 'TK - LAYOUT'
+                        OR t.comment7d = 'TK - LAY OUT'
                     )
                     AND t.comment7d NOT IN ('TK - CANCELLED', 'TK - HOLD OFF', 'TK- ON HOLD OFF')
                     AND EXISTS (
@@ -1230,7 +1235,7 @@ class RouteOptimizationService {
      * Criteria: 
      * 1. SPOTTING completed and has GRINDING status (no SAWCUT)
      * 2. OR all concrete phases completed (SAWCUT, REMOVAL, FRAMING, POURING)
-     * 3. comment7d must be TK- ON PROGRESS, TK - ON LAYOUT, or TK - LAYOUT
+     * 3. comment7d must be TK- ON PROGRESS, TK - ON LAYOUT, TK - LAYOUT, or TK - LAY OUT
      * @returns {Promise<Array>} - Array of tickets eligible for asphalt routes
      */
     async getAsphaltTickets() {
@@ -1258,6 +1263,7 @@ class RouteOptimizationService {
                     t.comment7d = 'TK - ON PROGRESS'
                     OR t.comment7d = 'TK - ON LAYOUT'
                     OR t.comment7d = 'TK - LAYOUT'
+                    OR t.comment7d = 'TK - LAY OUT'
                     OR t.comment7d = 'TK- ON PROGRESS'
                     OR t.comment7d = 'TK- ON LAYOUT'
                     OR t.comment7d = 'TK- LAYOUT'
@@ -3004,7 +3010,8 @@ class RouteOptimizationService {
                 const hasValidComment = !ticket.comment7d || 
                                        ticket.comment7d === '' || 
                                        ticket.comment7d === 'TK - PERMIT EXTENDED' ||
-                                       ticket.comment7d === 'TK - LAYOUT';
+                                       ticket.comment7d === 'TK - LAYOUT' ||
+                                       ticket.comment7d === 'TK - LAY OUT';
 
                 return hasSpottingInProgress && hasValidComment;
             });

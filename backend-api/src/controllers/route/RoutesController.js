@@ -154,7 +154,7 @@ const RoutesController = {
       if (spottingTickets.length === 0) {
         return res.status(404).json({ 
           message: 'No tickets found for spotting routes',
-          criteria: 'comment7d is NULL, empty, TK - PERMIT EXTENDED, or TK - LAYOUT, and no endingDate for SPOTTING status'
+          criteria: 'comment7d is NULL, empty, TK - PERMIT EXTENDED, TK - LAYOUT, or TK - LAY OUT, and no endingDate for SPOTTING status'
         });
       }
 
@@ -637,7 +637,7 @@ const RoutesController = {
         message: 'Tickets ready for spotting routes retrieved successfully',
         type: 'SPOTTER',
         count: ticketsWithAddresses.length,
-        criteria: 'comment7d is NULL, empty, TK - PERMIT EXTENDED, or TK - LAYOUT, and no endingDate for SPOTTING status',
+        criteria: 'comment7d is NULL, empty, TK - PERMIT EXTENDED, TK - LAYOUT, or TK - LAY OUT, and no endingDate for SPOTTING status',
         tickets: ticketsWithAddresses,
         debug: {
           totalEligible: tickets.length,

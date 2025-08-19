@@ -2,10 +2,9 @@ services:
   nginx:
     image: christba/7d-nginx:latest
     ports:
-      - "8080:80"
-      - "8443:443"  # For future HTTPS support
+      - "80:80"
+      - "3443:443"  # For future HTTPS support
     volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
       - ./ssl:/etc/nginx/ssl:ro  # For future SSL certificates
     depends_on:
       - api
@@ -23,7 +22,7 @@ services:
   api:
     image: christba/7d-backend:latest
     expose:
-      - "3000"  # Only expose internally, not to host
+      - "3000"  
     volumes:
       - /usr/src/app/node_modules
     environment:
@@ -58,9 +57,9 @@ services:
   postgres:
     image: christba/7d-postgres:latest
     expose:
-      - "5432"  # Only expose internally
+      - "5432"  
     volumes:
-      - kc_pgdata:/var/lib/postgresql/data
+     - ./7d_construction_kc_pgdata/_data:/var/lib/postgresql/data
     environment:
       - POSTGRES_USER=${DB_USER}
       - POSTGRES_PASSWORD=${DB_PASSWORD}
@@ -79,13 +78,13 @@ services:
     image: minio/minio:latest
     command: server /data --console-address ":9001"
     expose:
-      - "9000"  # Only expose internally
-      - "9001"  # Only expose internally
+      - "9000"  
+      - "9001"  
     environment:
       - MINIO_ROOT_USER=minioadmin
       - MINIO_ROOT_PASSWORD=miniosecretkey
     volumes:
-      - minio-data:/data
+      - ./7d_construction_minio-data/_data:/data
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 30s
@@ -98,7 +97,7 @@ services:
   compass:
     image: christba/7d-compass:latest
     expose:
-      - "3005"  # Only expose internally
+      - "3005"
     networks:
       - app-network
     restart: unless-stopped
@@ -124,7 +123,8 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 60s
+      start_period: 120s
+
 
   vroom:
     image: ghcr.io/vroom-project/vroom-docker:v1.14.0
@@ -151,7 +151,6 @@ services:
       test: ["CMD", "curl", "-f", "http://localhost:3000"]
       interval: 30s
       timeout: 10s
-      retries: 3
       start_period: 30s
 
 networks:
@@ -162,6 +161,3 @@ volumes:
   kc_pgdata:
   minio-data:
   osrm-data:
-
-
-

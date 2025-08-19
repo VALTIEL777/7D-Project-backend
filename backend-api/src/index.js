@@ -12,8 +12,9 @@ const PORT = process.env.PORT || 3000;
 const allowedOrigins = [
   'http://13.221.110.249:3000',
   'http://13.221.110.249',
-  'https://7d-compass-api.christba.com',  // for Swagger
-  'https://7d-compass.christba.com',       // for your frontend
+  'http://34.228.116.58',
+  'http://34.228.116.58:3000',
+
   'http://localhost:3005',
   'http://localhost:3000',
   'http://localhost:3001',

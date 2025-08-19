@@ -274,6 +274,101 @@ exports.uploadExcel = async (req, res) => {
 
     // 5. Continue with Excel processing - only process "Seven-D" sheet
     const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
+    
+    // Unhide all columns in all sheets - comprehensive approach
+    for (const sheetName of workbook.SheetNames) {
+      const sheet = workbook.Sheets[sheetName];
+      
+      // Method 1: Direct column property manipulation
+      if (sheet['!cols']) {
+        for (let i = 0; i < sheet['!cols'].length; i++) {
+          if (sheet['!cols'][i]) {
+            sheet['!cols'][i].hidden = false;
+            sheet['!cols'][i].width = Math.max(sheet['!cols'][i].width || 10, 10); // Ensure minimum width
+          }
+        }
+      }
+      
+      // Method 2: Check sheet range and ensure all columns are accessible
+      if (sheet['!ref']) {
+        const range = XLSX.utils.decode_range(sheet['!ref']);
+        console.log(`Processing sheet "${sheetName}" with range: ${sheet['!ref']}`);
+        
+        // Ensure column definitions exist for all columns
+        if (!sheet['!cols']) {
+          sheet['!cols'] = [];
+        }
+        
+        for (let col = range.s.c; col <= range.e.c; col++) {
+          const colKey = XLSX.utils.encode_col(col);
+          const headerCell = sheet[colKey + '1'];
+          
+          if (headerCell) {
+            console.log(`Column ${colKey}: header="${headerCell.v}", type=${headerCell.t}`);
+            
+            // Ensure column is properly defined and visible
+            if (!sheet['!cols'][col]) {
+              sheet['!cols'][col] = {};
+            }
+            sheet['!cols'][col].hidden = false;
+            sheet['!cols'][col].width = Math.max(sheet['!cols'][col].width || 10, 10);
+          }
+        }
+      }
+      
+      // Method 3: Force column visibility by ensuring all cells are accessible
+      if (sheet['!ref']) {
+        const range = XLSX.utils.decode_range(sheet['!ref']);
+        for (let col = range.s.c; col <= range.e.c; col++) {
+          const colKey = XLSX.utils.encode_col(col);
+          // Ensure at least the first few rows are accessible for this column
+          for (let row = 0; row <= Math.min(5, range.e.r); row++) {
+            const cellKey = colKey + (row + 1);
+            if (!sheet[cellKey]) {
+              // Create empty cell to ensure column is accessible
+              sheet[cellKey] = { v: '', t: 's' };
+            }
+          }
+        }
+      }
+    }
+    
+    // Debug: Log sheet information after unhiding
+    console.log(`=== Excel File Debug ===`);
+    console.log(`Total sheets: ${workbook.SheetNames.length}`);
+    console.log(`Sheet names: ${workbook.SheetNames.join(', ')}`);
+    
+    for (const sheetName of workbook.SheetNames) {
+      const sheet = workbook.Sheets[sheetName];
+      if (sheet['!cols']) {
+        console.log(`Sheet "${sheetName}" has ${sheet['!cols'].length} column definitions`);
+        sheet['!cols'].forEach((col, idx) => {
+          if (col) {
+            console.log(`  Column ${idx}: width=${col.width}, hidden=${col.hidden}`);
+          }
+        });
+      } else {
+        console.log(`Sheet "${sheetName}" has no column definitions (!cols)`);
+      }
+      
+      if (sheet['!ref']) {
+        const range = XLSX.utils.decode_range(sheet['!ref']);
+        console.log(`Sheet "${sheetName}" range: ${sheet['!ref']} (${range.e.c - range.s.c + 1} columns, ${range.e.r - range.s.r + 1} rows)`);
+        
+        // Show first few column headers
+        console.log(`First 10 column headers:`);
+        for (let col = range.s.c; col <= Math.min(range.s.c + 9, range.e.c); col++) {
+          const colKey = XLSX.utils.encode_col(col);
+          const headerCell = sheet[colKey + '1'];
+          if (headerCell) {
+            console.log(`  ${colKey}: "${headerCell.v}" (type: ${headerCell.t})`);
+          } else {
+            console.log(`  ${colKey}: <no header cell>`);
+          }
+        }
+      }
+    }
+    
     const results = [];
     const saveToDatabase = req.query.save === 'true'; // Optional query parameter
     const createdBy = req.body.createdBy || 1; // Default user ID
@@ -303,14 +398,23 @@ exports.uploadExcel = async (req, res) => {
     }
 
     let headerRowIndex = -1;
+    console.log(`=== Header Detection Debug ===`);
+    console.log(`Looking for important columns:`, importantColumns);
+    console.log(`Total rows in sheet: ${rows.length}`);
+    
     for (let i = 0; i < rows.length; i++) {
       const normalized = rows[i].map(normalize);
       const matchCount = importantColumns.filter((col) =>
         normalized.includes(normalize(col))
       ).length;
 
-      if (matchCount >= importantColumns.length * 0.6) {
+      console.log(`Row ${i}: Found ${matchCount}/${importantColumns.length} columns (${Math.round(matchCount/importantColumns.length*100)}%)`);
+      console.log(`Row ${i} normalized:`, normalized.slice(0, 10)); // Show first 10 columns
+      console.log(`Row ${i} raw values:`, rows[i].slice(0, 10)); // Show raw values too
+      
+      if (matchCount >= importantColumns.length * 0.4) {
         headerRowIndex = i;
+        console.log(`✅ Header row detected at row ${i} with ${matchCount} matching columns`);
         break;
       }
     }
@@ -324,20 +428,58 @@ exports.uploadExcel = async (req, res) => {
     } else {
       const headers = rows[headerRowIndex];
       const colIndexMap = {};
+      console.log(`=== Column Index Mapping ===`);
+      console.log(`Headers found:`, headers);
+      
       importantColumns.forEach((col) => {
         const idx = getClosestHeaderIndex(col, headers);
-        if (idx !== -1) colIndexMap[col] = idx;
+        if (idx !== -1) {
+          colIndexMap[col] = idx;
+          console.log(`✅ Column "${col}" mapped to index ${idx} (header: "${headers[idx]}")`);
+        } else {
+          console.log(`❌ Column "${col}" NOT FOUND in headers`);
+          // Try to find similar headers
+          const similarHeaders = headers.filter(header => 
+            header && typeof header === 'string' && 
+            (header.toLowerCase().includes(col.toLowerCase().replace(/_/g, ' ')) ||
+             col.toLowerCase().replace(/_/g, ' ').includes(header.toLowerCase()))
+          );
+          if (similarHeaders.length > 0) {
+            console.log(`  Similar headers found:`, similarHeaders);
+          }
+        }
       });
 
-      const missing = importantColumns.filter((col) => !(col in colIndexMap));
-      if (missing.length > 0) {
+      // Check for critical columns that are absolutely required
+      const criticalColumns = ['TASK_WO_NUM', 'RESTN_WO_NUM', 'ADDRESS', 'SAP_ITEM_NUM'];
+      const missingCritical = criticalColumns.filter((col) => !(col in colIndexMap));
+      
+      console.log(`=== Column Mapping Debug ===`);
+      console.log(`Critical columns required:`, criticalColumns);
+      console.log(`Columns found in mapping:`, Object.keys(colIndexMap));
+      console.log(`Missing critical columns:`, missingCritical);
+      
+      if (missingCritical.length > 0) {
+        console.log(`❌ CRITICAL ERROR: Missing required columns: ${missingCritical.join(', ')}`);
+        console.log(`Available headers:`, headers);
+        console.log(`Column mapping:`, colIndexMap);
+        
         results.push({
           sheet: sheetName,
           headerRow: headerRowIndex + 1,
-          error: "Missing required columns",
-          missing,
+          error: "Missing critical columns",
+          missing: missingCritical,
+          message: `Critical columns are required: ${missingCritical.join(', ')}`
         });
       } else {
+        // Log which columns were found and which are missing
+        const missingOptional = importantColumns.filter((col) => !(col in colIndexMap));
+        if (missingOptional.length > 0) {
+          console.log(`Warning: Some optional columns are missing: ${missingOptional.join(', ')}`);
+        }
+        
+        console.log(`Found columns: ${Object.keys(colIndexMap).join(', ')}`);
+        console.log(`Missing optional columns: ${missingOptional.join(', ')}`);
         console.log(`=== Excel Processing Debug ===`);
         console.log(`Headers found:`, headers);
         console.log(`Column mapping:`, colIndexMap);
@@ -1332,6 +1474,18 @@ exports.uploadForStepper = async (req, res) => {
     // Parse Excel file but don't save to MinIO yet
     const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
     
+    // Unhide all columns in all sheets
+    for (const sheetName of workbook.SheetNames) {
+      const sheet = workbook.Sheets[sheetName];
+      if (sheet['!cols']) {
+        for (let i = 0; i < sheet['!cols'].length; i++) {
+          if (sheet['!cols'][i]) {
+            sheet['!cols'][i].hidden = false;
+          }
+        }
+      }
+    }
+    
     // Check if "Seven-D" or "Seven-D ALL" sheet exists
     let sheetName = null;
     if (workbook.SheetNames.includes('Seven-D')) {
@@ -1587,11 +1741,11 @@ exports.analyzeForStepper = async (req, res) => {
           }
           // Helper function to check if comment is eligible for auto-correction
           else {
-            // Check if comment is eligible for auto-correction (TK - LAYOUT, empty, or TK - NEEDS PERMIT EXTENSION)
+            // Check if comment is eligible for auto-correction (TK - LAYOUT, TK - LAY OUT, empty, or TK - NEEDS PERMIT EXTENSION)
             const isCommentEligibleForAutoCorrection = () => {
               const comment = existingTicket.comment7d || '';
               const commentLower = comment.toLowerCase().trim();
-              return commentLower === '' || commentLower === 'tk - layout' || commentLower === 'tk - needs permit extension';
+              return commentLower === '' || commentLower === 'tk - layout' || commentLower === 'tk - lay out' || commentLower === 'tk - needs permit extension';
             };
             
             // Only proceed with auto-correction if comment is eligible
@@ -1612,7 +1766,7 @@ exports.analyzeForStepper = async (req, res) => {
                 wasAutoCorrected = true;
                 console.log(`Database updated for ticket ${existingTicket.ticketid}`);
               }
-              // Check if permit is expiring (≤ 7 days) and comment is TK - LAYOUT or empty
+              // Check if permit is expiring (≤ 7 days) and comment is TK - LAYOUT, TK - LAY OUT, or empty
               else if (daysUntilExpiry <= 7 && daysUntilExpiry >= 0 && !existingTicket.comment7d.toLowerCase().includes('tk - needs permit extension')) {
                 console.log(`Auto-updating database for ticket ${existingTicket.ticketid} from "${existingTicket.comment7d}" to "TK - NEEDS PERMIT EXTENSION" (permit expires in ${daysUntilExpiry} days)`);
                 
@@ -1628,7 +1782,7 @@ exports.analyzeForStepper = async (req, res) => {
                 wasAutoCorrected = true;
                 console.log(`Database updated for ticket ${existingTicket.ticketid}`);
               }
-              // Check if permit is expired (< 0 days) and comment is TK - LAYOUT or empty
+              // Check if permit is expired (< 0 days) and comment is TK - LAYOUT, TK - LAY OUT, or empty
               else if (daysUntilExpiry < 0 && !existingTicket.comment7d.toLowerCase().includes('tk - needs permit extension')) {
                 console.log(`Auto-updating database for ticket ${existingTicket.ticketid} from "${existingTicket.comment7d}" to "TK - NEEDS PERMIT EXTENSION" (permit expired ${Math.abs(daysUntilExpiry)} days ago)`);
                 
@@ -1647,7 +1801,7 @@ exports.analyzeForStepper = async (req, res) => {
                 console.log(`No auto-correction needed for ticket ${existingTicket.ticketid} - current comment: "${existingTicket.comment7d}", days until expiry: ${daysUntilExpiry}`);
               }
             } else {
-              console.log(`Skipping auto-correction for ticket ${existingTicket.ticketid} - comment "${existingTicket.comment7d}" is not eligible for auto-correction (must be "TK - LAYOUT", "TK - NEEDS PERMIT EXTENSION", or empty)`);
+              console.log(`Skipping auto-correction for ticket ${existingTicket.ticketid} - comment "${existingTicket.comment7d}" is not eligible for auto-correction (must be "TK - LAYOUT", "TK - LAY OUT", "TK - NEEDS PERMIT EXTENSION", or empty)`);
             }
           }
         }
@@ -2238,6 +2392,10 @@ exports.saveStepperData = async (req, res) => {
 // Helper function to parse Excel data (extracted from existing uploadExcel function)
 async function parseExcelData(rows, sheetName) {
   try {
+    console.log(`=== parseExcelData Debug ===`);
+    console.log(`Looking for important columns:`, importantColumns);
+    console.log(`Total rows in sheet: ${rows.length}`);
+    console.log(`First few rows:`, rows.slice(0, 3).map(row => row.slice(0, 5))); // Show first 3 rows, first 5 columns
     let headerRowIndex = -1;
     for (let i = 0; i < rows.length; i++) {
       const normalized = rows[i].map(normalize);
@@ -2245,8 +2403,12 @@ async function parseExcelData(rows, sheetName) {
         normalized.includes(normalize(col))
       ).length;
 
-      if (matchCount >= importantColumns.length * 0.6) {
+      console.log(`parseExcelData - Row ${i}: Found ${matchCount}/${importantColumns.length} columns (${Math.round(matchCount/importantColumns.length*100)}%)`);
+      console.log(`parseExcelData - Row ${i} normalized:`, normalized.slice(0, 10)); // Show first 10 columns
+      
+      if (matchCount >= importantColumns.length * 0.4) {
         headerRowIndex = i;
+        console.log(`parseExcelData - Header row detected at row ${i} with ${matchCount} matching columns`);
         break;
       }
     }
@@ -2260,20 +2422,40 @@ async function parseExcelData(rows, sheetName) {
     }
 
     const headers = rows[headerRowIndex];
+    console.log(`Headers found at row ${headerRowIndex}:`, headers);
+    
     const colIndexMap = {};
     importantColumns.forEach((col) => {
       const idx = getClosestHeaderIndex(col, headers);
-      if (idx !== -1) colIndexMap[col] = idx;
+      if (idx !== -1) {
+        colIndexMap[col] = idx;
+        console.log(`Column "${col}" mapped to index ${idx} (header: "${headers[idx]}")`);
+      } else {
+        console.log(`Column "${col}" NOT FOUND in headers`);
+      }
     });
 
-    const missing = importantColumns.filter((col) => !(col in colIndexMap));
-    if (missing.length > 0) {
+    // Check for critical columns that are absolutely required
+    const criticalColumns = ['TASK_WO_NUM', 'RESTN_WO_NUM', 'ADDRESS', 'SAP_ITEM_NUM'];
+    const missingCritical = criticalColumns.filter((col) => !(col in colIndexMap));
+    
+    if (missingCritical.length > 0) {
       return {
         success: false,
-        error: "Missing required columns",
-        missing: missing
+        error: "Missing critical columns",
+        missing: missingCritical,
+        message: `Critical columns are required: ${missingCritical.join(', ')}`
       };
     }
+    
+    // Log which columns were found and which are missing
+    const missingOptional = importantColumns.filter((col) => !(col in colIndexMap));
+    if (missingOptional.length > 0) {
+      console.log(`Warning: Some optional columns are missing: ${missingOptional.join(', ')}`);
+    }
+    
+    console.log(`Found columns: ${Object.keys(colIndexMap).join(', ')}`);
+    console.log(`Missing optional columns: ${missingOptional.join(', ')}`);
 
     const dataRows = [];
     for (let i = headerRowIndex + 1; i < rows.length; i++) {
@@ -2442,6 +2624,18 @@ exports.updateTicketsWithDatabaseValues = async (req, res) => {
 
     // 1. Parse the uploaded Excel file using existing parseExcelData function
     const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
+    
+    // Unhide all columns in all sheets
+    for (const sheetName of workbook.SheetNames) {
+      const sheet = workbook.Sheets[sheetName];
+      if (sheet['!cols']) {
+        for (let i = 0; i < sheet['!cols'].length; i++) {
+          if (sheet['!cols'][i]) {
+            sheet['!cols'][i].hidden = false;
+          }
+        }
+      }
+    }
     
     // Check if "Seven-D" or "Seven-D ALL" sheet exists
     let sheetName = null;
