@@ -131,3 +131,7 @@ dist
 
 # Ignore all .pbf files
 *.pbf
+
+# Data directories
+7d_construction_minio-data/
+7d_construction_kc_pgdata/
