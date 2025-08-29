@@ -1,4 +1,5 @@
 const axios = require('axios');
+const http = require('http');
 // Removed: const {RouteOptimizationClient} = require('@googlemaps/routeoptimization').v1;
 // This client is for the Google Cloud Route Optimization API, which is NOT what we need for this use case.
 
@@ -10,12 +11,14 @@ const LocationClusteringService = require('./LocationClusteringService');
 
 class RouteOptimizationService {
     constructor() {
-        // Use Google Maps Platform Routes API (v2) for route optimization
-        this.routesApiUrl = 'https://routes.googleapis.com/directions/v2:computeRoutes';
-        // Base URL for the Google Maps Platform Geocoding API
+        // Use OSRM for routing instead of Google Maps
+        this.osrmBaseUrl = process.env.OSRM_BASE_URL || 'http://osrm:5000';
+        // Use VROOM for waypoint optimization
+        this.vroomBaseUrl = process.env.VROOM_BASE_URL || 'http://vroom:3000';
+        // Keep Google Maps for geocoding (address to coordinates)
         this.geocodingApiUrl = 'https://maps.googleapis.com/maps/api/geocode/json';
         this.googleMapsApiKey = process.env.GOOGLE_MAPS_API_KEY;
-        this.projectId = process.env.GOOGLE_CLOUD_PROJECT_ID || 'burguer-menu-fbb80'; // Project ID is not directly used by Maps Platform APIs with API Key
+        this.projectId = process.env.GOOGLE_CLOUD_PROJECT_ID || 'burguer-menu-fbb80';
 
         if (!this.googleMapsApiKey) {
             console.warn('GOOGLE_MAPS_API_KEY not found in environment variables');
@@ -118,94 +121,121 @@ class RouteOptimizationService {
      */
     async optimizeRoute(originAddress, destinationAddress, intermediateAddresses) {
         if (!this.googleMapsApiKey) {
-            throw new Error('API Key is not configured for RouteOptimizationService. Please set GOOGLE_MAPS_API_KEY.');
+            throw new Error('API Key is not configured for RouteOptimizationService. Please set GOOGLE_MAPS_API_KEY for geocoding.');
         }
 
-        // Routes API Pro tier supports up to 158 intermediate waypoints (160 total including origin/destination).
-        if (intermediateAddresses.length > 158) {
-            throw new Error(`Waypoint limit exceeded: Routes API Pro supports a maximum of 158 intermediate waypoints for optimization. You provided ${intermediateAddresses.length}.`);
+        // OSRM supports up to 100 waypoints per request
+        if (intermediateAddresses.length > 100) {
+            throw new Error(`Waypoint limit exceeded: OSRM supports a maximum of 100 intermediate waypoints for optimization. You provided ${intermediateAddresses.length}.`);
         }
 
-        console.log(`Starting route optimization process for ${intermediateAddresses.length} intermediate stops.`);
+        console.log(`Starting VROOM route optimization process for ${intermediateAddresses.length} intermediate stops.`);
 
-        // --- STEP 1: Geocode all addresses (origin, destination, and intermediates) ---
-        // We use Promise.all to geocode concurrently for better performance.
-        const [originGeo, destinationGeo, ...geocodedIntermediates] = await Promise.all([
+        // --- STEP 1: Geocode all addresses (origin and intermediates) ---
+        // Only geocode origin and intermediates (no destination)
+        const [originGeo, ...geocodedIntermediates] = await Promise.all([
             this.geocodeAddress(originAddress),
-            this.geocodeAddress(destinationAddress),
             ...intermediateAddresses.map(address => this.geocodeAddress(address))
         ]);
 
-        // Extract just the LatLng objects for the API call, as Routes API v2 requires them for intermediates.
-        const originLatLng = { latitude: originGeo.latitude, longitude: originGeo.longitude };
-        const destinationLatLng = { latitude: destinationGeo.latitude, longitude: destinationGeo.longitude };
-        const intermediateLatLngs = geocodedIntermediates.map(geo => ({ latitude: geo.latitude, longitude: geo.longitude }));
-
-        // --- STEP 2: Build the Routes API v2 (ComputeRoutes) request body ---
-        const requestBody = {
-            origin: {
-                location: {
-                    latLng: originLatLng // Origin can be latLng or address
-                }
-            },
-            destination: {
-                location: {
-                    latLng: destinationLatLng // Destination can be latLng or address
-                }
-            },
-            intermediates: intermediateLatLngs.map(ll => ({ location: { latLng: ll } })), // Intermediates MUST be latLng
-            travelMode: 'DRIVE',
-            optimizeWaypointOrder: true, // THIS IS THE KEY FOR OPTIMIZATION!
-            languageCode: 'es', // Request directions in Spanish
-            units: 'METRIC', // Request distances in meters, durations in seconds
-            // You can add other route modifiers here if needed, e.g.:
-            // routeModifiers: {
-            //   avoidTolls: true,
-            //   avoidHighways: false
-            // }
-        };
-
-        const headers = {
-            'Content-Type': 'application/json',
-            // X-Goog-FieldMask is crucial to specify what data you want back,
-            // which helps control cost and response size.
-            // We request polyline, distance, duration, and the optimized order.
-            'X-Goog-FieldMask': 'routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline,routes.optimizedIntermediateWaypointIndex'
-        };
-
+        // --- STEP 2: Use VROOM for waypoint optimization ---
         try {
-            console.log('Calling Google Maps Platform Routes API (ComputeRoutes) for optimization...');
-            const response = await axios.post(
-                `${this.routesApiUrl}?key=${this.googleMapsApiKey}`, // API Key passed as query parameter
-                requestBody,
-                { headers: headers }
-            );
+            console.log('Calling VROOM for waypoint optimization...');
+            // Prepare VROOM request (minimal structure)
+            const vroomRequest = {
+                vehicles: [
+                    {
+                        id: 1,
+                        start: [originGeo.longitude, originGeo.latitude]
+                    }
+                ],
+                jobs: geocodedIntermediates.map((geo, index) => ({
+                    id: index + 1,
+                    location: [geo.longitude, geo.latitude]
+                }))
+            };
 
-            if (!response.data.routes || response.data.routes.length === 0) {
-                throw new Error('No routes found in Routes API response. This might happen if locations are unreachable, too far apart, or API limits are hit.');
+            console.log('VROOM request:', JSON.stringify(vroomRequest, null, 2));
+
+            // Call VROOM API with multiple algorithms
+            const vroomResponse = await this.tryMultipleVroomAlgorithms(vroomRequest);
+
+            console.log('VROOM response received with best algorithm');
+
+            if (vroomResponse.code !== 0) {
+                throw new Error(`VROOM optimization failed: ${vroomResponse.error || 'Unknown error'}`);
             }
 
-            const route = response.data.routes[0]; // The Routes API returns an array of routes; the first one is the optimized one.
+            // Extract optimized order from VROOM response
+            const vroomRoute = vroomResponse.routes[0];
+            const optimizedOrder = vroomRoute.steps
+                .filter(step => step.type === 'job')
+                .map(step => step.job - 1); // VROOM job IDs are 1-based, convert to 0-based
 
-            console.log('Route optimization successful. Total distance:', route.distanceMeters, 'meters.');
+            console.log('VROOM optimized order:', optimizedOrder);
 
-            // The Routes API v2 directly returns the encoded polyline and optimized order.
+            // --- STEP 3: Build coordinates string for OSRM with optimized order ---
+            // Only use origin and jobs (no destination)
+            const optimizedCoordinates = [
+                `${originGeo.longitude},${originGeo.latitude}`,
+                ...optimizedOrder.map(index => {
+                    const geo = geocodedIntermediates[index];
+                    return `${geo.longitude},${geo.latitude}`;
+                })
+            ];
+            const coordinatesString = optimizedCoordinates.join(';');
+            console.log(`OSRM coordinates string (optimized): ${coordinatesString}`);
+
+            // --- STEP 4: Call OSRM for route calculation with optimized waypoints ---
+            console.log('Calling OSRM for route calculation with optimized waypoints...');
+            const osrmUrl = `${this.osrmBaseUrl}/route/v1/driving/${coordinatesString}?overview=full&steps=true&annotations=true&alternatives=true&continue_straight=true&geometries=polyline`;
+            const osrmResponse = await axios.get(osrmUrl);
+
+            if (!osrmResponse.data.routes || osrmResponse.data.routes.length === 0) {
+                throw new Error('No routes found in OSRM response. This might happen if locations are unreachable or too far apart.');
+            }
+
+            const route = osrmResponse.data.routes[0];
+            console.log('OSRM route calculation successful. Total distance:', route.distance, 'meters.');
+
             return {
-                encodedPolyline: route.polyline.encodedPolyline,
-                optimizedOrder: route.optimizedIntermediateWaypointIndex || [], // Ensure it's an array, even if empty
-                totalDistance: route.distanceMeters,
-                totalDuration: parseFloat(route.duration.replace('s', '')), // Convert duration string (e.g., "1800s") to seconds
-                apiResponse: response.data // Store the full API response for debugging/metadata
+                encodedPolyline: route.geometry, // OSRM returns polyline-encoded geometry
+                optimizedOrder: optimizedOrder, // VROOM-optimized order
+                totalDistance: route.distance, // OSRM returns distance in meters
+                totalDuration: route.duration, // OSRM returns duration in seconds
+                apiResponse: {
+                    vroom: vroomResponse,
+                    osrm: osrmResponse.data
+                } // Store both API responses for debugging/metadata
             };
 
         } catch (error) {
-            console.error('Routes API Call Error:', error.response?.data || error.message);
-            throw new Error(`Route optimization failed: ${error.response?.data?.error?.message || error.message}`);
+            console.error('Route optimization error:', error.response?.data || error.message);
+            // Fallback to sequential order if VROOM fails
+            console.log('Falling back to sequential order due to optimization error');
+            const fallbackOrder = Array.from({ length: intermediateAddresses.length }, (_, i) => i);
+            // Build coordinates string for OSRM with fallback order
+            const fallbackCoordinates = [
+                `${originGeo.longitude},${originGeo.latitude}`,
+                ...geocodedIntermediates.map(geo => `${geo.longitude},${geo.latitude}`)
+            ];
+            const coordinatesString = fallbackCoordinates.join(';');
+            const osrmUrl = `${this.osrmBaseUrl}/route/v1/driving/${coordinatesString}?overview=full&steps=true&annotations=true`;
+            const osrmResponse = await axios.get(osrmUrl);
+            const route = osrmResponse.data.routes[0];
+            return {
+                encodedPolyline: route.geometry,
+                optimizedOrder: fallbackOrder,
+                totalDistance: route.distance,
+                totalDuration: route.duration,
+                apiResponse: { osrm: osrmResponse.data },
+                optimizationNote: 'Used fallback sequential order due to VROOM error'
+            };
         }
     }
 
     /**
-     * Optimizes routes for large numbers of locations by clustering them into groups of maximum 25 locations each.
+     * Optimizes routes for large numbers of locations by clustering them into groups of maximum 100 locations each.
      * This method uses PostGIS spatial clustering to group nearby locations and then optimizes each cluster separately.
      * 
      * @param {Array<number>} ticketIds - Array of ticket IDs to optimize
@@ -230,9 +260,10 @@ class RouteOptimizationService {
                 throw new Error('originAddress and destinationAddress are required');
             }
 
-            const { maxDistance = 30000, maxLocationsPerCluster = 25, minLocationsPerCluster = 20 } = options;
+            const { maxDistance = 30000, maxLocationsPerCluster = 100, minLocationsPerCluster = 20 } = options;
 
-            console.log(`Starting clustered route optimization for ${ticketIds.length} tickets`);
+            console.log(`Starting location-based clustered route optimization for ${ticketIds.length} tickets`);
+            console.log(`Clustering by unique locations (max ${maxLocationsPerCluster} locations per cluster)`);
 
             // Step 1: Get all ticket addresses in one database query (reuse from parent method)
             const ticketsWithAddresses = await this.getTicketsWithAddressesBatch(ticketIds, {
@@ -244,7 +275,7 @@ class RouteOptimizationService {
                 throw new Error('No valid tickets found for clustering');
             }
 
-            // Step 2: Cluster locations using PostGIS (pass pre-fetched tickets to avoid double geocoding)
+            // Step 2: Cluster by unique locations using PostGIS (max 100 unique locations per cluster)
             const clusteringService = new LocationClusteringService();
             const clusters = await clusteringService.clusterLocations(ticketsWithAddresses, { 
                 maxDistance,
@@ -252,7 +283,8 @@ class RouteOptimizationService {
                 minLocationsPerCluster
             });
             
-            console.log(`Created ${clusters.length} clusters for optimization`);
+            console.log(`Created ${clusters.length} location-based clusters for optimization`);
+            console.log(`Each cluster contains max ${maxLocationsPerCluster} unique locations with all their associated tickets`);
 
             // Step 2: Optimize each cluster separately
             const optimizedRoutes = [];
@@ -265,10 +297,11 @@ class RouteOptimizationService {
                 const cluster = clusters[i];
                 const clusterRouteCode = `${routeCode}-CLUSTER-${i + 1}`;
                 
-                console.log(`\n--- Processing Cluster ${i + 1}/${clusters.length} ---`);
+                console.log(`\n--- Processing Location Cluster ${i + 1}/${clusters.length} ---`);
                 console.log(`Cluster ID: ${cluster.clusterId}`);
                 console.log(`Route Code: ${clusterRouteCode}`);
-                console.log(`Tickets in cluster: ${cluster.tickets.length}`);
+                console.log(`Unique locations in cluster: ${cluster.addressCount}`);
+                console.log(`Total tickets in cluster: ${cluster.tickets.length}`);
                 console.log(`Cluster center: ${cluster.centerLat}, ${cluster.centerLng}`);
                 
                 try {
@@ -294,6 +327,8 @@ class RouteOptimizationService {
                         console.warn(`   This cluster will be unassigned!`);
                         continue;
                     }
+                    
+
                     
                     // Optimize this cluster using only unique addresses
                     const optimizedRouteResult = await this.optimizeRoute(
@@ -387,7 +422,7 @@ class RouteOptimizationService {
                         routeCode: clusterRouteCode,
                         type: type || 'default',
                         startDate: startDate || new Date(),
-                        endDate: endDate || new Date(),
+                        endDate: endDate || null, // Set to null for new routes (active routes)
                         encodedPolyline: optimizedRouteResult.encodedPolyline,
                         totalDistance: optimizedRouteResult.totalDistance,
                         totalDuration: optimizedRouteResult.totalDuration,
@@ -584,9 +619,10 @@ class RouteOptimizationService {
             console.log(`Deduplicated ${ticketsWithAddresses.length} tickets into ${uniqueAddresses.length} unique addresses`);
             console.log('Unique addresses for optimization:', uniqueAddresses);
 
-            // Step 2.5: Check if we need to use clustering (more than 25 unique addresses)
-            if (uniqueAddresses.length > 25) {
-                console.log(`More than 25 unique addresses (${uniqueAddresses.length}) detected. Using clustering approach.`);
+            // Step 2.5: Check if we need to use clustering (more than 100 unique locations)
+            if (uniqueAddresses.length > 100) {
+                console.log(`More than 100 unique locations (${uniqueAddresses.length}) detected. Using location-based clustering approach.`);
+                console.log(`This will create clusters with max 100 unique locations each, then assign all tickets at those locations.`);
                 return await this.optimizeRouteWithClustering(
                     ticketIds,
                     routeCode,
@@ -658,7 +694,7 @@ class RouteOptimizationService {
                 routeCode: routeCode || await this.generateRouteCode(type),
                 type: type || 'default',
                 startDate: startDate || new Date(),
-                endDate: endDate || new Date(),
+                endDate: endDate || null, // Set to null for new routes (active routes)
                 encodedPolyline: optimizedRouteResult.encodedPolyline,
                 totalDistance: optimizedRouteResult.totalDistance,
                 totalDuration: optimizedRouteResult.totalDuration,
@@ -755,6 +791,8 @@ class RouteOptimizationService {
      */
     async getTicketAddress(ticket) {
         try {
+            console.log(`=== DEBUG: Getting address for ticket ${ticket.ticketid} (${ticket.ticketcode}) ===`);
+            
             // Use the same comprehensive query as TicketsController.js
             const addressQuery = await db.query(`
                 SELECT DISTINCT 
@@ -787,13 +825,17 @@ class RouteOptimizationService {
                 LIMIT 1
             `, [ticket.ticketid]);
 
+            console.log(`  - Found ${addressQuery.rows.length} address records for ticket ${ticket.ticketid}`);
+
             if (addressQuery.rows.length > 0) {
                 const addr = addressQuery.rows[0];
+                console.log(`  - Address details: ID=${addr.addressid}, Number=${addr.addressnumber}, Cardinal=${addr.addresscardinal}, Street=${addr.addressstreet}, Suffix=${addr.addressesuffix}`);
                 
                 // Use the fullAddress if available, otherwise construct it
                 let addressString;
                 if (addr.fulladdress) {
                     addressString = addr.fulladdress.trim();
+                    console.log(`  - Using fullAddress from database: "${addressString}"`);
                 } else {
                     // Fallback: construct address from individual components
                     const parts = [
@@ -804,18 +846,24 @@ class RouteOptimizationService {
                     ].filter(Boolean); // Filter out null/undefined/empty strings
 
                     addressString = parts.join(', ').replace(/,(\s*,){1,}/g, ',').replace(/,$/, '').trim();
+                    console.log(`  - Constructed address from parts: "${addressString}"`);
                 }
 
                 // Append "Chicago, Illinois" to all addresses for better geocoding accuracy
                 const fullAddress = `${addressString}, Chicago, Illinois`;
+                console.log(`  - Final address: "${fullAddress}"`);
                 
                 // If we have latitude and longitude, we can use them for more accurate geocoding
                 if (addr.latitude && addr.longitude) {
-                    return `${fullAddress} (${addr.latitude}, ${addr.longitude})`;
+                    const geoAddress = `${fullAddress} (${addr.latitude}, ${addr.longitude})`;
+                    console.log(`  - Address with coordinates: "${geoAddress}"`);
+                    return geoAddress;
                 }
 
                 return fullAddress;
             }
+            
+            console.log(`  - No address found in database for ticket ${ticket.ticketid}, using sample address`);
             
             // If no address found in database, generate a sample address for demonstration
             // This uses the ticket ID to create a deterministic but varied address
@@ -838,11 +886,13 @@ class RouteOptimizationService {
             // Construct the full address string with Chicago, Illinois
             const fullAddress = `${sampleAddr.number} ${sampleAddr.cardinal} ${sampleAddr.street} ${sampleAddr.suffix}, Chicago, Illinois`.trim();
             
-            console.log(`Generated sample address for ticket ${ticket.ticketid}: ${fullAddress}`);
+            console.log(`  - Generated sample address: "${fullAddress}"`);
             return fullAddress;
             
         } catch (error) {
-            console.error(`Error getting address for ticket ID ${ticket.ticketid}:`, error);
+            console.error(`=== DEBUG: Error getting address for ticket ${ticket.ticketid} (${ticket.ticketcode}) ===`);
+            console.error(`  - Error details: ${error.message}`);
+            console.error(`  - Error stack: ${error.stack}`);
             return null; // Return null on error so optimization can potentially continue with other tickets
         }
     }
@@ -869,11 +919,156 @@ class RouteOptimizationService {
 
     /**
      * Get tickets for spotting routes
-     * Criteria: comment7d is NULL, empty, or TK - PERMIT EXTENDED, and SPOTTING status exists but has no endingDate (not completed)
+     * Criteria: comment7d is NULL, empty, TK - PERMIT EXTENDED, TK - LAYOUT, or TK - LAY OUT, and SPOTTING status exists but has no endingDate (not completed)
      * @returns {Promise<Array>} - Array of tickets eligible for spotting routes
      */
     async getSpottingTickets() {
         try {
+            console.log('=== DEBUG: Starting getSpottingTickets ===');
+            
+            // First, get ALL tickets to see what we're working with
+            const allTicketsQuery = await db.query(`
+                SELECT DISTINCT 
+                    t.ticketId,
+                    t.ticketCode,
+                    t.contractNumber,
+                    t.amountToPay,
+                    t.ticketType,
+                    t.daysOutstanding,
+                    t.comment7d,
+                    t.quantity,
+                    t.createdAt,
+                    t.updatedAt,
+                    cu.name as contractUnitName,
+                    i.name as incidentName
+                FROM Tickets t
+                LEFT JOIN ContractUnits cu ON t.contractUnitId = cu.contractUnitId AND cu.deletedAt IS NULL
+                LEFT JOIN IncidentsMx i ON t.incidentId = i.incidentId AND i.deletedAt IS NULL
+                WHERE t.deletedAt IS NULL
+                ORDER BY t.ticketId ASC
+            `);
+            
+            console.log(`=== DEBUG: Total tickets in system: ${allTicketsQuery.rows.length} ===`);
+            
+            // Check tickets excluded by comment7d criteria
+            const excludedByCommentQuery = await db.query(`
+                SELECT DISTINCT 
+                    t.ticketId,
+                    t.ticketCode,
+                    t.comment7d
+                FROM Tickets t
+                WHERE t.deletedAt IS NULL
+                    AND (
+                        NOT (
+                            t.comment7d IS NULL 
+                            OR t.comment7d = '' 
+                            OR t.comment7d = 'TK - PERMIT EXTENDED'
+                            OR t.comment7d = 'TK - LAYOUT'
+                            OR t.comment7d = 'TK - LAY OUT'
+                        )
+                        OR t.comment7d IN ('TK - CANCELLED', 'TK - HOLD OFF', 'TK- ON HOLD OFF')
+                    )
+                ORDER BY t.ticketId ASC
+            `);
+            
+            console.log(`=== DEBUG: Tickets excluded by comment7d criteria: ${excludedByCommentQuery.rows.length} ===`);
+            excludedByCommentQuery.rows.forEach(ticket => {
+                console.log(`  - Ticket ${ticket.ticketid} (${ticket.ticketcode}): comment7d = "${ticket.comment7d}"`);
+            });
+            
+            // Check tickets excluded by missing SPOTTING status
+            const excludedByNoSpottingQuery = await db.query(`
+                SELECT DISTINCT 
+                    t.ticketId,
+                    t.ticketCode,
+                    t.comment7d
+                FROM Tickets t
+                WHERE t.deletedAt IS NULL
+                    AND (
+                        t.comment7d IS NULL 
+                        OR t.comment7d = '' 
+                        OR t.comment7d = 'TK - PERMIT EXTENDED'
+                        OR t.comment7d = 'TK - LAYOUT'
+                        OR t.comment7d = 'TK - LAY OUT'
+                    )
+                    AND NOT EXISTS (
+                        SELECT 1 FROM TicketStatus tks2 
+                        JOIN TaskStatus ts2 ON tks2.taskStatusId = ts2.taskStatusId 
+                        WHERE tks2.ticketId = t.ticketId 
+                            AND ts2.name = 'Spotting'
+                            AND tks2.deletedAt IS NULL
+                            AND ts2.deletedAt IS NULL
+                    )
+                ORDER BY t.ticketId ASC
+            `);
+            
+            console.log(`=== DEBUG: Tickets excluded by missing SPOTTING status: ${excludedByNoSpottingQuery.rows.length} ===`);
+            excludedByNoSpottingQuery.rows.forEach(ticket => {
+                console.log(`  - Ticket ${ticket.ticketid} (${ticket.ticketcode}): comment7d = "${ticket.comment7d}" - No SPOTTING status found`);
+            });
+            
+            // Check tickets excluded by completed SPOTTING status
+            const excludedByCompletedSpottingQuery = await db.query(`
+                SELECT DISTINCT 
+                    t.ticketId,
+                    t.ticketCode,
+                    t.comment7d,
+                    tks2.endingdate as spottingEndDate
+                FROM Tickets t
+                JOIN TicketStatus tks2 ON tks2.ticketId = t.ticketId
+                JOIN TaskStatus ts2 ON tks2.taskStatusId = ts2.taskStatusId 
+                WHERE t.deletedAt IS NULL
+                    AND (
+                        t.comment7d IS NULL 
+                        OR t.comment7d = '' 
+                        OR t.comment7d = 'TK - PERMIT EXTENDED'
+                        OR t.comment7d = 'TK - LAYOUT'
+                        OR t.comment7d = 'TK - LAY OUT'
+                    )
+                    AND t.comment7d NOT IN ('TK - CANCELLED', 'TK - HOLD OFF', 'TK- ON HOLD OFF')
+                    AND ts2.name = 'Spotting'
+                    AND tks2.endingdate IS NOT NULL
+                    AND tks2.deletedAt IS NULL
+                    AND ts2.deletedAt IS NULL
+                ORDER BY t.ticketId ASC
+            `);
+            
+            console.log(`=== DEBUG: Tickets excluded by completed SPOTTING status: ${excludedByCompletedSpottingQuery.rows.length} ===`);
+            excludedByCompletedSpottingQuery.rows.forEach(ticket => {
+                console.log(`  - Ticket ${ticket.ticketid} (${ticket.ticketcode}): comment7d = "${ticket.comment7d}" - SPOTTING completed on ${ticket.spottingenddate}`);
+            });
+            
+            // Check tickets excluded by already being in active routes
+            const excludedByActiveRouteQuery = await db.query(`
+                SELECT DISTINCT 
+                    t.ticketId,
+                    t.ticketCode,
+                    t.comment7d,
+                    r.routeId,
+                    r.routeCode
+                FROM Tickets t
+                JOIN RouteTickets rt ON rt.ticketId = t.ticketId
+                JOIN Routes r ON rt.routeId = r.routeId
+                WHERE t.deletedAt IS NULL
+                    AND (
+                        t.comment7d IS NULL 
+                        OR t.comment7d = '' 
+                        OR t.comment7d = 'TK - PERMIT EXTENDED'
+                        OR t.comment7d = 'TK - LAYOUT'
+                        OR t.comment7d = 'TK - LAY OUT'
+                    )
+                    AND r.type = 'SPOTTER'
+                    AND r.deletedAt IS NULL
+                    AND rt.deletedAt IS NULL
+                ORDER BY t.ticketId ASC
+            `);
+            
+            console.log(`=== DEBUG: Tickets excluded by already being in active SPOTTER routes: ${excludedByActiveRouteQuery.rows.length} ===`);
+            excludedByActiveRouteQuery.rows.forEach(ticket => {
+                console.log(`  - Ticket ${ticket.ticketid} (${ticket.ticketcode}): comment7d = "${ticket.comment7d}" - Already in route ${ticket.routeid} (${ticket.routecode})`);
+            });
+            
+            // Now get the final result
             const result = await db.query(`
                 SELECT DISTINCT 
                     t.ticketId,
@@ -896,18 +1091,18 @@ class RouteOptimizationService {
                         t.comment7d IS NULL 
                         OR t.comment7d = '' 
                         OR t.comment7d = 'TK - PERMIT EXTENDED'
+                        OR t.comment7d = 'TK - LAYOUT'
+                        OR t.comment7d = 'TK - LAY OUT'
                     )
-                    AND (
-                        -- SPOTTING status exists but has no endingDate (not completed)
-                        EXISTS (
-                            SELECT 1 FROM TicketStatus tks2 
-                            JOIN TaskStatus ts2 ON tks2.taskStatusId = ts2.taskStatusId 
-                            WHERE tks2.ticketId = t.ticketId 
-                                AND ts2.name = 'Spotting'
-                                AND tks2.endingdate IS NULL
-                                AND tks2.deletedAt IS NULL
-                                AND ts2.deletedAt IS NULL
-                        )
+                    AND t.comment7d NOT IN ('TK - CANCELLED', 'TK - HOLD OFF', 'TK- ON HOLD OFF')
+                    AND EXISTS (
+                        SELECT 1 FROM TicketStatus tks2 
+                        JOIN TaskStatus ts2 ON tks2.taskStatusId = ts2.taskStatusId 
+                        WHERE tks2.ticketId = t.ticketId 
+                            AND ts2.name = 'Spotting'
+                            AND tks2.endingdate IS NULL
+                            AND tks2.deletedAt IS NULL
+                            AND ts2.deletedAt IS NULL
                     )
                     AND NOT EXISTS (
                         -- Exclude tickets already assigned to an active spotting route
@@ -920,6 +1115,13 @@ class RouteOptimizationService {
                     )
                 ORDER BY t.ticketId ASC
             `);
+            
+            console.log(`=== DEBUG: Final tickets eligible for spotting routes: ${result.rows.length} ===`);
+            result.rows.forEach(ticket => {
+                console.log(`  + Ticket ${ticket.ticketid} (${ticket.ticketcode}): comment7d = "${ticket.comment7d}" - ELIGIBLE`);
+            });
+            
+            console.log('=== DEBUG: Finished getSpottingTickets ===');
             
             return result.rows;
         } catch (error) {
@@ -936,52 +1138,89 @@ class RouteOptimizationService {
     async getConcreteTickets() {
         try {
             const result = await db.query(`
-                SELECT DISTINCT 
-                    t.ticketId,
-                    t.ticketCode,
-                    t.contractNumber,
-                    t.amountToPay,
-                    t.ticketType,
-                    t.daysOutstanding,
-                    t.comment7d,
-                    t.quantity,
-                    t.createdAt,
-                    t.updatedAt,
-                    cu.name as contractUnitName,
-                    i.name as incidentName
-                FROM Tickets t
-                LEFT JOIN ContractUnits cu ON t.contractUnitId = cu.contractUnitId AND cu.deletedAt IS NULL
-                LEFT JOIN IncidentsMx i ON t.incidentId = i.incidentId AND i.deletedAt IS NULL
-                WHERE t.deletedAt IS NULL
-                    AND EXISTS (
-                        -- SPOTTING completed (has endingDate)
-                        SELECT 1 FROM TicketStatus tks1 
-                        JOIN TaskStatus ts1 ON tks1.taskStatusId = ts1.taskStatusId 
-                        WHERE tks1.ticketId = t.ticketId 
-                            AND ts1.name = 'Spotting'
-                            AND tks1.endingdate IS NOT NULL
-                            AND tks1.deletedAt IS NULL
-                            AND ts1.deletedAt IS NULL
-                    )
-                    AND EXISTS (
-                        -- Has SAWCUT status
-                        SELECT 1 FROM TicketStatus tks2 
-                        JOIN TaskStatus ts2 ON tks2.taskStatusId = ts2.taskStatusId 
-                        WHERE tks2.ticketId = t.ticketId 
-                            AND ts2.name = 'Sawcut'
-                            AND tks2.deletedAt IS NULL
-                            AND ts2.deletedAt IS NULL
-                    )
-                    AND NOT EXISTS (
-                        -- Exclude tickets already assigned to an active concrete route
-                        SELECT 1 FROM RouteTickets rt
-                        JOIN Routes r ON rt.routeId = r.routeId
-                        WHERE rt.ticketId = t.ticketId
-                            AND r.type = 'CONCRETE'
-                            AND r.deletedAt IS NULL
-                            AND rt.deletedAt IS NULL
-                    )
-                ORDER BY t.ticketId ASC
+            SELECT DISTINCT 
+                t.ticketId,
+                t.ticketCode,
+                t.contractNumber,
+                t.amountToPay,
+                t.ticketType,
+                t.daysOutstanding,
+                t.comment7d,
+                t.quantity,
+                t.createdAt,
+                t.updatedAt,
+                cu.name as contractUnitName,
+                i.name as incidentName
+            FROM Tickets t
+            LEFT JOIN ContractUnits cu ON t.contractUnitId = cu.contractUnitId AND cu.deletedAt IS NULL
+            LEFT JOIN IncidentsMx i ON t.incidentId = i.incidentId AND i.deletedAt IS NULL
+            WHERE t.deletedAt IS NULL
+            AND (
+                -- Exclude tickets with specific comment7d values
+                t.comment7d IS NULL 
+                OR t.comment7d = '' 
+                OR t.comment7d NOT IN ('TK - CANCELLED', 'TK - HOLD OFF', 'TK- ON HOLD OFF')
+            )
+            AND EXISTS (
+                -- SPOTTING completed (has endingDate)
+                SELECT 1 FROM TicketStatus tks1 
+                JOIN TaskStatus ts1 ON tks1.taskStatusId = ts1.taskStatusId 
+                WHERE tks1.ticketId = t.ticketId 
+                AND ts1.name = 'Spotting'
+                AND tks1.endingdate IS NOT NULL
+                AND tks1.deletedAt IS NULL
+                AND ts1.deletedAt IS NULL
+            )
+            AND (
+                -- Sawcut is the first incomplete phase
+                (
+                EXISTS (SELECT 1 FROM TicketStatus tks2 JOIN TaskStatus ts2 ON tks2.taskStatusId = ts2.taskStatusId WHERE tks2.ticketId = t.ticketId AND ts2.name = 'Sawcut' AND tks2.endingdate IS NULL AND tks2.deletedAt IS NULL AND ts2.deletedAt IS NULL)
+                )
+                OR
+                -- Removal is the first incomplete phase
+                (
+                EXISTS (SELECT 1 FROM TicketStatus tks3 JOIN TaskStatus ts3 ON tks3.taskStatusId = ts3.taskStatusId WHERE tks3.ticketId = t.ticketId AND ts3.name = 'Removal' AND tks3.endingdate IS NULL AND tks3.deletedAt IS NULL AND ts3.deletedAt IS NULL)
+                AND EXISTS (SELECT 1 FROM TicketStatus tks2 JOIN TaskStatus ts2 ON tks2.taskStatusId = ts2.taskStatusId WHERE tks2.ticketId = t.ticketId AND ts2.name = 'Sawcut' AND tks2.endingdate IS NOT NULL AND tks2.deletedAt IS NULL AND ts2.deletedAt IS NULL)
+                )
+                OR
+                -- Framing is the first incomplete phase
+                (
+                EXISTS (SELECT 1 FROM TicketStatus tks4 JOIN TaskStatus ts4 ON tks4.taskStatusId = ts4.taskStatusId WHERE tks4.ticketId = t.ticketId AND ts4.name = 'Framing' AND tks4.endingdate IS NULL AND tks4.deletedAt IS NULL AND ts4.deletedAt IS NULL)
+                AND EXISTS (SELECT 1 FROM TicketStatus tks2 JOIN TaskStatus ts2 ON tks2.taskStatusId = ts2.taskStatusId WHERE tks2.ticketId = t.ticketId AND ts2.name = 'Sawcut' AND tks2.endingdate IS NOT NULL AND tks2.deletedAt IS NULL AND ts2.deletedAt IS NULL)
+                AND EXISTS (SELECT 1 FROM TicketStatus tks3 JOIN TaskStatus ts3 ON tks3.taskStatusId = ts3.taskStatusId WHERE tks3.ticketId = t.ticketId AND ts3.name = 'Removal' AND tks3.endingdate IS NOT NULL AND tks3.deletedAt IS NULL AND ts3.deletedAt IS NULL)
+                )
+                OR
+                -- Pour is the first incomplete phase
+                (
+                EXISTS (SELECT 1 FROM TicketStatus tks5 JOIN TaskStatus ts5 ON tks5.taskStatusId = ts5.taskStatusId WHERE tks5.ticketId = t.ticketId AND ts5.name = 'Pour' AND tks5.endingdate IS NULL AND tks5.deletedAt IS NULL AND ts5.deletedAt IS NULL)
+                AND EXISTS (SELECT 1 FROM TicketStatus tks2 JOIN TaskStatus ts2 ON tks2.taskStatusId = ts2.taskStatusId WHERE tks2.ticketId = t.ticketId AND ts2.name = 'Sawcut' AND tks2.endingdate IS NOT NULL AND tks2.deletedAt IS NULL AND ts2.deletedAt IS NULL)
+                AND EXISTS (SELECT 1 FROM TicketStatus tks3 JOIN TaskStatus ts3 ON tks3.taskStatusId = ts3.taskStatusId WHERE tks3.ticketId = t.ticketId AND ts3.name = 'Removal' AND tks3.endingdate IS NOT NULL AND tks3.deletedAt IS NULL AND ts3.deletedAt IS NULL)
+                AND EXISTS (SELECT 1 FROM TicketStatus tks4 JOIN TaskStatus ts4 ON tks4.taskStatusId = ts4.taskStatusId WHERE tks4.ticketId = t.ticketId AND ts4.name = 'Framing' AND tks4.endingdate IS NOT NULL AND tks4.deletedAt IS NULL AND ts4.deletedAt IS NULL)
+                )
+                OR
+                -- Clean is the first incomplete phase
+                (
+                EXISTS (SELECT 1 FROM TicketStatus tks6 JOIN TaskStatus ts6 ON tks6.taskStatusId = ts6.taskStatusId WHERE tks6.ticketId = t.ticketId AND ts6.name = 'Clean' AND tks6.endingdate IS NULL AND tks6.deletedAt IS NULL AND ts6.deletedAt IS NULL)
+                AND EXISTS (SELECT 1 FROM TicketStatus tks2 JOIN TaskStatus ts2 ON tks2.taskStatusId = ts2.taskStatusId WHERE tks2.ticketId = t.ticketId AND ts2.name = 'Sawcut' AND tks2.endingdate IS NOT NULL AND tks2.deletedAt IS NULL AND ts2.deletedAt IS NULL)
+                AND EXISTS (SELECT 1 FROM TicketStatus tks3 JOIN TaskStatus ts3 ON tks3.taskStatusId = ts3.taskStatusId WHERE tks3.ticketId = t.ticketId AND ts3.name = 'Removal' AND tks3.endingdate IS NOT NULL AND tks3.deletedAt IS NULL AND ts3.deletedAt IS NULL)
+                AND EXISTS (SELECT 1 FROM TicketStatus tks4 JOIN TaskStatus ts4 ON tks4.taskStatusId = ts4.taskStatusId WHERE tks4.ticketId = t.ticketId AND ts4.name = 'Framing' AND tks4.endingdate IS NOT NULL AND tks4.deletedAt IS NULL AND ts4.deletedAt IS NULL)
+                AND EXISTS (SELECT 1 FROM TicketStatus tks5 JOIN TaskStatus ts5 ON tks5.taskStatusId = ts5.taskStatusId WHERE tks5.ticketId = t.ticketId AND ts5.name = 'Pour' AND tks5.endingdate IS NOT NULL AND tks5.deletedAt IS NULL AND ts5.deletedAt IS NULL)
+                )
+            )
+            AND NOT EXISTS (
+                -- Exclude tickets where all phases are completed
+                SELECT 1 FROM TicketStatus tks7 JOIN TaskStatus ts7 ON tks7.taskStatusId = ts7.taskStatusId WHERE tks7.ticketId = t.ticketId AND ts7.name = 'Clean' AND tks7.endingdate IS NOT NULL AND tks7.deletedAt IS NULL AND ts7.deletedAt IS NULL
+            )
+            AND NOT EXISTS (
+                -- Exclude tickets already assigned to an active concrete route
+                SELECT 1 FROM RouteTickets rt
+                JOIN Routes r ON rt.routeId = r.routeId
+                WHERE rt.ticketId = t.ticketId
+                AND r.type = 'CONCRETE'
+                AND r.deletedAt IS NULL
+                AND rt.deletedAt IS NULL
+            )
+            ORDER BY t.ticketId ASC
             `);
             
             return result.rows;
@@ -996,6 +1235,7 @@ class RouteOptimizationService {
      * Criteria: 
      * 1. SPOTTING completed and has GRINDING status (no SAWCUT)
      * 2. OR all concrete phases completed (SAWCUT, REMOVAL, FRAMING, POURING)
+     * 3. comment7d must be TK- ON PROGRESS, TK - ON LAYOUT, TK - LAYOUT, or TK - LAY OUT
      * @returns {Promise<Array>} - Array of tickets eligible for asphalt routes
      */
     async getAsphaltTickets() {
@@ -1018,86 +1258,84 @@ class RouteOptimizationService {
                 LEFT JOIN ContractUnits cu ON t.contractUnitId = cu.contractUnitId AND cu.deletedAt IS NULL
                 LEFT JOIN IncidentsMx i ON t.incidentId = i.incidentId AND i.deletedAt IS NULL
                 WHERE t.deletedAt IS NULL
-                    AND EXISTS (
-                        -- SPOTTING completed (has endingDate)
-                        SELECT 1 FROM TicketStatus tks1 
-                        JOIN TaskStatus ts1 ON tks1.taskStatusId = ts1.taskStatusId 
-                        WHERE tks1.ticketId = t.ticketId 
-                            AND ts1.name = 'Spotting'
-                            AND tks1.endingdate IS NOT NULL
-                            AND tks1.deletedAt IS NULL
-                            AND ts1.deletedAt IS NULL
-                    )
-                    AND (
-                        -- Case 1: Has GRINDING status but no SAWCUT
-                        (
-                            EXISTS (
-                                SELECT 1 FROM TicketStatus tks2 
-                                JOIN TaskStatus ts2 ON tks2.taskStatusId = ts2.taskStatusId 
-                                WHERE tks2.ticketId = t.ticketId 
-                                    AND ts2.name = 'Grind'
-                                    AND tks2.deletedAt IS NULL
-                                    AND ts2.deletedAt IS NULL
-                            )
-                            AND NOT EXISTS (
-                                SELECT 1 FROM TicketStatus tks3 
-                                JOIN TaskStatus ts3 ON tks3.taskStatusId = ts3.taskStatusId 
-                                WHERE tks3.ticketId = t.ticketId 
-                                    AND ts3.name = 'Sawcut'
-                                    AND tks3.deletedAt IS NULL
-                                    AND ts3.deletedAt IS NULL
-                            )
-                        )
-                        OR
-                        -- Case 2: All concrete phases completed (SAWCUT, REMOVAL, FRAMING, POURING)
-                        (
-                            EXISTS (
-                                SELECT 1 FROM TicketStatus tks4 
-                                JOIN TaskStatus ts4 ON tks4.taskStatusId = ts4.taskStatusId 
-                                WHERE tks4.ticketId = t.ticketId 
-                                    AND ts4.name = 'Sawcut'
-                                    AND tks4.endingdate IS NOT NULL
-                                    AND tks4.deletedAt IS NULL
-                                    AND ts4.deletedAt IS NULL
-                            )
-                            AND EXISTS (
-                                SELECT 1 FROM TicketStatus tks5 
-                                JOIN TaskStatus ts5 ON tks5.taskStatusId = ts5.taskStatusId 
-                                WHERE tks5.ticketId = t.ticketId 
-                                    AND ts5.name = 'Stripping'
-                                    AND tks5.endingdate IS NOT NULL
-                                    AND tks5.deletedAt IS NULL
-                                    AND ts5.deletedAt IS NULL
-                            )
-                            AND EXISTS (
-                                SELECT 1 FROM TicketStatus tks6 
-                                JOIN TaskStatus ts6 ON tks6.taskStatusId = ts6.taskStatusId 
-                                WHERE tks6.ticketId = t.ticketId 
-                                    AND ts6.name = 'Framing'
-                                    AND tks6.endingdate IS NOT NULL
-                                    AND tks6.deletedAt IS NULL
-                                    AND ts6.deletedAt IS NULL
-                            )
-                            AND EXISTS (
-                                SELECT 1 FROM TicketStatus tks7 
-                                JOIN TaskStatus ts7 ON tks7.taskStatusId = ts7.taskStatusId 
-                                WHERE tks7.ticketId = t.ticketId 
-                                    AND ts7.name = 'Pour'
-                                    AND tks7.endingdate IS NOT NULL
-                                    AND tks7.deletedAt IS NULL
-                                    AND ts7.deletedAt IS NULL
-                            )
-                        )
-                    )
-                    AND NOT EXISTS (
-                        -- Exclude tickets already assigned to an active asphalt route
-                        SELECT 1 FROM RouteTickets rt
-                        JOIN Routes r ON rt.routeId = r.routeId
-                        WHERE rt.ticketId = t.ticketId
-                            AND r.type = 'ASPHALT'
-                            AND r.deletedAt IS NULL
-                            AND rt.deletedAt IS NULL
-                    )
+                AND (
+                    -- Include only specific comment7d values
+                    t.comment7d = 'TK - ON PROGRESS'
+                    OR t.comment7d = 'TK - ON LAYOUT'
+                    OR t.comment7d = 'TK - LAYOUT'
+                    OR t.comment7d = 'TK - LAY OUT'
+                    OR t.comment7d = 'TK- ON PROGRESS'
+                    OR t.comment7d = 'TK- ON LAYOUT'
+                    OR t.comment7d = 'TK- LAYOUT'
+                )
+                AND t.contractUnitId NOT IN (1,2,3,4,5,10,11,13,14,16,17,18,21,22,23,24,25,26,27,28,29,30,33)
+                AND EXISTS (
+                    -- SPOTTING completed (has endingDate)
+                    SELECT 1 FROM TicketStatus tks1 
+                    JOIN TaskStatus ts1 ON tks1.taskStatusId = ts1.taskStatusId 
+                    WHERE tks1.ticketId = t.ticketId 
+                    AND ts1.name = 'Spotting'
+                    AND tks1.endingdate IS NOT NULL
+                    AND tks1.deletedAt IS NULL
+                    AND ts1.deletedAt IS NULL
+                )
+                AND EXISTS (
+                    -- Must have at least one incomplete asphalt phase (Grind, Asphalt, or Crack Seal)
+                    SELECT 1 FROM TicketStatus tks_asphalt 
+                    JOIN TaskStatus ts_asphalt ON tks_asphalt.taskStatusId = ts_asphalt.taskStatusId 
+                    WHERE tks_asphalt.ticketId = t.ticketId 
+                    AND ts_asphalt.name IN ('Grind', 'Asphalt', 'Crack Seal')
+                    AND tks_asphalt.endingdate IS NULL
+                    AND tks_asphalt.deletedAt IS NULL
+                    AND ts_asphalt.deletedAt IS NULL
+                )
+                AND NOT EXISTS (
+                    -- Exclude tickets where all asphalt phases are completed
+                    SELECT 1 FROM TicketStatus tks11 
+                    JOIN TaskStatus ts11 ON tks11.taskStatusId = ts11.taskStatusId 
+                    WHERE tks11.ticketId = t.ticketId 
+                    AND ts11.name = 'Crack Seal'
+                    AND tks11.endingdate IS NOT NULL
+                    AND tks11.deletedAt IS NULL
+                    AND ts11.deletedAt IS NULL
+                )
+                AND NOT EXISTS (
+                    -- Exclude tickets already assigned to an active asphalt route
+                    SELECT 1 FROM RouteTickets rt
+                    JOIN Routes r ON rt.routeId = r.routeId
+                    WHERE rt.ticketId = t.ticketId
+                    AND r.type = 'ASPHALT'
+                    AND r.deletedAt IS NULL
+                    AND rt.deletedAt IS NULL
+                )
+                AND NOT EXISTS (
+                    -- Exclude asphalt tickets if there are concrete tickets in the same incident with incomplete concrete phases
+                    SELECT 1 FROM Tickets t_concrete
+                    JOIN TicketStatus tks_concrete ON t_concrete.ticketId = tks_concrete.ticketId
+                    JOIN TaskStatus ts_concrete ON tks_concrete.taskStatusId = ts_concrete.taskStatusId
+                    JOIN IncidentsMx i_concrete ON t_concrete.incidentId = i_concrete.incidentId AND i_concrete.deletedAt IS NULL
+                    JOIN IncidentsMx i_current ON t.incidentId = i_current.incidentId AND i_current.deletedAt IS NULL
+                    WHERE i_concrete.name = i_current.name
+                    AND t_concrete.deletedAt IS NULL
+                    AND t_concrete.contractUnitId IN (1,2,3,4,5,10,11,13,14,16,17,18,21,22,23,24,25,26,27,28,29,30,33)
+                    AND ts_concrete.name IN ('Sawcut', 'Removal', 'Framing', 'Pour')
+                    AND tks_concrete.endingdate IS NULL
+                    AND tks_concrete.deletedAt IS NULL
+                    AND ts_concrete.deletedAt IS NULL
+                )
+                GROUP BY 
+                    t.ticketId,
+                    t.ticketCode,
+                    t.contractNumber,
+                    t.amountToPay,
+                    t.ticketType,
+                    t.daysOutstanding,
+                    t.comment7d,
+                    t.quantity,
+                    t.createdAt,
+                    t.updatedAt,
+                    cu.name,
+                    i.name
                 ORDER BY t.ticketId ASC
             `);
             
@@ -2179,7 +2417,7 @@ class RouteOptimizationService {
     /**
      * Generate a proper route code with sequential numbering
      * @param {string} type - Route type (e.g., 'SPOTTER', 'CONCRETE', 'ASPHALT', 'default')
-     * @returns {Promise<string>} - Generated route code like 'ROUTE-001', 'SPOTTER-2024-001', etc.
+     * @returns {Promise<string>} - Generated route code like 'ROUTE-001', 'SPOT-2024-001', etc.
      */
     async generateRouteCode(type = 'default') {
         try {
@@ -2192,13 +2430,13 @@ class RouteOptimizationService {
             // Format the number with leading zeros (3 digits)
             const formattedNumber = nextNumber.toString().padStart(3, '0');
             
-            // Generate route code based on type
+            // Generate route code based on type using abbreviated codes
             if (type.toUpperCase() === 'SPOTTER') {
-                return `SPOTTER-${currentYear}-${formattedNumber}`;
+                return `SPOT-${currentYear}-${formattedNumber}`;
             } else if (type.toUpperCase() === 'CONCRETE') {
-                return `CONCRETE-${currentYear}-${formattedNumber}`;
+                return `CONC-${currentYear}-${formattedNumber}`;
             } else if (type.toUpperCase() === 'ASPHALT') {
-                return `ASPHALT-${currentYear}-${formattedNumber}`;
+                return `ASP-${currentYear}-${formattedNumber}`;
             } else {
                 return `ROUTE-${formattedNumber}`;
             }
@@ -2267,6 +2505,989 @@ class RouteOptimizationService {
         } catch (error) {
             console.error('Error getting next route number:', error);
             return 1; // Fallback to 1 if there's an error
+        }
+    }
+
+    /**
+     * Cancel a route by updating comment7d only (preserves endingDate)
+     * @param {number} routeId - Route ID
+     * @param {Array<number>} ticketIds - Array of ticket IDs in the route
+     * @param {number} updatedBy - User ID
+     * @returns {Promise<Object>} - Result of the cancellation operation
+     */
+    async cancelRoute(routeId, ticketIds, updatedBy = 1) {
+        try {
+            console.log(`Canceling route ${routeId} with ${ticketIds.length} tickets (comment-only)`);
+
+            // Start a transaction
+            const client = await db.pool.connect();
+            
+            try {
+                await client.query('BEGIN');
+
+                // 1. Update comment7d to 'TK - LAYOUT' for tickets that don't have 'TK - ON SCHEDULE' or 'TK - ON PROGRESS'
+                const commentUpdateResult = await client.query(`
+                    UPDATE Tickets 
+                    SET comment7d = 'TK - LAYOUT',
+                        updatedAt = CURRENT_TIMESTAMP, 
+                        updatedBy = $1 
+                    WHERE ticketId = ANY($2) 
+                        AND deletedAt IS NULL
+                        AND (comment7d IS NULL 
+                             OR comment7d = '' 
+                             OR comment7d NOT IN ('TK - ON SCHEDULE', 'TK - ON PROGRESS'))
+                    RETURNING ticketId, comment7d
+                `, [updatedBy, ticketIds]);
+
+                const updatedComments = commentUpdateResult.rows.length;
+
+                // 2. Update the route's endDate to NULL (mark as not completed)
+                const routeResult = await client.query(`
+                    UPDATE Routes 
+                    SET endDate = NULL, 
+                        updatedAt = CURRENT_TIMESTAMP, 
+                        updatedBy = $1 
+                    WHERE routeId = $2 
+                        AND deletedAt IS NULL
+                    RETURNING routeId, endDate
+                `, [updatedBy, routeId]);
+
+                await client.query('COMMIT');
+
+                console.log(`Updated ${updatedComments} ticket comments and route ${routeId} for cancellation`);
+
+                return {
+                    routeId: routeId,
+                    message: `Route canceled successfully. Updated ${updatedComments} ticket comments to 'TK - LAYOUT' (endingDate preserved).`,
+                    updatedTicketStatuses: 0,
+                    updatedComments: updatedComments,
+                    totalTickets: ticketIds.length,
+                    routeUpdated: routeResult.rows.length > 0,
+                    endingDatePreserved: true,
+                    timestamp: new Date().toISOString()
+                };
+
+            } catch (error) {
+                await client.query('ROLLBACK');
+                throw error;
+            } finally {
+                client.release();
+            }
+
+        } catch (error) {
+            console.error('Failed to cancel route:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Cancel a spotting route - soft delete route and reset SPOTTING status
+     * @param {number} routeId - Route ID
+     * @param {Array<number>} ticketIds - Array of ticket IDs in the route
+     * @param {number} updatedBy - User ID
+     * @returns {Promise<Object>} - Result of the cancellation operation
+     */
+    async cancelSpottingRoute(routeId, ticketIds, updatedBy = 1) {
+        try {
+            console.log(`Canceling spotting route ${routeId} with ${ticketIds.length} tickets`);
+
+            // Start a transaction
+            const client = await db.pool.connect();
+            
+            try {
+                await client.query('BEGIN');
+
+                // 1. Reset SPOTTING status endingDate to NULL for all tickets
+                const spottingStatusResult = await client.query(`
+                    UPDATE TicketStatus 
+                    SET endingDate = NULL, 
+                        updatedAt = CURRENT_TIMESTAMP, 
+                        updatedBy = $1 
+                    WHERE ticketId = ANY($2) 
+                        AND taskStatusId = (SELECT taskStatusId FROM TaskStatus WHERE name = 'Spotting' AND deletedAt IS NULL)
+                        AND deletedAt IS NULL
+                    RETURNING taskStatusId, ticketId, endingDate
+                `, [updatedBy, ticketIds]);
+
+                const updatedSpottingStatuses = spottingStatusResult.rows.length;
+
+                // 2. Update comment7d to 'TK - LAYOUT' for tickets that don't have 'TK - ON SCHEDULE' or 'TK - ON PROGRESS'
+                const commentUpdateResult = await client.query(`
+                    UPDATE Tickets 
+                    SET comment7d = 'TK - LAYOUT',
+                        updatedAt = CURRENT_TIMESTAMP, 
+                        updatedBy = $1 
+                    WHERE ticketId = ANY($2) 
+                        AND deletedAt IS NULL
+                        AND (comment7d IS NULL 
+                             OR comment7d = '' 
+                             OR comment7d NOT IN ('TK - ON SCHEDULE', 'TK - ON PROGRESS'))
+                    RETURNING ticketId, comment7d
+                `, [updatedBy, ticketIds]);
+
+                const updatedComments = commentUpdateResult.rows.length;
+
+                // 3. Soft delete the route
+                const routeResult = await client.query(`
+                    UPDATE Routes 
+                    SET deletedAt = CURRENT_TIMESTAMP, 
+                        updatedAt = CURRENT_TIMESTAMP, 
+                        updatedBy = $1 
+                    WHERE routeId = $2 
+                        AND type = 'SPOTTER'
+                        AND deletedAt IS NULL
+                    RETURNING routeId, deletedAt
+                `, [updatedBy, routeId]);
+
+                // 4. Soft delete all RouteTickets associations
+                const routeTicketsResult = await client.query(`
+                    UPDATE RouteTickets 
+                    SET deletedAt = CURRENT_TIMESTAMP, 
+                        updatedAt = CURRENT_TIMESTAMP, 
+                        updatedBy = $1 
+                    WHERE routeId = $2 
+                        AND deletedAt IS NULL
+                    RETURNING routeId, ticketId, deletedAt
+                `, [updatedBy, routeId]);
+
+                await client.query('COMMIT');
+
+                console.log(`Canceled spotting route ${routeId}: ${updatedSpottingStatuses} SPOTTING statuses reset, ${updatedComments} comments updated, route soft deleted`);
+
+                return {
+                    routeId: routeId,
+                    message: `Spotting route canceled successfully. Reset ${updatedSpottingStatuses} SPOTTING statuses, updated ${updatedComments} ticket comments to 'TK - LAYOUT', and soft deleted route.`,
+                    updatedSpottingStatuses: updatedSpottingStatuses,
+                    updatedComments: updatedComments,
+                    totalTickets: ticketIds.length,
+                    routeSoftDeleted: routeResult.rows.length > 0,
+                    routeTicketsSoftDeleted: routeTicketsResult.rows.length,
+                    timestamp: new Date().toISOString()
+                };
+
+            } catch (error) {
+                await client.query('ROLLBACK');
+                throw error;
+            } finally {
+                client.release();
+            }
+
+        } catch (error) {
+            console.error('Failed to cancel spotting route:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Cancel a concrete route - soft delete route and reset SAWCUT status
+     * @param {number} routeId - Route ID
+     * @param {Array<number>} ticketIds - Array of ticket IDs in the route
+     * @param {number} updatedBy - User ID
+     * @returns {Promise<Object>} - Result of the cancellation operation
+     */
+    async cancelConcreteRoute(routeId, ticketIds, updatedBy = 1) {
+        try {
+            console.log(`Canceling concrete route ${routeId} with ${ticketIds.length} tickets`);
+
+            // Start a transaction
+            const client = await db.pool.connect();
+            
+            try {
+                await client.query('BEGIN');
+
+                // 1. Reset SAWCUT status endingDate to NULL for all tickets
+                const sawcutStatusResult = await client.query(`
+                    UPDATE TicketStatus 
+                    SET endingDate = NULL, 
+                        updatedAt = CURRENT_TIMESTAMP, 
+                        updatedBy = $1 
+                    WHERE ticketId = ANY($2) 
+                        AND taskStatusId = (SELECT taskStatusId FROM TaskStatus WHERE name = 'Sawcut' AND deletedAt IS NULL)
+                        AND deletedAt IS NULL
+                    RETURNING taskStatusId, ticketId, endingDate
+                `, [updatedBy, ticketIds]);
+
+                const updatedSawcutStatuses = sawcutStatusResult.rows.length;
+
+                // 2. Update comment7d to 'TK - LAYOUT' for tickets that don't have 'TK - ON SCHEDULE' or 'TK - ON PROGRESS'
+                const commentUpdateResult = await client.query(`
+                    UPDATE Tickets 
+                    SET comment7d = 'TK - LAYOUT',
+                        updatedAt = CURRENT_TIMESTAMP, 
+                        updatedBy = $1 
+                    WHERE ticketId = ANY($2) 
+                        AND deletedAt IS NULL
+                        AND (comment7d IS NULL 
+                             OR comment7d = '' 
+                             OR comment7d NOT IN ('TK - ON SCHEDULE', 'TK - ON PROGRESS'))
+                    RETURNING ticketId, comment7d
+                `, [updatedBy, ticketIds]);
+
+                const updatedComments = commentUpdateResult.rows.length;
+
+                // 3. Soft delete the route
+                const routeResult = await client.query(`
+                    UPDATE Routes 
+                    SET deletedAt = CURRENT_TIMESTAMP, 
+                        updatedAt = CURRENT_TIMESTAMP, 
+                        updatedBy = $1 
+                    WHERE routeId = $2 
+                        AND type = 'CONCRETE'
+                        AND deletedAt IS NULL
+                    RETURNING routeId, deletedAt
+                `, [updatedBy, routeId]);
+
+                // 4. Soft delete all RouteTickets associations
+                const routeTicketsResult = await client.query(`
+                    UPDATE RouteTickets 
+                    SET deletedAt = CURRENT_TIMESTAMP, 
+                        updatedAt = CURRENT_TIMESTAMP, 
+                        updatedBy = $1 
+                    WHERE routeId = $2 
+                        AND deletedAt IS NULL
+                    RETURNING routeId, ticketId, deletedAt
+                `, [updatedBy, routeId]);
+
+                await client.query('COMMIT');
+
+                console.log(`Canceled concrete route ${routeId}: ${updatedSawcutStatuses} SAWCUT statuses reset, ${updatedComments} comments updated, route soft deleted`);
+
+                return {
+                    routeId: routeId,
+                    message: `Concrete route canceled successfully. Reset ${updatedSawcutStatuses} SAWCUT statuses, updated ${updatedComments} ticket comments to 'TK - LAYOUT', and soft deleted route.`,
+                    updatedSawcutStatuses: updatedSawcutStatuses,
+                    updatedComments: updatedComments,
+                    totalTickets: ticketIds.length,
+                    routeSoftDeleted: routeResult.rows.length > 0,
+                    routeTicketsSoftDeleted: routeTicketsResult.rows.length,
+                    timestamp: new Date().toISOString()
+                };
+
+            } catch (error) {
+                await client.query('ROLLBACK');
+                throw error;
+            } finally {
+                client.release();
+            }
+
+        } catch (error) {
+            console.error('Failed to cancel concrete route:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Cancel an asphalt route - soft delete route and reset FRAMING status
+     * @param {number} routeId - Route ID
+     * @param {Array<number>} ticketIds - Array of ticket IDs in the route
+     * @param {number} updatedBy - User ID
+     * @returns {Promise<Object>} - Result of the cancellation operation
+     */
+    async cancelAsphaltRoute(routeId, ticketIds, updatedBy = 1) {
+        try {
+            console.log(`Canceling asphalt route ${routeId} with ${ticketIds.length} tickets`);
+
+            // Start a transaction
+            const client = await db.pool.connect();
+            
+            try {
+                await client.query('BEGIN');
+
+                // 1. Reset FRAMING status endingDate to NULL for all tickets
+                const framingStatusResult = await client.query(`
+                    UPDATE TicketStatus 
+                    SET endingDate = NULL, 
+                        updatedAt = CURRENT_TIMESTAMP, 
+                        updatedBy = $1 
+                    WHERE ticketId = ANY($2) 
+                        AND taskStatusId = (SELECT taskStatusId FROM TaskStatus WHERE name = 'Framing' AND deletedAt IS NULL)
+                        AND deletedAt IS NULL
+                    RETURNING taskStatusId, ticketId, endingDate
+                `, [updatedBy, ticketIds]);
+
+                const updatedFramingStatuses = framingStatusResult.rows.length;
+
+                // 2. Update comment7d to 'TK - LAYOUT' for tickets that don't have 'TK - ON SCHEDULE' or 'TK - ON PROGRESS'
+                const commentUpdateResult = await client.query(`
+                    UPDATE Tickets 
+                    SET comment7d = 'TK - LAYOUT',
+                        updatedAt = CURRENT_TIMESTAMP, 
+                        updatedBy = $1 
+                    WHERE ticketId = ANY($2) 
+                        AND deletedAt IS NULL
+                        AND (comment7d IS NULL 
+                             OR comment7d = '' 
+                             OR comment7d NOT IN ('TK - ON SCHEDULE', 'TK - ON PROGRESS'))
+                    RETURNING ticketId, comment7d
+                `, [updatedBy, ticketIds]);
+
+                const updatedComments = commentUpdateResult.rows.length;
+
+                // 3. Soft delete the route
+                const routeResult = await client.query(`
+                    UPDATE Routes 
+                    SET deletedAt = CURRENT_TIMESTAMP, 
+                        updatedAt = CURRENT_TIMESTAMP, 
+                        updatedBy = $1 
+                    WHERE routeId = $2 
+                        AND type = 'ASPHALT'
+                        AND deletedAt IS NULL
+                    RETURNING routeId, deletedAt
+                `, [updatedBy, routeId]);
+
+                // 4. Soft delete all RouteTickets associations
+                const routeTicketsResult = await client.query(`
+                    UPDATE RouteTickets 
+                    SET deletedAt = CURRENT_TIMESTAMP, 
+                        updatedAt = CURRENT_TIMESTAMP, 
+                        updatedBy = $1 
+                    WHERE routeId = $2 
+                        AND deletedAt IS NULL
+                    RETURNING routeId, ticketId, deletedAt
+                `, [updatedBy, routeId]);
+
+                await client.query('COMMIT');
+
+                console.log(`Canceled asphalt route ${routeId}: ${updatedFramingStatuses} FRAMING statuses reset, ${updatedComments} comments updated, route soft deleted`);
+
+                return {
+                    routeId: routeId,
+                    message: `Asphalt route canceled successfully. Reset ${updatedFramingStatuses} FRAMING statuses, updated ${updatedComments} ticket comments to 'TK - LAYOUT', and soft deleted route.`,
+                    updatedFramingStatuses: updatedFramingStatuses,
+                    updatedComments: updatedComments,
+                    totalTickets: ticketIds.length,
+                    routeSoftDeleted: routeResult.rows.length > 0,
+                    routeTicketsSoftDeleted: routeTicketsResult.rows.length,
+                    timestamp: new Date().toISOString()
+                };
+
+            } catch (error) {
+                await client.query('ROLLBACK');
+                throw error;
+            } finally {
+                client.release();
+            }
+
+        } catch (error) {
+            console.error('Failed to cancel asphalt route:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Complete a route by setting endingDate to current timestamp for all ticket statuses
+     * @param {number} routeId - Route ID
+     * @param {Array<number>} ticketIds - Array of ticket IDs in the route
+     * @param {number} updatedBy - User ID
+     * @returns {Promise<Object>} - Result of the completion operation
+     */
+    async completeRoute(routeId, ticketIds, updatedBy = 1) {
+        try {
+            console.log(`Completing route ${routeId} with ${ticketIds.length} tickets`);
+
+            // Start a transaction
+            const client = await db.pool.connect();
+            
+            try {
+                await client.query('BEGIN');
+
+                // 1. Update all ticket statuses to set endingDate to current timestamp
+                const ticketStatusResult = await client.query(`
+                    UPDATE TicketStatus 
+                    SET endingDate = CURRENT_TIMESTAMP, 
+                        updatedAt = CURRENT_TIMESTAMP, 
+                        updatedBy = $1 
+                    WHERE ticketId = ANY($2) 
+                        AND endingDate IS NULL
+                        AND deletedAt IS NULL
+                    RETURNING taskStatusId, ticketId, endingDate
+                `, [updatedBy, ticketIds]);
+
+                const updatedTicketStatuses = ticketStatusResult.rows.length;
+
+                // 2. Update the route's endDate to current timestamp (mark as completed)
+                const routeResult = await client.query(`
+                    UPDATE Routes 
+                    SET endDate = CURRENT_DATE, 
+                        updatedAt = CURRENT_TIMESTAMP, 
+                        updatedBy = $1 
+                    WHERE routeId = $2 
+                        AND deletedAt IS NULL
+                    RETURNING routeId, endDate
+                `, [updatedBy, routeId]);
+
+                await client.query('COMMIT');
+
+                console.log(`Updated ${updatedTicketStatuses} ticket statuses and route ${routeId} for completion`);
+
+                return {
+                    routeId: routeId,
+                    message: `Route completed successfully. Updated ${updatedTicketStatuses} ticket statuses.`,
+                    updatedTicketStatuses: updatedTicketStatuses,
+                    totalTickets: ticketIds.length,
+                    routeUpdated: routeResult.rows.length > 0,
+                    completionTimestamp: new Date().toISOString()
+                };
+
+            } catch (error) {
+                await client.query('ROLLBACK');
+                throw error;
+            } finally {
+                client.release();
+            }
+
+        } catch (error) {
+            console.error('Failed to complete route:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Get detailed information about tickets in a route including their status
+     * @param {number} routeId - Route ID
+     * @returns {Promise<Object>} - Detailed route and ticket information
+     */
+    async getRouteTicketDetails(routeId) {
+        try {
+            console.log(`Getting detailed information for route ${routeId}`);
+
+            // Get route information
+            const routeResult = await db.query(`
+                SELECT routeId, routeCode, type, startDate, endDate, createdAt, updatedAt
+                FROM Routes 
+                WHERE routeId = $1 AND deletedAt IS NULL
+            `, [routeId]);
+
+            if (routeResult.rows.length === 0) {
+                throw new Error(`Route ${routeId} not found`);
+            }
+
+            const route = routeResult.rows[0];
+
+            // Get tickets in the route with their status information
+            const ticketsResult = await db.query(`
+                SELECT 
+                    rt.ticketId,
+                    rt.address,
+                    rt.queue,
+                    t.ticketCode,
+                    t.comment7d,
+                    -- Get all task statuses for this ticket
+                    COALESCE(
+                        JSON_AGG(
+                            JSONB_BUILD_OBJECT(
+                                'taskStatusId', ts.taskStatusId,
+                                'taskName', ts.name,
+                                'startingDate', tks.startingDate,
+                                'endingDate', tks.endingDate,
+                                'observation', tks.observation,
+                                'crewId', tks.crewId
+                            )
+                        ) FILTER (WHERE ts.taskStatusId IS NOT NULL),
+                        '[]'::json
+                    ) as taskStatuses
+                FROM RouteTickets rt
+                JOIN Tickets t ON rt.ticketId = t.ticketId AND t.deletedAt IS NULL
+                LEFT JOIN TicketStatus tks ON t.ticketId = tks.ticketId AND tks.deletedAt IS NULL
+                LEFT JOIN TaskStatus ts ON tks.taskStatusId = ts.taskStatusId AND ts.deletedAt IS NULL
+                WHERE rt.routeId = $1 AND rt.deletedAt IS NULL
+                GROUP BY rt.ticketId, rt.address, rt.queue, t.ticketCode, t.comment7d
+                ORDER BY rt.queue ASC
+            `, [routeId]);
+
+            const tickets = ticketsResult.rows;
+
+            // Check which tickets would appear in getSpottingTickets
+            const spottingEligibleTickets = tickets.filter(ticket => {
+                const taskStatuses = ticket.taskstatuses || [];
+                
+                // Check if ticket has SPOTTING status with NULL endingDate
+                const hasSpottingInProgress = taskStatuses.some(status => 
+                    status.taskName === 'Spotting' && status.endingDate === null
+                );
+
+                // Check if ticket meets comment7d criteria
+                const hasValidComment = !ticket.comment7d || 
+                                       ticket.comment7d === '' || 
+                                       ticket.comment7d === 'TK - PERMIT EXTENDED' ||
+                                       ticket.comment7d === 'TK - LAYOUT' ||
+                                       ticket.comment7d === 'TK - LAY OUT';
+
+                return hasSpottingInProgress && hasValidComment;
+            });
+
+            return {
+                route: {
+                    routeId: route.routeid,
+                    routeCode: route.routecode,
+                    type: route.type,
+                    startDate: route.startdate,
+                    endDate: route.enddate,
+                    createdAt: route.createdat,
+                    updatedAt: route.updatedat
+                },
+                tickets: {
+                    total: tickets.length,
+                    details: tickets.map(ticket => ({
+                        ticketId: ticket.ticketid,
+                        ticketCode: ticket.ticketcode,
+                        address: ticket.address,
+                        queue: ticket.queue,
+                        comment7d: ticket.comment7d,
+                        taskStatuses: ticket.taskstatuses || []
+                    }))
+                },
+                analysis: {
+                    spottingEligibleCount: spottingEligibleTickets.length,
+                    spottingEligibleTickets: spottingEligibleTickets.map(ticket => ({
+                        ticketId: ticket.ticketid,
+                        ticketCode: ticket.ticketcode,
+                        reason: 'Has SPOTTING status with NULL endingDate and valid comment7d'
+                    })),
+                    summary: {
+                        routeType: route.type,
+                        routeEndDate: route.enddate,
+                        totalTickets: tickets.length,
+                        ticketsWithSpottingStatus: tickets.filter(t => 
+                            (t.taskstatuses || []).some(s => s.taskName === 'Spotting')
+                        ).length,
+                        ticketsWithCompletedSpotting: tickets.filter(t => 
+                            (t.taskstatuses || []).some(s => s.taskName === 'Spotting' && s.endingDate !== null)
+                        ).length,
+                        ticketsWithInProgressSpotting: tickets.filter(t => 
+                            (t.taskstatuses || []).some(s => s.taskName === 'Spotting' && s.endingDate === null)
+                        ).length
+                    }
+                }
+            };
+
+        } catch (error) {
+            console.error('Failed to get route ticket details:', error);
+            throw error;
+        }
+    }
+
+    async tryMultipleVroomAlgorithms(vroomRequest) {
+        try {
+            const requestConfig = {
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'User-Agent': 'NodeJS-API/1.0'
+                },
+                timeout: 20000
+            };
+
+            console.log('=== VROOM REQUEST DEBUG ===');
+            console.log('URL:', `${this.vroomBaseUrl}/`);
+            console.log('Headers:', requestConfig.headers);
+            console.log('Body (stringified):', JSON.stringify(vroomRequest));
+            console.log('Body length:', JSON.stringify(vroomRequest).length);
+            console.log('================================');
+
+            const response = await axios.post(`${this.vroomBaseUrl}/`, vroomRequest, requestConfig);
+            return response.data;
+        } catch (error) {
+            console.error('Full error object:', {
+                message: error.message,
+                status: error.response?.status,
+                statusText: error.response?.statusText,
+                headers: error.response?.headers,
+                data: error.response?.data
+            });
+            throw new Error('VROOM request failed: ' + (error.response?.data?.error || error.message));
+        }
+    }
+
+    /**
+     * Alternative VROOM request using raw HTTP instead of axios
+     * @param {Object} vroomRequest - The VROOM request object
+     * @returns {Promise<Object>} - VROOM response
+     */
+    async testRawHTTP(vroomRequest) {
+        return new Promise((resolve, reject) => {
+            const postData = JSON.stringify(vroomRequest);
+            
+            const options = {
+                hostname: 'vroom',
+                port: 3000,
+                path: '/',
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Content-Length': Buffer.byteLength(postData)
+                }
+            };
+
+            console.log('=== RAW HTTP REQUEST DEBUG ===');
+            console.log('Raw HTTP request options:', options);
+            console.log('Raw HTTP post data:', postData);
+            console.log('================================');
+
+            const req = http.request(options, (res) => {
+                let data = '';
+                
+                console.log('Response status:', res.statusCode);
+                console.log('Response headers:', res.headers);
+                
+                res.on('data', (chunk) => {
+                    data += chunk;
+                });
+                
+                res.on('end', () => {
+                    console.log('Response body:', data);
+                    if (res.statusCode === 200) {
+                        resolve(JSON.parse(data));
+                    } else {
+                        reject(new Error(`HTTP ${res.statusCode}: ${data}`));
+                    }
+                });
+            });
+
+            req.on('error', (error) => {
+                console.error('Request error:', error);
+                reject(error);
+            });
+
+            req.write(postData);
+            req.end();
+        });
+    }
+
+    /**
+     * Test both axios and raw HTTP methods for VROOM communication
+     * @param {Object} vroomRequest - The VROOM request object
+     * @returns {Promise<Object>} - Test results
+     */
+    async testVroomCommunication(vroomRequest) {
+        console.log('=== VROOM COMMUNICATION TEST ===');
+        
+        const results = {
+            axios: null,
+            rawHttp: null,
+            success: false
+        };
+
+        // Test axios method
+        try {
+            console.log('\n--- Testing Axios Method ---');
+            results.axios = await this.tryMultipleVroomAlgorithms(vroomRequest);
+            console.log('✅ Axios method SUCCESS');
+        } catch (error) {
+            console.log('❌ Axios method FAILED:', error.message);
+            results.axios = { error: error.message };
+        }
+
+        // Test raw HTTP method
+        try {
+            console.log('\n--- Testing Raw HTTP Method ---');
+            results.rawHttp = await this.testRawHTTP(vroomRequest);
+            console.log('✅ Raw HTTP method SUCCESS');
+        } catch (error) {
+            console.log('❌ Raw HTTP method FAILED:', error.message);
+            results.rawHttp = { error: error.message };
+        }
+
+        // Determine overall success
+        results.success = results.axios && !results.axios.error || results.rawHttp && !results.rawHttp.error;
+        
+        console.log('\n=== TEST RESULTS ===');
+        console.log('Overall success:', results.success);
+        console.log('========================\n');
+        
+        return results;
+    }
+
+    /**
+     * Complete a concrete route by completing the current phase and moving to the next phase
+     * @param {number} routeId - Route ID
+     * @param {Array<number>} ticketIds - Array of ticket IDs in the route
+     * @param {number} updatedBy - User ID
+     * @returns {Promise<Object>} - Result of the completion operation
+     */
+    async completeConcreteRoute(routeId, ticketIds, updatedBy = 1) {
+        try {
+            console.log(`Completing concrete route ${routeId} with ${ticketIds.length} tickets`);
+
+            // Start a transaction
+            const client = await db.pool.connect();
+            
+            try {
+                await client.query('BEGIN');
+
+                // Get the current phase for each ticket and complete it, then move to next phase
+                let completedPhases = 0;
+                let movedToNextPhase = 0;
+
+                for (const ticketId of ticketIds) {
+                    // Get current incomplete phases for this ticket
+                    const currentPhasesResult = await client.query(`
+                        SELECT 
+                            tks.taskStatusId,
+                            tks.ticketId,
+                            ts.name as taskName,
+                            tks.startingDate,
+                            tks.endingDate
+                        FROM TicketStatus tks
+                        JOIN TaskStatus ts ON tks.taskStatusId = ts.taskStatusId
+                        WHERE tks.ticketId = $1
+                        AND tks.endingDate IS NULL
+                        AND tks.deletedAt IS NULL
+                        AND ts.deletedAt IS NULL
+                        AND ts.name IN ('Sawcut', 'Removal', 'Framing', 'Pour', 'Clean')
+                        ORDER BY 
+                            CASE ts.name
+                                WHEN 'Sawcut' THEN 1
+                                WHEN 'Removal' THEN 2
+                                WHEN 'Framing' THEN 3
+                                WHEN 'Pour' THEN 4
+                                WHEN 'Clean' THEN 5
+                                ELSE 6
+                            END
+                        LIMIT 1
+                    `, [ticketId]);
+
+                    if (currentPhasesResult.rows.length > 0) {
+                        const currentPhase = currentPhasesResult.rows[0];
+                        
+                        // Complete the current phase
+                        await client.query(`
+                            UPDATE TicketStatus 
+                            SET endingDate = CURRENT_TIMESTAMP, 
+                                updatedAt = CURRENT_TIMESTAMP, 
+                                updatedBy = $1 
+                            WHERE taskStatusId = $2 
+                                AND ticketId = $3
+                                AND deletedAt IS NULL
+                        `, [updatedBy, currentPhase.taskStatusId, ticketId]);
+
+                        completedPhases++;
+
+                        // Check if there's a next phase to start
+                        const nextPhaseName = this.getNextPhaseName(currentPhase.taskName);
+                        if (nextPhaseName) {
+                            // Get the taskStatusId for the next phase
+                            const nextPhaseResult = await client.query(`
+                                SELECT taskStatusId FROM TaskStatus 
+                                WHERE name = $1 AND deletedAt IS NULL
+                            `, [nextPhaseName]);
+
+                            if (nextPhaseResult.rows.length > 0) {
+                                const nextTaskStatusId = nextPhaseResult.rows[0].taskStatusId;
+                                
+                                // Check if this phase already exists for this ticket
+                                const existingPhaseResult = await client.query(`
+                                    SELECT taskStatusId FROM TicketStatus 
+                                    WHERE ticketId = $1 AND taskStatusId = $2 AND deletedAt IS NULL
+                                `, [ticketId, nextTaskStatusId]);
+
+                                if (existingPhaseResult.rows.length === 0) {
+                                    // Create the next phase
+                                    await client.query(`
+                                        INSERT INTO TicketStatus (taskStatusId, ticketId, startingDate, createdAt, updatedAt, createdBy, updatedBy)
+                                        VALUES ($1, $2, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, $3, $3)
+                                    `, [nextTaskStatusId, ticketId, updatedBy]);
+                                    
+                                    movedToNextPhase++;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Update the route's endDate to current timestamp (mark as completed)
+                const routeResult = await client.query(`
+                    UPDATE Routes 
+                    SET endDate = CURRENT_DATE, 
+                        updatedAt = CURRENT_TIMESTAMP, 
+                        updatedBy = $1 
+                    WHERE routeId = $2 
+                        AND deletedAt IS NULL
+                    RETURNING routeId, endDate
+                `, [updatedBy, routeId]);
+
+                await client.query('COMMIT');
+
+                console.log(`Completed concrete route ${routeId}: ${completedPhases} phases completed, ${movedToNextPhase} moved to next phase`);
+
+                return {
+                    routeId: routeId,
+                    message: `Concrete route completed successfully. Completed ${completedPhases} phases, moved ${movedToNextPhase} to next phase.`,
+                    completedPhases: completedPhases,
+                    movedToNextPhase: movedToNextPhase,
+                    totalTickets: ticketIds.length,
+                    routeUpdated: routeResult.rows.length > 0,
+                    completionTimestamp: new Date().toISOString()
+                };
+
+            } catch (error) {
+                await client.query('ROLLBACK');
+                throw error;
+            } finally {
+                client.release();
+            }
+
+        } catch (error) {
+            console.error('Failed to complete concrete route:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Get the next phase name in the concrete workflow
+     * @param {string} currentPhase - Current phase name
+     * @returns {string|null} - Next phase name or null if no next phase
+     */
+    getNextPhaseName(currentPhase) {
+        const phaseOrder = {
+            'Sawcut': 'Removal',
+            'Removal': 'Framing',
+            'Framing': 'Pour',
+            'Pour': 'Clean',
+            'Clean': null // Clean is the final phase
+        };
+        return phaseOrder[currentPhase] || null;
+    }
+
+    /**
+     * Complete a spotting route by completing the SPOTTING phase
+     * @param {number} routeId - Route ID
+     * @param {Array<number>} ticketIds - Array of ticket IDs in the route
+     * @param {number} updatedBy - User ID
+     * @returns {Promise<Object>} - Result of the completion operation
+     */
+    async completeSpottingRoute(routeId, ticketIds, updatedBy = 1) {
+        try {
+            console.log(`Completing spotting route ${routeId} with ${ticketIds.length} tickets`);
+
+            // Start a transaction
+            const client = await db.pool.connect();
+            
+            try {
+                await client.query('BEGIN');
+
+                // Complete SPOTTING phase for all tickets
+                const spottingStatusResult = await client.query(`
+                    UPDATE TicketStatus 
+                    SET endingDate = CURRENT_TIMESTAMP, 
+                        updatedAt = CURRENT_TIMESTAMP, 
+                        updatedBy = $1 
+                    WHERE ticketId = ANY($2) 
+                        AND taskStatusId = (SELECT taskStatusId FROM TaskStatus WHERE name = 'Spotting' AND deletedAt IS NULL)
+                        AND endingDate IS NULL
+                        AND deletedAt IS NULL
+                    RETURNING taskStatusId, ticketId, endingDate
+                `, [updatedBy, ticketIds]);
+
+                const updatedSpottingStatuses = spottingStatusResult.rows.length;
+
+                // Update the route's endDate to current timestamp (mark as completed)
+                const routeResult = await client.query(`
+                    UPDATE Routes 
+                    SET endDate = CURRENT_DATE, 
+                        updatedAt = CURRENT_TIMESTAMP, 
+                        updatedBy = $1 
+                    WHERE routeId = $2 
+                        AND deletedAt IS NULL
+                    RETURNING routeId, endDate
+                `, [updatedBy, routeId]);
+
+                await client.query('COMMIT');
+
+                console.log(`Completed spotting route ${routeId}: ${updatedSpottingStatuses} SPOTTING statuses completed`);
+
+                return {
+                    routeId: routeId,
+                    message: `Spotting route completed successfully. Completed ${updatedSpottingStatuses} SPOTTING statuses.`,
+                    updatedSpottingStatuses: updatedSpottingStatuses,
+                    totalTickets: ticketIds.length,
+                    routeUpdated: routeResult.rows.length > 0,
+                    completionTimestamp: new Date().toISOString()
+                };
+
+            } catch (error) {
+                await client.query('ROLLBACK');
+                throw error;
+            } finally {
+                client.release();
+            }
+
+        } catch (error) {
+            console.error('Failed to complete spotting route:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Complete an asphalt route by completing the current asphalt phase
+     * @param {number} routeId - Route ID
+     * @param {Array<number>} ticketIds - Array of ticket IDs in the route
+     * @param {number} updatedBy - User ID
+     * @returns {Promise<Object>} - Result of the completion operation
+     */
+    async completeAsphaltRoute(routeId, ticketIds, updatedBy = 1) {
+        try {
+            console.log(`Completing asphalt route ${routeId} with ${ticketIds.length} tickets`);
+
+            // Start a transaction
+            const client = await db.pool.connect();
+            
+            try {
+                await client.query('BEGIN');
+
+                // Complete current asphalt phases (Grind, Asphalt, Crack Seal, etc.) for all tickets
+                const asphaltStatusResult = await client.query(`
+                    UPDATE TicketStatus 
+                    SET endingDate = CURRENT_TIMESTAMP, 
+                        updatedAt = CURRENT_TIMESTAMP, 
+                        updatedBy = $1 
+                    WHERE ticketId = ANY($2) 
+                        AND taskStatusId IN (
+                            SELECT taskStatusId FROM TaskStatus 
+                            WHERE name IN ('Grind', 'Asphalt', 'Crack Seal', 'Install Signs', 'Steel Plate Pick Up') 
+                            AND deletedAt IS NULL
+                        )
+                        AND endingDate IS NULL
+                        AND deletedAt IS NULL
+                    RETURNING taskStatusId, ticketId, endingDate
+                `, [updatedBy, ticketIds]);
+
+                const updatedAsphaltStatuses = asphaltStatusResult.rows.length;
+
+                // Update the route's endDate to current timestamp (mark as completed)
+                const routeResult = await client.query(`
+                    UPDATE Routes 
+                    SET endDate = CURRENT_DATE, 
+                        updatedAt = CURRENT_TIMESTAMP, 
+                        updatedBy = $1 
+                    WHERE routeId = $2 
+                        AND deletedAt IS NULL
+                    RETURNING routeId, endDate
+                `, [updatedBy, routeId]);
+
+                await client.query('COMMIT');
+
+                console.log(`Completed asphalt route ${routeId}: ${updatedAsphaltStatuses} asphalt statuses completed`);
+
+                return {
+                    routeId: routeId,
+                    message: `Asphalt route completed successfully. Completed ${updatedAsphaltStatuses} asphalt statuses.`,
+                    updatedAsphaltStatuses: updatedAsphaltStatuses,
+                    totalTickets: ticketIds.length,
+                    routeUpdated: routeResult.rows.length > 0,
+                    completionTimestamp: new Date().toISOString()
+                };
+
+            } catch (error) {
+                await client.query('ROLLBACK');
+                throw error;
+            } finally {
+                client.release();
+            }
+
+        } catch (error) {
+            console.error('Failed to complete asphalt route:', error);
+            throw error;
         }
     }
 }

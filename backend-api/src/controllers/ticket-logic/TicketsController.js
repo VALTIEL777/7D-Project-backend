@@ -41,8 +41,8 @@ function normalizeTicketsData(tickets) {
 const TicketsController = {
   async createTicket(req, res) {
     try {
-      const { incidentId, cuadranteId, contractUnitId, wayfindingId, paymentId, mobilizationId, ticketCode, quantity, daysOutstanding, comment7d, PeopleGasComment, contractNumber, amountToPay, ticketType, createdBy, updatedBy } = req.body;
-      const newTicket = await Tickets.create(incidentId, cuadranteId, contractUnitId, wayfindingId, paymentId, mobilizationId, ticketCode, quantity, daysOutstanding, comment7d, PeopleGasComment, contractNumber, amountToPay, ticketType, createdBy, updatedBy);
+      const { incidentId, cuadranteId, contractUnitId, wayfindingId, paymentId, mobilizationId, ticketCode, quantity, daysOutstanding, comment7d, PartnerComment, PartnerSupervisorComment, contractNumber, amountToPay, ticketType, createdBy, updatedBy } = req.body;
+      const newTicket = await Tickets.create(incidentId, cuadranteId, contractUnitId, wayfindingId, paymentId, mobilizationId, ticketCode, quantity, daysOutstanding, comment7d, PartnerComment, PartnerSupervisorComment, contractNumber, amountToPay, ticketType, createdBy, updatedBy);
       res.status(201).json(normalizeTicketData(newTicket));
     } catch (error) {
       console.error('Error creating Ticket:', error);
@@ -77,8 +77,23 @@ const TicketsController = {
   async updateTicket(req, res) {
     try {
       const { ticketId } = req.params;
-      const { incidentId, cuadranteId, contractUnitId, wayfindingId, paymentId, mobilizationId, ticketCode, quantity, daysOutstanding, comment7d, PeopleGasComment, contractNumber, amountToPay, ticketType, updatedBy } = req.body;
-      const updatedTicket = await Tickets.update(ticketId, incidentId, cuadranteId, contractUnitId, wayfindingId, paymentId, mobilizationId, ticketCode, quantity, daysOutstanding, comment7d, PeopleGasComment, contractNumber, amountToPay, ticketType, updatedBy);
+      const { incidentId, cuadranteId, contractUnitId, wayfindingId, paymentId, mobilizationId, ticketCode, quantity, daysOutstanding, comment7d, PartnerComment, PartnerSupervisorComment, contractNumber, amountToPay, ticketType, updatedBy } = req.body;
+      const updatedTicket = await Tickets.update(ticketId, incidentId, cuadranteId, contractUnitId, wayfindingId, paymentId, mobilizationId, ticketCode, quantity, daysOutstanding, comment7d, PartnerComment, PartnerSupervisorComment, contractNumber, amountToPay, ticketType, updatedBy);      if (!updatedTicket) {
+      return res.status(404).json({ message: 'Ticket not found' });
+      }
+      res.status(200).json(normalizeTicketData(updatedTicket));
+    } catch (error) {
+      console.error('Error updating Ticket:', error);
+      res.status(500).json({ message: 'Error updating Ticket', error: error.message });
+    }
+  },
+
+  
+  async updateTicketB(req, res) {
+    try {
+      const { ticketId } = req.params;
+      const { incidentId, cuadranteId, contractUnitId, wayfindingId, paymentId, mobilizationId, ticketCode, quantity, daysOutstanding, comment7d, PeopleGasComment, partnerSupervisorComment, contractNumber, amountToPay, ticketType, updatedBy } = req.body;
+      const updatedTicket = await Tickets.updateB(incidentId, cuadranteId, contractUnitId, wayfindingId, paymentId, mobilizationId, ticketCode, quantity, daysOutstanding, comment7d, PeopleGasComment,partnerSupervisorComment, contractNumber, amountToPay, ticketType, updatedBy, ticketId);
       if (!updatedTicket) {
         return res.status(404).json({ message: 'Ticket not found' });
       }
@@ -86,6 +101,31 @@ const TicketsController = {
     } catch (error) {
       console.error('Error updating Ticket:', error);
       res.status(500).json({ message: 'Error updating Ticket', error: error.message });
+    }
+  },
+
+  // Update only the comment7d field for a ticket
+  async updateTicketComment(req, res) {
+    try {
+      const { ticketId } = req.params;
+      const { comment7d, updatedBy } = req.body;
+      
+      if (!comment7d) {
+        return res.status(400).json({ message: 'comment7d is required' });
+      }
+      
+      const updatedTicket = await Tickets.updateComment7d(ticketId, comment7d, updatedBy || 1);
+      if (!updatedTicket) {
+        return res.status(404).json({ message: 'Ticket not found' });
+      }
+      res.status(200).json({
+        success: true,
+        message: 'Ticket comment updated successfully',
+        data: normalizeTicketData(updatedTicket)
+      });
+    } catch (error) {
+      console.error('Error updating ticket comment:', error);
+      res.status(500).json({ message: 'Error updating ticket comment', error: error.message });
     }
   },
 
@@ -457,6 +497,455 @@ const TicketsController = {
       res.status(500).json({ 
         success: false,
         message: 'Error fetching tickets with issues', 
+        error: error.message 
+      });
+    }
+  },
+
+  // Get ticket information with related payment and invoice data
+  async getTicketPaymentInvoiceInfo(req, res) {
+    try {
+      const ticketData = await Tickets.getTicketPaymentInvoiceInfo();
+      
+      // Debug: Log the first few records to see what data is returned
+      console.log('Raw ticket data (first 3 records):', ticketData.slice(0, 3));
+      
+      // Check if paymentNumber field exists in the first record
+      if (ticketData.length > 0) {
+        console.log('First record keys:', Object.keys(ticketData[0]));
+        console.log('First record paymentNumber value:', ticketData[0].paymentnumber);
+        console.log('First record paymentId value:', ticketData[0].paymentid);
+      }
+      
+      // Normalize the data to camelCase
+      const normalizedData = ticketData.map(row => ({
+        ticketCode: row.ticketcode,
+        amountToPay: row.amounttopay ? Number(row.amounttopay) : null,
+        calculatedCost: row.calculatedcost ? Number(row.calculatedcost) : null,
+        invoiceNumber: row.invoicenumber,
+        amountRequested: row.amountrequested ? Number(row.amountrequested) : null,
+        paymentNumber: row.paymentnumber,
+        amountPaid: row.amountpaid ? Number(row.amountpaid) : null,
+        statusPaid: row.statuspaid,
+        shop: row.shop
+      }));
+      
+      // Debug: Log the normalized data to see if paymentNumber is present
+      console.log('Normalized data (first 3 records):', normalizedData.slice(0, 3));
+      
+      // Count how many records have paymentNumber
+      const recordsWithPaymentNumber = normalizedData.filter(record => record.paymentNumber !== null).length;
+      console.log(`Records with paymentNumber: ${recordsWithPaymentNumber} out of ${normalizedData.length}`);
+      
+      res.status(200).json({
+        success: true,
+        message: 'Ticket payment and invoice information retrieved successfully (all tickets)',
+        count: normalizedData.length,
+        ticketsWithPayments: recordsWithPaymentNumber,
+        ticketsWithoutPayments: normalizedData.length - recordsWithPaymentNumber,
+        data: normalizedData
+      });
+    } catch (error) {
+      console.error('Error fetching ticket payment and invoice information:', error);
+      res.status(500).json({ 
+        success: false,
+        message: 'Error fetching ticket payment and invoice information', 
+        error: error.message 
+      });
+    }
+  },
+
+  // Get all ticket payment and invoice information (including tickets without payments)
+  async getAllTicketPaymentInvoiceInfo(req, res) {
+    try {
+      const ticketData = await Tickets.getAllTicketPaymentInvoiceInfo();
+      
+      // Normalize the data to camelCase
+      const normalizedData = ticketData.map(row => ({
+        ticketCode: row.ticketcode,
+        amountToPay: row.amounttopay ? Number(row.amounttopay) : null,
+        calculatedCost: row.calculatedcost ? Number(row.calculatedcost) : null,
+        invoiceNumber: row.invoicenumber,
+        amountRequested: row.amountrequested ? Number(row.amountrequested) : null,
+        paymentNumber: row.paymentnumber,
+        amountPaid: row.amountpaid ? Number(row.amountpaid) : null,
+        statusPaid: row.statuspaid,
+        shop: row.shop
+      }));
+      
+      // Count how many records have paymentNumber
+      const recordsWithPaymentNumber = normalizedData.filter(record => record.paymentNumber !== null).length;
+      
+      res.status(200).json({
+        success: true,
+        message: 'All ticket payment and invoice information retrieved successfully',
+        count: normalizedData.length,
+        ticketsWithPayments: recordsWithPaymentNumber,
+        ticketsWithoutPayments: normalizedData.length - recordsWithPaymentNumber,
+        data: normalizedData
+      });
+    } catch (error) {
+      console.error('Error fetching all ticket payment and invoice information:', error);
+      res.status(500).json({ 
+        success: false,
+        message: 'Error fetching all ticket payment and invoice information', 
+        error: error.message 
+      });
+    }
+  },
+
+  // Get ticket coordinates by ticket code
+  async getTicketCoordinates(req, res) {
+    try {
+      const { ticketCode } = req.params;
+      const coordinates = await Tickets.getTicketCoordinates(ticketCode);
+      
+      if (!coordinates || coordinates.length === 0) {
+        return res.status(404).json({ 
+          success: false,
+          message: 'Ticket not found or no coordinates available',
+          ticketCode: ticketCode 
+        });
+      }
+
+      // Group coordinates by ticket and format the response
+      const ticketInfo = {
+        ticketId: coordinates[0].ticketid,
+        ticketCode: coordinates[0].ticketcode,
+        contractNumber: coordinates[0].contractnumber,
+        amountToPay: coordinates[0].amounttopay,
+        ticketType: coordinates[0].tickettype,
+        addresses: coordinates.map(coord => ({
+          addressId: coord.addressid,
+          addressNumber: coord.addressnumber,
+          addressCardinal: coord.addresscardinal,
+          addressStreet: coord.addressstreet,
+          addressSuffix: coord.addressesuffix,
+          latitude: coord.latitude,
+          longitude: coord.longitude,
+          placeid: coord.placeid,
+          fullAddress: coord.fulladdress
+        })).filter(addr => addr.addressId !== null) // Filter out null addresses
+      };
+
+      res.status(200).json({
+        success: true,
+        message: 'Ticket coordinates retrieved successfully',
+        data: ticketInfo
+      });
+    } catch (error) {
+      console.error('Error fetching ticket coordinates:', error);
+      res.status(500).json({ 
+        success: false,
+        message: 'Error fetching ticket coordinates', 
+        error: error.message 
+      });
+    }
+  },
+
+  // Get ticket gallery with addresses and photo evidence
+  async getTicketGallery(req, res) {
+    try {
+      const { ticketCode } = req.params;
+      const galleryData = await Tickets.getTicketGallery(ticketCode);
+      
+      if (!galleryData || galleryData.length === 0) {
+        return res.status(404).json({ 
+          success: false,
+          message: 'Ticket not found',
+          ticketCode: ticketCode 
+        });
+      }
+
+      // Group data by ticket, addresses, and task statuses
+      const ticketInfo = {
+        ticketId: galleryData[0].ticketid,
+        ticketCode: galleryData[0].ticketcode,
+        contractNumber: galleryData[0].contractnumber,
+        amountToPay: galleryData[0].amounttopay,
+        ticketType: galleryData[0].tickettype,
+        quantity: galleryData[0].quantity,
+        daysOutstanding: galleryData[0].daysoutstanding,
+        comment7d: galleryData[0].comment7d,
+        // Contract Unit information
+        contractUnit: {
+          contractUnitId: galleryData[0].contractunitid,
+          name: galleryData[0].contractunitname,
+          description: galleryData[0].contractunitdescription,
+          unit: galleryData[0].contractunitunit,
+          costPerUnit: galleryData[0].contractunitcostperunit
+        },
+        // Wayfinding information
+        wayfinding: {
+          wayfindingId: galleryData[0].wayfindingid,
+          location: galleryData[0].wayfindinglocation,
+          fromAddress: {
+            addressNumber: galleryData[0].fromaddressnumber,
+            addressCardinal: galleryData[0].fromaddresscardinal,
+            addressStreet: galleryData[0].fromaddressstreet,
+            addressSuffix: galleryData[0].fromaddresssuffix
+          },
+          toAddress: {
+            addressNumber: galleryData[0].toaddressnumber,
+            addressCardinal: galleryData[0].toaddresscardinal,
+            addressStreet: galleryData[0].toaddressstreet,
+            addressSuffix: galleryData[0].toaddresssuffix
+          },
+          dimensions: {
+            width: galleryData[0].wayfindingwidth,
+            length: galleryData[0].wayfindinglength,
+            surfaceTotal: galleryData[0].wayfindingsurfacetotal
+          }
+        },
+        addresses: [],
+        taskStatuses: []
+      };
+
+      // Process addresses
+      const addressMap = new Map();
+      galleryData.forEach(row => {
+        if (row.addressid && !addressMap.has(row.addressid)) {
+          addressMap.set(row.addressid, {
+            addressId: row.addressid,
+            addressNumber: row.addressnumber,
+            addressCardinal: row.addresscardinal,
+            addressStreet: row.addressstreet,
+            addressSuffix: row.addressesuffix,
+            fullAddress: row.fulladdress
+          });
+        }
+      });
+      ticketInfo.addresses = Array.from(addressMap.values());
+
+      // Process task statuses with photo evidence
+      const taskStatusMap = new Map();
+      galleryData.forEach(row => {
+        if (row.taskstatusid) {
+          const taskStatusId = row.taskstatusid;
+          
+          if (!taskStatusMap.has(taskStatusId)) {
+            taskStatusMap.set(taskStatusId, {
+              taskStatusId: row.taskstatusid,
+              name: row.taskstatusname,
+              description: row.taskstatusdescription,
+              startingDate: row.startingdate,
+              endingDate: row.endingdate,
+              observation: row.observation,
+              crewId: row.crewid,
+              photoEvidence: []
+            });
+          }
+
+          // Add photo evidence if it exists
+          if (row.photoid) {
+            const photoEvidence = {
+              photoId: row.photoid,
+              name: row.photename,
+              latitude: row.photolatitude,
+              longitude: row.photolongitude,
+              photo: row.photo,
+              date: row.photodate,
+              comment: row.photocomment,
+              photoURL: row.photourl,
+              createdAt: row.photocreatedat
+            };
+            
+            taskStatusMap.get(taskStatusId).photoEvidence.push(photoEvidence);
+          }
+        }
+      });
+      ticketInfo.taskStatuses = Array.from(taskStatusMap.values());
+
+      // Calculate summary statistics
+      const totalPhotos = ticketInfo.taskStatuses.reduce((sum, status) => sum + status.photoEvidence.length, 0);
+      const totalTaskStatuses = ticketInfo.taskStatuses.length;
+      const totalAddresses = ticketInfo.addresses.length;
+
+      res.status(200).json({
+        success: true,
+        message: 'Ticket gallery retrieved successfully',
+        summary: {
+          totalPhotos,
+          totalTaskStatuses,
+          totalAddresses,
+          hasPhotos: totalPhotos > 0,
+          hasAddresses: totalAddresses > 0
+        },
+        data: ticketInfo
+      });
+    } catch (error) {
+      console.error('Error fetching ticket gallery:', error);
+      res.status(500).json({ 
+        success: false,
+        message: 'Error fetching ticket gallery', 
+        error: error.message 
+      });
+    }
+  },
+
+  // Get all tickets gallery grouped by incident name
+  async getAllTicketsGallery(req, res) {
+    try {
+      const galleryData = await Tickets.getAllTicketsGallery();
+      
+      if (!galleryData || galleryData.length === 0) {
+        return res.status(404).json({ 
+          success: false,
+          message: 'No tickets found'
+        });
+      }
+
+      // Group data by incident
+      const incidentMap = new Map();
+      
+      galleryData.forEach(row => {
+        const incidentId = row.incidentid;
+        
+        if (!incidentMap.has(incidentId)) {
+          incidentMap.set(incidentId, {
+            incidentId: row.incidentid,
+            incidentName: row.incidentname,
+            earliestRptDate: row.earliestrptdate,
+            tickets: [],
+            totalTickets: 0,
+            totalPhotos: 0,
+            totalAddresses: 0
+          });
+        }
+
+        const incident = incidentMap.get(incidentId);
+        
+        // Process ticket if it exists
+        if (row.ticketid) {
+          let ticket = incident.tickets.find(t => t.ticketId === row.ticketid);
+          
+          if (!ticket) {
+            ticket = {
+              ticketId: row.ticketid,
+              ticketCode: row.ticketcode,
+              contractNumber: row.contractnumber,
+              amountToPay: row.amounttopay,
+              ticketType: row.tickettype,
+              quantity: row.quantity,
+              daysOutstanding: row.daysoutstanding,
+              comment7d: row.comment7d,
+              createdAt: row.ticketcreatedat,
+              // Contract Unit information
+              contractUnit: {
+                contractUnitId: row.contractunitid,
+                name: row.contractunitname,
+                description: row.contractunitdescription,
+                unit: row.contractunitunit,
+                costPerUnit: row.contractunitcostperunit
+              },
+              // Wayfinding information
+              wayfinding: {
+                wayfindingId: row.wayfindingid,
+                location: row.wayfindinglocation,
+                fromAddress: {
+                  addressNumber: row.fromaddressnumber,
+                  addressCardinal: row.fromaddresscardinal,
+                  addressStreet: row.fromaddressstreet,
+                  addressSuffix: row.fromaddresssuffix
+                },
+                toAddress: {
+                  addressNumber: row.toaddressnumber,
+                  addressCardinal: row.toaddresscardinal,
+                  addressStreet: row.toaddressstreet,
+                  addressSuffix: row.toaddresssuffix
+                },
+                dimensions: {
+                  width: row.wayfindingwidth,
+                  length: row.wayfindinglength,
+                  surfaceTotal: row.wayfindingsurfacetotal
+                }
+              },
+              addresses: [],
+              taskStatuses: []
+            };
+            incident.tickets.push(ticket);
+            incident.totalTickets++;
+          }
+
+          // Process address if it exists
+          if (row.addressid) {
+            const existingAddress = ticket.addresses.find(a => a.addressId === row.addressid);
+            if (!existingAddress) {
+              ticket.addresses.push({
+                addressId: row.addressid,
+                addressNumber: row.addressnumber,
+                addressCardinal: row.addresscardinal,
+                addressStreet: row.addressstreet,
+                addressSuffix: row.addressesuffix,
+                fullAddress: row.fulladdress
+              });
+              incident.totalAddresses++;
+            }
+          }
+
+          // Process task status if it exists
+          if (row.taskstatusid) {
+            let taskStatus = ticket.taskStatuses.find(ts => ts.taskStatusId === row.taskstatusid);
+            
+            if (!taskStatus) {
+              taskStatus = {
+                taskStatusId: row.taskstatusid,
+                name: row.taskstatusname,
+                description: row.taskstatusdescription,
+                startingDate: row.startingdate,
+                endingDate: row.endingdate,
+                observation: row.observation,
+                crewId: row.crewid,
+                photoEvidence: []
+              };
+              ticket.taskStatuses.push(taskStatus);
+            }
+
+            // Add photo evidence if it exists
+            if (row.photoid) {
+              const existingPhoto = taskStatus.photoEvidence.find(p => p.photoId === row.photoid);
+              if (!existingPhoto) {
+                taskStatus.photoEvidence.push({
+                  photoId: row.photoid,
+                  name: row.photename,
+                  latitude: row.photolatitude,
+                  longitude: row.photolongitude,
+                  photo: row.photo,
+                  date: row.photodate,
+                  comment: row.photocomment,
+                  photoURL: row.photourl,
+                  createdAt: row.photocreatedat
+                });
+                incident.totalPhotos++;
+              }
+            }
+          }
+        }
+      });
+
+      const incidents = Array.from(incidentMap.values());
+
+      // Calculate global summary
+      const globalSummary = {
+        totalIncidents: incidents.length,
+        totalTickets: incidents.reduce((sum, incident) => sum + incident.totalTickets, 0),
+        totalPhotos: incidents.reduce((sum, incident) => sum + incident.totalPhotos, 0),
+        totalAddresses: incidents.reduce((sum, incident) => sum + incident.totalAddresses, 0),
+        incidentsWithPhotos: incidents.filter(incident => incident.totalPhotos > 0).length,
+        incidentsWithAddresses: incidents.filter(incident => incident.totalAddresses > 0).length
+      };
+
+      res.status(200).json({
+        success: true,
+        message: 'All tickets gallery retrieved successfully',
+        summary: globalSummary,
+        data: incidents
+      });
+    } catch (error) {
+      console.error('Error fetching all tickets gallery:', error);
+      res.status(500).json({ 
+        success: false,
+        message: 'Error fetching all tickets gallery', 
         error: error.message 
       });
     }

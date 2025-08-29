@@ -31,6 +31,10 @@ class PhotoEvidence {
     const res = await db.query('UPDATE PhotoEvidence SET deletedAt = CURRENT_TIMESTAMP WHERE photoId = $1 RETURNING *;', [photoId]);
     return res.rows[0];
   }
+  static async findByTicketId(ticketId) {
+    const res = await db.query('SELECT * FROM PhotoEvidence WHERE ticketId = $1 AND deletedAt IS NULL;', [ticketId]);
+    return res.rows;
+  }
 }
 
 module.exports = PhotoEvidence; 

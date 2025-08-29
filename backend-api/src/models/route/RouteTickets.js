@@ -77,6 +77,14 @@ class RouteTickets {
     );
     return res.rows[0];
   }
+
+  static async update(routeId, ticketId, queue, updatedBy) {
+    const res = await db.query(
+      'UPDATE RouteTickets SET queue = $1, updatedAt = CURRENT_TIMESTAMP, updatedBy = $2 WHERE routeId = $3 AND ticketId = $4 AND deletedAt IS NULL RETURNING *;',
+      [queue, updatedBy, routeId, ticketId]
+    );
+    return res.rows[0];
+  }
 }
 
 module.exports = RouteTickets; 

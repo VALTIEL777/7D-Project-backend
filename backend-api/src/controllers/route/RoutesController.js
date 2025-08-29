@@ -154,7 +154,7 @@ const RoutesController = {
       if (spottingTickets.length === 0) {
         return res.status(404).json({ 
           message: 'No tickets found for spotting routes',
-          criteria: 'comment7d is NULL, empty, or TK - PERMIT EXTENDED, and no endingDate for SPOTTING status'
+          criteria: 'comment7d is NULL, empty, TK - PERMIT EXTENDED, TK - LAYOUT, or TK - LAY OUT, and no endingDate for SPOTTING status'
         });
       }
 
@@ -169,7 +169,7 @@ const RoutesController = {
 
       const optimizedRoute = await RouteOptimizationService.optimizeAndSaveRoute(
         ticketIds,
-        routeCode || `SPOTTER-${Date.now()}`,
+        routeCode || `SPOT-${Date.now()}`,
         'SPOTTER',
         startDate,
         endDate,
@@ -240,7 +240,7 @@ const RoutesController = {
 
       const optimizedRoute = await RouteOptimizationService.optimizeAndSaveRoute(
         ticketIds,
-        routeCode || `CONCRETE-${Date.now()}`,
+        routeCode || `CONC-${Date.now()}`,
         'CONCRETE',
         startDate,
         endDate,
@@ -311,7 +311,7 @@ const RoutesController = {
 
       const optimizedRoute = await RouteOptimizationService.optimizeAndSaveRoute(
         ticketIds,
-        routeCode || `ASPHALT-${Date.now()}`,
+        routeCode || `ASP-${Date.now()}`,
         'ASPHALT',
         startDate,
         endDate,
@@ -505,27 +505,146 @@ const RoutesController = {
     }
   },
 
+  // Get completed spotting routes
+  async getCompletedSpottingRoutes(req, res) {
+    try {
+      const routes = await Routes.findCompletedByTypeWithTickets('SPOTTER');
+      
+      res.status(200).json({
+        message: 'Completed spotting routes retrieved successfully',
+        type: 'SPOTTER',
+        status: 'COMPLETED',
+        count: routes.length,
+        routes: routes
+      });
+    } catch (error) {
+      console.error('Error getting completed spotting routes:', error);
+      res.status(500).json({ 
+        error: 'Failed to get completed spotting routes', 
+        details: error.message 
+      });
+    }
+  },
+
+  // Get completed concrete routes
+  async getCompletedConcreteRoutes(req, res) {
+    try {
+      const routes = await Routes.findCompletedByTypeWithTickets('CONCRETE');
+      
+      res.status(200).json({
+        message: 'Completed concrete routes retrieved successfully',
+        type: 'CONCRETE',
+        status: 'COMPLETED',
+        count: routes.length,
+        routes: routes
+      });
+    } catch (error) {
+      console.error('Error getting completed concrete routes:', error);
+      res.status(500).json({ 
+        error: 'Failed to get completed concrete routes', 
+        details: error.message 
+      });
+    }
+  },
+
+  // Get completed asphalt routes
+  async getCompletedAsphaltRoutes(req, res) {
+    try {
+      const routes = await Routes.findCompletedByTypeWithTickets('ASPHALT');
+      
+      res.status(200).json({
+        message: 'Completed asphalt routes retrieved successfully',
+        type: 'ASPHALT',
+        status: 'COMPLETED',
+        count: routes.length,
+        routes: routes
+      });
+    } catch (error) {
+      console.error('Error getting completed asphalt routes:', error);
+      res.status(500).json({ 
+        error: 'Failed to get completed asphalt routes', 
+        details: error.message 
+      });
+    }
+  },
+
   // Get tickets ready for spotting routes
   async getTicketsReadyForSpotting(req, res) {
     try {
+      console.log('=== DEBUG: Starting getTicketsReadyForSpotting ===');
+      
       const tickets = await RouteOptimizationService.getSpottingTickets();
+      console.log(`=== DEBUG: Found ${tickets.length} tickets eligible for spotting routes ===`);
       
       // Get addresses for each ticket
       const ticketsWithAddresses = [];
+      const ticketsWithoutAddresses = [];
+      
       for (const ticket of tickets) {
-        const address = await RouteOptimizationService.getTicketAddress(ticket);
-        ticketsWithAddresses.push({
-          ...ticket,
-          address: address || 'Address not found'
+        console.log(`=== DEBUG: Processing ticket ${ticket.ticketid} (${ticket.ticketcode}) ===`);
+        
+        try {
+          const address = await RouteOptimizationService.getTicketAddress(ticket);
+          
+          if (address && address !== 'Address not found') {
+            console.log(`  + Ticket ${ticket.ticketid} (${ticket.ticketcode}): Address found - "${address}"`);
+            ticketsWithAddresses.push({
+              ...ticket,
+              address: address
+            });
+          } else {
+            console.log(`  - Ticket ${ticket.ticketid} (${ticket.ticketcode}): NO ADDRESS FOUND - Using fallback`);
+            ticketsWithoutAddresses.push({
+              ticketId: ticket.ticketid,
+              ticketCode: ticket.ticketcode,
+              comment7d: ticket.comment7d,
+              reason: 'No address found in database'
+            });
+            ticketsWithAddresses.push({
+              ...ticket,
+              address: address || 'Address not found'
+            });
+          }
+        } catch (addressError) {
+          console.error(`  - Ticket ${ticket.ticketid} (${ticket.ticketcode}): ERROR getting address - ${addressError.message}`);
+          ticketsWithoutAddresses.push({
+            ticketId: ticket.ticketid,
+            ticketCode: ticket.ticketcode,
+            comment7d: ticket.comment7d,
+            reason: `Error: ${addressError.message}`
+          });
+          ticketsWithAddresses.push({
+            ...ticket,
+            address: 'Address not found'
+          });
+        }
+      }
+      
+      console.log(`=== DEBUG: Address retrieval summary ===`);
+      console.log(`  - Tickets with addresses: ${ticketsWithAddresses.length - ticketsWithoutAddresses.length}`);
+      console.log(`  - Tickets without addresses: ${ticketsWithoutAddresses.length}`);
+      
+      if (ticketsWithoutAddresses.length > 0) {
+        console.log(`=== DEBUG: Tickets without addresses ===`);
+        ticketsWithoutAddresses.forEach(ticket => {
+          console.log(`  - Ticket ${ticket.ticketId} (${ticket.ticketCode}): ${ticket.reason}`);
         });
       }
+      
+      console.log('=== DEBUG: Finished getTicketsReadyForSpotting ===');
       
       res.status(200).json({
         message: 'Tickets ready for spotting routes retrieved successfully',
         type: 'SPOTTER',
         count: ticketsWithAddresses.length,
-        criteria: 'comment7d is NULL, empty, or TK - PERMIT EXTENDED, and no endingDate for SPOTTING status',
-        tickets: ticketsWithAddresses
+        criteria: 'comment7d is NULL, empty, TK - PERMIT EXTENDED, TK - LAYOUT, or TK - LAY OUT, and no endingDate for SPOTTING status',
+        tickets: ticketsWithAddresses,
+        debug: {
+          totalEligible: tickets.length,
+          withAddresses: ticketsWithAddresses.length - ticketsWithoutAddresses.length,
+          withoutAddresses: ticketsWithoutAddresses.length,
+          addressIssues: ticketsWithoutAddresses
+        }
       });
     } catch (error) {
       console.error('Error getting tickets ready for spotting:', error);
@@ -615,6 +734,25 @@ const RoutesController = {
       console.error('Error testing Routes table:', error);
       res.status(500).json({ 
         error: 'Database test failed', 
+        details: error.message 
+      });
+    }
+  },
+
+  // Get all routes with polylines and addresses for map display (including deleted routes)
+  async getAllRoutesWithPolylinesAndAddresses(req, res) {
+    try {
+      const routes = await Routes.findAllWithPolylinesAndAddresses();
+      
+      res.status(200).json({
+        message: 'All routes with polylines and addresses retrieved successfully',
+        count: routes.length,
+        routes: routes
+      });
+    } catch (error) {
+      console.error('Error getting all routes with polylines and addresses:', error);
+      res.status(500).json({ 
+        error: 'Failed to get routes with polylines and addresses', 
         details: error.message 
       });
     }

@@ -14,6 +14,11 @@ class Permits {
     return res.rows[0];
   }
 
+  static async findByPermitNumber(permitNumber) {
+    const res = await db.query('SELECT * FROM Permits WHERE permitNumber = $1 AND deletedAt IS NULL;', [permitNumber]);
+    return res.rows[0];
+  }
+
   static async findAll() {
     const res = await db.query('SELECT * FROM Permits WHERE deletedAt IS NULL;');
     return res.rows;

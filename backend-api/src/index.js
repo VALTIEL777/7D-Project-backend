@@ -10,27 +10,43 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 const allowedOrigins = [
-  'https://7d-compass-api.christba.com',  // for Swagger
-  'https://7d-compass.christba.com',       // for your frontend
+  'http://13.221.110.249:3000',
+  'http://13.221.110.249',
+  'http://34.228.116.58',
+  'http://34.228.116.58:3000',
+
   'http://localhost:3005',
   'http://localhost:3000',
   'http://localhost:3001',
   'http://localhost:3002',
   'http://localhost:3003',
   'http://localhost:3004',
+  'http://localhost:4200',
+  'http://localhost:52329',
   'http://localhost:9000',
   'http://localhost:9001',
   'http://localhost:5432',
+  'http://localhost:8080',  // Added for Nginx proxy
   'http://127.0.0.1:3000',
   'http://127.0.0.1:3001',
   'http://127.0.0.1:3002',
   'http://127.0.0.1:3003',
   'http://127.0.0.1:3004',
-  'http://127.0.0.1:3005'
+  'http://127.0.0.1:3005',
+  'http://127.0.0.1:8080',  // Added for Nginx proxy
+  // Container-to-container communication
+  'http://compass:3005',
+  'http://api:3000',
+  'http://api:3000/api',
+  'http://compass:3005/api',
+  // Additional localhost variations for browser testing
+  'http://localhost',
+  'http://127.0.0.1'
 ];
 
 app.use(cors({
   origin: function (origin, callback) {
+    console.log('Incoming Origin:', origin);  // <-- add this log
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
@@ -71,6 +87,7 @@ const crewEmployeesRoutes = require('./routes/human-resources/CrewEmployeesRoute
 const peopleRoutes = require('./routes/human-resources/PeopleRoutes');
 const quadrantSupervisorRoutes = require('./routes/human-resources/QuadrantSupervisorRoutes');
 const skillsRoutes = require('./routes/human-resources/SkillsRoutes');
+const employeeSkillsRoutes = require('./routes/human-resources/EmployeeSkillsRoutes');
 const addressesRoutes = require('./routes/location/AddressesRoutes');
 const quadrantsRoutes = require('./routes/location/QuadrantsRoutes');
 const ticketAddressesRoutes = require('./routes/location/TicketAddressesRoutes');
@@ -100,6 +117,7 @@ const statisticsRoutes = require('./routes/ticket-logic/StatisticsRoutes');
 const rtrRoutes = require('./routes/RTR/rtrRoutes');
 const notificationsRoutes = require('./routes/notifications/NotificationsRoutes');
 const routeOptimizationRoutes = require('./routes/route/RouteOptimizationRoutes');
+const unifiedExcelRoutes = require('./routes/payments/UnifiedExcelRoutes');
 
 app.get('/api/health', (req, res) => {
   res.status(200).json({ status: 'OK' });
@@ -124,6 +142,7 @@ app.use('/api/crewemployees', crewEmployeesRoutes);
 app.use('/api/people', peopleRoutes);
 app.use('/api/quadrantsupervisors', quadrantSupervisorRoutes);
 app.use('/api/skills', skillsRoutes);
+app.use('/api/employee-skills', employeeSkillsRoutes);
 app.use('/api/addresses', addressesRoutes);
 app.use('/api/quadrants', quadrantsRoutes);
 app.use('/api/ticketaddresses', ticketAddressesRoutes);
@@ -153,10 +172,11 @@ app.use('/api/statistics', statisticsRoutes);
 app.use('/api/rtr', rtrRoutes);
 app.use('/api/notifications', notificationsRoutes);
 app.use('/api/route-optimization', routeOptimizationRoutes);
+app.use('/api/unified', unifiedExcelRoutes);
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server listening on port ${PORT}`);
   
   // Start the notification scheduler
-  ScheduledTasks.startScheduler();
+  //ScheduledTasks.startScheduler();
 });

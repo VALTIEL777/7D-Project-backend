@@ -126,6 +126,39 @@ class People {
     return res.rows;
   }
 
+  static async findWithUsers() {
+    const res = await db.query(`
+      SELECT 
+        p.*,
+        u.userid,
+        u.username,
+        u.createdat as user_createdat,
+        u.updatedat as user_updatedat,
+        u.deletedat as user_deletedat
+      FROM People p
+      LEFT JOIN Users u ON p.userid = u.userid AND u.deletedat IS NULL
+      WHERE p.deletedat IS NULL
+      ORDER BY p.employeeid;
+    `);
+    return res.rows;
+  }
+
+  static async findByIdWithUser(employeeId) {
+    const res = await db.query(`
+      SELECT 
+        p.*,
+        u.userid,
+        u.username,
+        u.createdat as user_createdat,
+        u.updatedat as user_updatedat,
+        u.deletedat as user_deletedat
+      FROM People p
+      LEFT JOIN Users u ON p.userid = u.userid AND u.deletedat IS NULL
+      WHERE p.employeeid = $1 AND p.deletedat IS NULL;
+    `, [employeeId]);
+    return res.rows[0];
+  }
+
   static async update(employeeId, UserId, firstname, lastname, role, phone, email, updatedBy) {
     const res = await db.query(
       'UPDATE People SET UserId = $1, firstname = $2, lastname = $3, role = $4, phone = $5, email = $6, updatedAt = CURRENT_TIMESTAMP, updatedBy = $7 WHERE employeeId = $8 AND deletedAt IS NULL RETURNING *;',

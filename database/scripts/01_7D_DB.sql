@@ -128,6 +128,8 @@ CREATE TABLE Tickets (
     PartnerSupervisorComment VARCHAR(255),
     contractNumber VARCHAR(128),
     amountToPay DECIMAL,
+    calculatedCost DECIMAL,
+    amountPaid DECIMAL,
     ticketType VARCHAR(64), -- mobilization, regular
     createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -268,8 +270,8 @@ CREATE TABLE Addresses (
     addressCardinal VARCHAR(64),
     addressStreet VARCHAR(64),
     addressSuffix VARCHAR(64),
-    latitude NUMERIC(10, 2),
-    longitude NUMERIC(10, 2),
+    latitude NUMERIC(12, 8),
+    longitude NUMERIC(12, 8),
     placeid VARCHAR(255),
     createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -340,8 +342,8 @@ CREATE TABLE TicketStatus(
     ticketId INTEGER REFERENCES Tickets(ticketId),
     crewId INTEGER REFERENCES Crews(crewId),
     PRIMARY KEY (taskStatusId, ticketId),
-    startingDate DATE,
-    endingDate DATE,
+    startingDate TIMESTAMPTZ,
+    endingDate TIMESTAMPTZ,
     observation TEXT,
     createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -355,8 +357,8 @@ CREATE TABLE photoEvidence(
     ticketStatusId INTEGER,
     ticketId INTEGER,  -- Add this column to match the composite key
     name VARCHAR(64),
-    latitude NUMERIC(10, 2),
-    longitude NUMERIC(10, 2),
+    latitude NUMERIC(12, 8),
+    longitude NUMERIC(12, 8),
     photo VARCHAR(255),
     date TIMESTAMP,
     comment TEXT,
@@ -705,9 +707,11 @@ WHERE comment7d IS NULL AND deletedAt IS NULL;
 CREATE INDEX idx_address_ticket_join ON TicketAddresses(addressId, ticketId) 
 WHERE deletedAt IS NULL;
 
+ALTER TABLE Crews
+ADD COLUMN routeId INTEGER REFERENCES Routes(routeId);
 
-INSERT INTO Users (UserId, username, password)
-VALUES (1, 'testuser', 'securepassword123')
+INSERT INTO Users ( username, password)
+VALUES ('testuser', 'securepassword123')
 ON CONFLICT (UserId) DO NOTHING;
 
 -- Supervisors
@@ -749,8 +753,22 @@ VALUES
     ('Crack Seal', 'Sealing cracks in asphalt to prevent water penetration and pavement degradation'),
     ('Install Signs', 'Installing road or traffic control signs at designated locations'),
     ('Steel Plate Pick Up', 'Removing previously installed steel plates from the roadway'),
-    ('Asphalt', 'Laying down or repairing asphalt pavement surfaces');
+    ('Asphalt', 'Laying down or repairing asphalt pavement surfaces'),
+    ('Removal', 'Removing materials, debris, or temporary installations from the work site'),
+    ('No Parking Signs', 'Installing No Parking Signs at designated locations');
+
+--repair ids
+SELECT setval(pg_get_serial_sequence('users', 'userid'), COALESCE(MAX(userid), 0) + 1, false) FROM users;
+SELECT setval(pg_get_serial_sequence('people', 'employeeid'), COALESCE(MAX(employeeid), 0) + 1, false) FROM people;
 
 
 
 
+
+
+
+
+
+
+
+    

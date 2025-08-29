@@ -4,6 +4,7 @@ const NotificationService = require("../../services/NotificationService");
 const { getMinioClient, generatePublicPresignedUrl } = require('../../config/minio');
 const path = require('path');
 const Tickets = require("../../models/ticket-logic/Tickets");
+const db = require("../../config/db");
 
 const importantColumns = [
   "RESTN_WO_NUM",
@@ -74,17 +75,35 @@ function getClosestHeaderIndex(target, headers) {
 
   headers.forEach((header, idx) => {
     const normHeader = normalize(header);
-    if (normHeader.includes(normalizedTarget)) {
-      bestMatch = { index: idx, score: 0 };
-      return;
-    }
-    const score = levenshtein(normHeader, normalizedTarget);
-    if (score < bestMatch.score) {
-      bestMatch = { index: idx, score };
+    
+    // For date columns, be more strict to avoid mixing up START_DATE and EXP_DATE
+    if (target === 'START_DATE' || target === 'EXP_DATE') {
+      // Exact match or very close match only for date columns
+      if (normHeader === normalizedTarget) {
+        bestMatch = { index: idx, score: 0 };
+        return;
+      }
+      // Allow only very close matches (1 character difference max) for date columns
+      const score = levenshtein(normHeader, normalizedTarget);
+      if (score <= 1 && score < bestMatch.score) {
+        bestMatch = { index: idx, score };
+      }
+    } else {
+      // For non-date columns, use the original logic
+      if (normHeader.includes(normalizedTarget)) {
+        bestMatch = { index: idx, score: 0 };
+        return;
+      }
+      const score = levenshtein(normHeader, normalizedTarget);
+      if (score < bestMatch.score) {
+        bestMatch = { index: idx, score };
+      }
     }
   });
 
-  return bestMatch.score <= 4 ? bestMatch.index : -1;
+  // Use stricter threshold for date columns
+  const maxScore = (target === 'START_DATE' || target === 'EXP_DATE') ? 1 : 4;
+  return bestMatch.score <= maxScore ? bestMatch.index : -1;
 }
 
 function extractDimensions(value) {
@@ -255,6 +274,101 @@ exports.uploadExcel = async (req, res) => {
 
     // 5. Continue with Excel processing - only process "Seven-D" sheet
     const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
+    
+    // Unhide all columns in all sheets - comprehensive approach
+    for (const sheetName of workbook.SheetNames) {
+      const sheet = workbook.Sheets[sheetName];
+      
+      // Method 1: Direct column property manipulation
+      if (sheet['!cols']) {
+        for (let i = 0; i < sheet['!cols'].length; i++) {
+          if (sheet['!cols'][i]) {
+            sheet['!cols'][i].hidden = false;
+            sheet['!cols'][i].width = Math.max(sheet['!cols'][i].width || 10, 10); // Ensure minimum width
+          }
+        }
+      }
+      
+      // Method 2: Check sheet range and ensure all columns are accessible
+      if (sheet['!ref']) {
+        const range = XLSX.utils.decode_range(sheet['!ref']);
+        console.log(`Processing sheet "${sheetName}" with range: ${sheet['!ref']}`);
+        
+        // Ensure column definitions exist for all columns
+        if (!sheet['!cols']) {
+          sheet['!cols'] = [];
+        }
+        
+        for (let col = range.s.c; col <= range.e.c; col++) {
+          const colKey = XLSX.utils.encode_col(col);
+          const headerCell = sheet[colKey + '1'];
+          
+          if (headerCell) {
+            console.log(`Column ${colKey}: header="${headerCell.v}", type=${headerCell.t}`);
+            
+            // Ensure column is properly defined and visible
+            if (!sheet['!cols'][col]) {
+              sheet['!cols'][col] = {};
+            }
+            sheet['!cols'][col].hidden = false;
+            sheet['!cols'][col].width = Math.max(sheet['!cols'][col].width || 10, 10);
+          }
+        }
+      }
+      
+      // Method 3: Force column visibility by ensuring all cells are accessible
+      if (sheet['!ref']) {
+        const range = XLSX.utils.decode_range(sheet['!ref']);
+        for (let col = range.s.c; col <= range.e.c; col++) {
+          const colKey = XLSX.utils.encode_col(col);
+          // Ensure at least the first few rows are accessible for this column
+          for (let row = 0; row <= Math.min(5, range.e.r); row++) {
+            const cellKey = colKey + (row + 1);
+            if (!sheet[cellKey]) {
+              // Create empty cell to ensure column is accessible
+              sheet[cellKey] = { v: '', t: 's' };
+            }
+          }
+        }
+      }
+    }
+    
+    // Debug: Log sheet information after unhiding
+    console.log(`=== Excel File Debug ===`);
+    console.log(`Total sheets: ${workbook.SheetNames.length}`);
+    console.log(`Sheet names: ${workbook.SheetNames.join(', ')}`);
+    
+    for (const sheetName of workbook.SheetNames) {
+      const sheet = workbook.Sheets[sheetName];
+      if (sheet['!cols']) {
+        console.log(`Sheet "${sheetName}" has ${sheet['!cols'].length} column definitions`);
+        sheet['!cols'].forEach((col, idx) => {
+          if (col) {
+            console.log(`  Column ${idx}: width=${col.width}, hidden=${col.hidden}`);
+          }
+        });
+      } else {
+        console.log(`Sheet "${sheetName}" has no column definitions (!cols)`);
+      }
+      
+      if (sheet['!ref']) {
+        const range = XLSX.utils.decode_range(sheet['!ref']);
+        console.log(`Sheet "${sheetName}" range: ${sheet['!ref']} (${range.e.c - range.s.c + 1} columns, ${range.e.r - range.s.r + 1} rows)`);
+        
+        // Show first few column headers
+        console.log(`First 10 column headers:`);
+        for (let col = range.s.c; col <= Math.min(range.s.c + 9, range.e.c); col++) {
+          const colKey = XLSX.utils.encode_col(col);
+          const headerCell = sheet[colKey + '1'];
+          if (headerCell) {
+            console.log(`  ${colKey}: "${headerCell.v}" (type: ${headerCell.t})`);
+          } else {
+            console.log(`  ${colKey}: <no header cell>`);
+          }
+        }
+      }
+    }
+    
     const results = [];
     const saveToDatabase = req.query.save === 'true'; // Optional query parameter
     const createdBy = req.body.createdBy || 1; // Default user ID
@@ -284,14 +398,23 @@ exports.uploadExcel = async (req, res) => {
     }
 
     let headerRowIndex = -1;
+    console.log(`=== Header Detection Debug ===`);
+    console.log(`Looking for important columns:`, importantColumns);
+    console.log(`Total rows in sheet: ${rows.length}`);
+    
     for (let i = 0; i < rows.length; i++) {
       const normalized = rows[i].map(normalize);
       const matchCount = importantColumns.filter((col) =>
         normalized.includes(normalize(col))
       ).length;
 
-      if (matchCount >= importantColumns.length * 0.6) {
+      console.log(`Row ${i}: Found ${matchCount}/${importantColumns.length} columns (${Math.round(matchCount/importantColumns.length*100)}%)`);
+      console.log(`Row ${i} normalized:`, normalized.slice(0, 10)); // Show first 10 columns
+      console.log(`Row ${i} raw values:`, rows[i].slice(0, 10)); // Show raw values too
+      
+      if (matchCount >= importantColumns.length * 0.4) {
         headerRowIndex = i;
+        console.log(`✅ Header row detected at row ${i} with ${matchCount} matching columns`);
         break;
       }
     }
@@ -305,20 +428,58 @@ exports.uploadExcel = async (req, res) => {
     } else {
       const headers = rows[headerRowIndex];
       const colIndexMap = {};
+      console.log(`=== Column Index Mapping ===`);
+      console.log(`Headers found:`, headers);
+      
       importantColumns.forEach((col) => {
         const idx = getClosestHeaderIndex(col, headers);
-        if (idx !== -1) colIndexMap[col] = idx;
+        if (idx !== -1) {
+          colIndexMap[col] = idx;
+          console.log(`✅ Column "${col}" mapped to index ${idx} (header: "${headers[idx]}")`);
+        } else {
+          console.log(`❌ Column "${col}" NOT FOUND in headers`);
+          // Try to find similar headers
+          const similarHeaders = headers.filter(header => 
+            header && typeof header === 'string' && 
+            (header.toLowerCase().includes(col.toLowerCase().replace(/_/g, ' ')) ||
+             col.toLowerCase().replace(/_/g, ' ').includes(header.toLowerCase()))
+          );
+          if (similarHeaders.length > 0) {
+            console.log(`  Similar headers found:`, similarHeaders);
+          }
+        }
       });
 
-      const missing = importantColumns.filter((col) => !(col in colIndexMap));
-      if (missing.length > 0) {
+      // Check for critical columns that are absolutely required
+      const criticalColumns = ['TASK_WO_NUM', 'RESTN_WO_NUM', 'ADDRESS', 'SAP_ITEM_NUM'];
+      const missingCritical = criticalColumns.filter((col) => !(col in colIndexMap));
+      
+      console.log(`=== Column Mapping Debug ===`);
+      console.log(`Critical columns required:`, criticalColumns);
+      console.log(`Columns found in mapping:`, Object.keys(colIndexMap));
+      console.log(`Missing critical columns:`, missingCritical);
+      
+      if (missingCritical.length > 0) {
+        console.log(`❌ CRITICAL ERROR: Missing required columns: ${missingCritical.join(', ')}`);
+        console.log(`Available headers:`, headers);
+        console.log(`Column mapping:`, colIndexMap);
+        
         results.push({
           sheet: sheetName,
           headerRow: headerRowIndex + 1,
-          error: "Missing required columns",
-          missing,
+          error: "Missing critical columns",
+          missing: missingCritical,
+          message: `Critical columns are required: ${missingCritical.join(', ')}`
         });
       } else {
+        // Log which columns were found and which are missing
+        const missingOptional = importantColumns.filter((col) => !(col in colIndexMap));
+        if (missingOptional.length > 0) {
+          console.log(`Warning: Some optional columns are missing: ${missingOptional.join(', ')}`);
+        }
+        
+        console.log(`Found columns: ${Object.keys(colIndexMap).join(', ')}`);
+        console.log(`Missing optional columns: ${missingOptional.join(', ')}`);
         console.log(`=== Excel Processing Debug ===`);
         console.log(`Headers found:`, headers);
         console.log(`Column mapping:`, colIndexMap);
@@ -926,7 +1087,59 @@ function compareTicketData(excelData, databaseTicket) {
     'TASK_WO_NUM': 'ticketcode',  // Compare TASK_WO_NUM with database ticketcode
     'PGL ComD:Wments': 'partnercomment',  // PGL comments go to partnerComment field
     'Contractor Comments': 'comment7d',   // Contractor comments go to comment7d field
-    'NOTES2_RES': 'partnersupervisorcomment'
+    'NOTES2_RES': 'partnersupervisorcomment'  // NOTES2_RES goes to PartnerSupervisorComment field
+  };
+
+  for (const [excelField, dbField] of Object.entries(fieldMappings)) {
+    const excelValue = excelData[excelField];
+    const dbValue = databaseTicket[dbField];
+    
+    // Debug logging for NOTES2_RES field
+    if (excelField === 'NOTES2_RES') {
+      console.log(`=== DEBUG NOTES2_RES ===`);
+      console.log(`Excel field: ${excelField}`);
+      console.log(`Database field: ${dbField}`);
+      console.log(`Excel value: "${excelValue}"`);
+      console.log(`Database value: "${dbValue}"`);
+      console.log(`Available database fields:`, Object.keys(databaseTicket));
+      console.log(`========================`);
+    }
+    
+    // Skip if both values are null/undefined/empty
+    if ((!excelValue || excelValue === '') && (!dbValue || dbValue === '')) continue;
+    
+    // Normalize values for comparison
+    const normalizedExcel = normalizeValue(excelValue);
+    const normalizedDb = normalizeValue(dbValue);
+    
+    if (normalizedExcel !== normalizedDb) {
+      inconsistencies.push({
+        field: excelField,
+        databaseField: dbField,
+        excelValue: excelValue,
+        databaseValue: dbValue,
+        type: getFieldType(excelField),
+        // Add additional context information
+        taskWoNum: excelData.TASK_WO_NUM || databaseTicket.ticketcode,
+        address: excelData.ADDRESS || databaseTicket.address || 'N/A',
+        restWoNum: excelData.RESTN_WO_NUM || 'N/A'
+      });
+    }
+  }
+
+  return inconsistencies;
+}
+
+// Helper function to compare ticket data excluding Contractor Comments (for auto-corrected tickets)
+function compareTicketDataExcludingComments(excelData, databaseTicket) {
+  const inconsistencies = [];
+  
+  // Define the fields to compare and their mappings to actual database fields
+  // Exclude 'Contractor Comments' since it's handled by auto-correction
+  const fieldMappings = {
+    'TASK_WO_NUM': 'ticketcode',  // Compare TASK_WO_NUM with database ticketcode
+    'PGL ComD:Wments': 'partnercomment',  // PGL comments go to partnerComment field
+    'NOTES2_RES': 'partnersupervisorcomment'  // NOTES2_RES goes to PartnerSupervisorComment field
   };
 
   for (const [excelField, dbField] of Object.entries(fieldMappings)) {
@@ -992,15 +1205,34 @@ function getFieldType(field) {
 function applyUserDecisions(excelData, databaseData, decisions) {
   const finalData = { ...databaseData };
   
+  // Define vital fields that should not be set to null/empty
+  const vitalFields = [
+    'TASK_WO_NUM',
+    'RESTN_WO_NUM', 
+    'ADDRESS',
+    'SAP_ITEM_NUM'
+  ];
+  
   // Apply decisions directly using the field names from inconsistencies
   for (const [field, choice] of Object.entries(decisions)) {
     if (choice === 'excel') {
       // Use the Excel value for this field
       if (excelData[field] !== undefined) {
+        // Check if this is a vital field and Excel value is null/empty
+        const isVitalField = vitalFields.includes(field);
+        const excelValue = excelData[field];
+        const isExcelValueEmpty = !excelValue || excelValue === '' || excelValue === null;
+        
+        if (isVitalField && isExcelValueEmpty) {
+          // For vital fields, keep database value if Excel value is empty
+          console.log(`Keeping database value for vital field "${field}" because Excel value is empty`);
+          continue; // Skip this field, keep database value
+        }
+        
         // Map Excel field to database field
         const dbField = getDatabaseFieldMapping(field);
         if (dbField) {
-          finalData[dbField] = excelData[field];
+          finalData[dbField] = excelValue;
         } else {
           console.warn(`No database field mapping found for Excel field: ${field}`);
         }
@@ -1029,10 +1261,32 @@ function getDatabaseFieldMapping(excelField) {
     'SQ_MI': 'quantity',
     'Earliest_Rpt_Dt': 'earliestRptDate',
     'ADDRESS': 'address',
-    'SAP_ITEM_NUM': 'sapItemNum'
+    'SAP_ITEM_NUM': 'sapItemNum',
+    'AGENCY_NO': 'agencyNo',
+    'START_DATE': 'startDate',
+    'EXP_DATE': 'expDate'
   };
   
   return fieldMappings[excelField] || null;
+}
+
+// Helper function to map database field names back to Excel field names
+function getExcelFieldMapping(dbField) {
+  const reverseMappings = {
+    'ticketCode': 'TASK_WO_NUM',
+    'partnercomment': 'PGL ComD:Wments',
+    'comment7d': 'Contractor Comments',
+    'partnersupervisorcomment': 'NOTES2_RES',
+    'quantity': 'SQ_MI',
+    'earliestRptDate': 'Earliest_Rpt_Dt',
+    'address': 'ADDRESS',
+    'sapItemNum': 'SAP_ITEM_NUM',
+    'agencyNo': 'AGENCY_NO',
+    'startDate': 'START_DATE',
+    'expDate': 'EXP_DATE'
+  };
+  
+  return reverseMappings[dbField] || null;
 }
 
 // Helper function to update ticket with final data
@@ -1057,6 +1311,7 @@ async function updateTicketWithData(ticketId, finalData, updatedBy) {
       daysOutstanding: finalData.daysOutstanding || currentTicket.daysoutstanding,
       comment7d: finalData.comment7d || currentTicket.comment7d,
       PartnerComment: finalData.partnercomment || currentTicket.partnercomment,
+      PartnerSupervisorComment: finalData.partnersupervisorcomment || currentTicket.partnersupervisorcomment,
       contractNumber: finalData.contractNumber || currentTicket.contractnumber,
       amountToPay: finalData.amountToPay || currentTicket.amounttopay,
       ticketType: finalData.ticketType || currentTicket.tickettype
@@ -1075,11 +1330,40 @@ async function updateTicketWithData(ticketId, finalData, updatedBy) {
       updateData.daysOutstanding,
       updateData.comment7d,
       updateData.PartnerComment,
+      updateData.PartnerSupervisorComment,
       updateData.contractNumber,
       updateData.amountToPay,
       updateData.ticketType,
       updatedBy
     );
+
+    // Handle permit updates for existing tickets
+    if (finalData.agencyNo && finalData.startDate && finalData.expDate) {
+      try {
+        console.log(`Updating permit for existing ticket ${ticketId}: AGENCY_NO=${finalData.agencyNo}, START_DATE=${finalData.startDate}, EXP_DATE=${finalData.expDate}`);
+        
+        // Determine permit status based on expiration date
+        const permitStatus = RTR.determinePermitStatus(finalData.expDate);
+        
+        // Update or create permit for this ticket
+        const permitId = await RTR.findOrCreatePermit(
+          finalData.agencyNo,
+          finalData.startDate,
+          finalData.expDate,
+          permitStatus,
+          updatedBy,
+          updatedBy
+        );
+        
+        // Ensure the ticket is associated with this permit
+        await RTR.findOrCreatePermitedTicket(permitId, ticketId, updatedBy, updatedBy);
+        
+        console.log(`Successfully updated permit ${permitId} for ticket ${ticketId} with status: ${permitStatus}`);
+      } catch (permitError) {
+        console.error(`Error updating permit for ticket ${ticketId}:`, permitError);
+        // Don't fail the entire operation if permit update fails
+      }
+    }
 
   return {
     ticketId: ticketId,
@@ -1189,6 +1473,18 @@ exports.uploadForStepper = async (req, res) => {
   try {
     // Parse Excel file but don't save to MinIO yet
     const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
+    
+    // Unhide all columns in all sheets
+    for (const sheetName of workbook.SheetNames) {
+      const sheet = workbook.Sheets[sheetName];
+      if (sheet['!cols']) {
+        for (let i = 0; i < sheet['!cols'].length; i++) {
+          if (sheet['!cols'][i]) {
+            sheet['!cols'][i].hidden = false;
+          }
+        }
+      }
+    }
     
     // Check if "Seven-D" or "Seven-D ALL" sheet exists
     let sheetName = null;
@@ -1311,6 +1607,44 @@ exports.analyzeForStepper = async (req, res) => {
           ticketId: existingTicket.ticketid,
           ticketCode: existingTicket.ticketcode
         });
+        
+        // Get permit information for existing ticket
+        try {
+          const permitRes = await db.query(`
+            SELECT 
+              p.PermitId,
+              p.permitNumber,
+              p.startDate,
+              p.expireDate,
+              p.status
+            FROM Permits p
+            INNER JOIN PermitedTickets pt ON p.PermitId = pt.permitId
+            WHERE pt.ticketId = $1 
+              AND p.deletedAt IS NULL 
+              AND pt.deletedAt IS NULL
+            ORDER BY p.createdAt DESC
+            LIMIT 1
+          `, [existingTicket.ticketid]);
+          
+          if (permitRes.rows.length > 0) {
+            const permit = permitRes.rows[0];
+            existingTicket.agencyNo = permit.permitnumber;
+            existingTicket.startDate = permit.startdate;
+            existingTicket.expDate = permit.expiredate;
+            existingTicket.permitStatus = permit.status;
+            console.log(`Found permit for ticket:`, {
+              permitId: permit.permitid,
+              permitNumber: permit.permitnumber,
+              startDate: permit.startdate,
+              expireDate: permit.expiredate,
+              status: permit.status
+            });
+          } else {
+            console.log(`No permit found for ticket ${existingTicket.ticketid}`);
+          }
+        } catch (permitError) {
+          console.error(`Error getting permit for ticket ${existingTicket.ticketid}:`, permitError);
+        }
       } else {
         console.log(`No existing ticket found - this should be a NEW ticket`);
       }
@@ -1343,9 +1677,148 @@ exports.analyzeForStepper = async (req, res) => {
           analysis.summary.new++;
         }
       } else {
-        console.log(`Comparing data for existing ticket`);
-        const inconsistencies = compareTicketData(processedRow, existingTicket);
-        console.log(`Found ${inconsistencies.length} inconsistencies:`, inconsistencies);
+        // Auto-correct comment7d based on permit expiration date for existing tickets
+        let wasAutoCorrected = false;
+        const inconsistencies = [];
+        
+        if (processedRow.EXP_DATE && existingTicket.comment7d) {
+          const currentDate = new Date();
+          currentDate.setHours(0, 0, 0, 0);
+          const expirationDate = new Date(processedRow.EXP_DATE);
+          expirationDate.setHours(0, 0, 0, 0);
+          
+          const daysUntilExpiry = Math.ceil((expirationDate - currentDate) / (1000 * 60 * 60 * 24));
+          
+          console.log(`Ticket ${existingTicket.ticketid}: Current comment="${existingTicket.comment7d}", Days until expiry: ${daysUntilExpiry}`);
+          
+          // Handle specific status comments from Excel - update database to match Excel
+          if (processedRow['Contractor Comments'] && (
+              processedRow['Contractor Comments'].toLowerCase().includes('tk - on hold off') ||
+              processedRow['Contractor Comments'].toLowerCase().includes('tk - on progress') ||
+              processedRow['Contractor Comments'].toLowerCase().includes('tk - on schedule') ||
+              processedRow['Contractor Comments'].toLowerCase().includes('tk - cancelled'))) {
+            
+            console.log(`Auto-updating database for ticket ${existingTicket.ticketid} from "${existingTicket.comment7d}" to "${processedRow['Contractor Comments']}" (Excel status comment)`);
+            
+            // Update the database to match the Excel value
+            await db.query(
+              'UPDATE Tickets SET comment7d = $1, updatedBy = $2 WHERE ticketId = $3;',
+              [processedRow['Contractor Comments'], 1, existingTicket.ticketid]
+            );
+            
+            // Update the existingTicket object to reflect the change
+            const oldComment = existingTicket.comment7d;
+            existingTicket.comment7d = processedRow['Contractor Comments'];
+            wasAutoCorrected = true;
+            console.log(`Database updated for ticket ${existingTicket.ticketid}`);
+            
+            // Check if permit extension is needed even for status comments
+            // Only check for TK - ON PROGRESS and TK - ON SCHEDULE (not TK - ON HOLD OFF or TK - CANCELLED)
+            if (processedRow['Contractor Comments'].toLowerCase().includes('tk - on progress') ||
+                processedRow['Contractor Comments'].toLowerCase().includes('tk - on schedule')) {
+              
+              // If permit is expiring soon (≤ 7 days), update to TK - NEEDS PERMIT EXTENSION
+              if (daysUntilExpiry <= 7 && daysUntilExpiry >= 0) {
+                console.log(`Auto-updating ticket ${existingTicket.ticketid} from "${processedRow['Contractor Comments']}" to "TK - NEEDS PERMIT EXTENSION" (permit expires in ${daysUntilExpiry} days)`);
+                
+                // Update the database to TK - NEEDS PERMIT EXTENSION
+                await db.query(
+                  'UPDATE Tickets SET comment7d = $1, updatedBy = $2 WHERE ticketId = $3;',
+                  ['TK - NEEDS PERMIT EXTENSION', 1, existingTicket.ticketid]
+                );
+                
+                // Update the existingTicket object to reflect the change
+                existingTicket.comment7d = 'TK - NEEDS PERMIT EXTENSION';
+                console.log(`Database updated for ticket ${existingTicket.ticketid} - permit extension needed`);
+              } else if (daysUntilExpiry > 7) {
+                console.log(`Ticket ${existingTicket.ticketid} has status "${processedRow['Contractor Comments']}" but permit is valid (expires in ${daysUntilExpiry} days) - keeping status comment`);
+              }
+            }
+          }
+          // Skip if comment contains "TK - COMPLETED" or any variant
+          else if (existingTicket.comment7d.toLowerCase().includes('tk - completed')) {
+            console.log(`Skipping auto-correction for ticket ${existingTicket.ticketid} - ticket is completed`);
+          }
+          // Helper function to check if comment is eligible for auto-correction
+          else {
+            // Check if comment is eligible for auto-correction (TK - LAYOUT, TK - LAY OUT, empty, or TK - NEEDS PERMIT EXTENSION)
+            const isCommentEligibleForAutoCorrection = () => {
+              const comment = existingTicket.comment7d || '';
+              const commentLower = comment.toLowerCase().trim();
+              return commentLower === '' || commentLower === 'tk - layout' || commentLower === 'tk - lay out' || commentLower === 'tk - needs permit extension';
+            };
+            
+            // Only proceed with auto-correction if comment is eligible
+            if (isCommentEligibleForAutoCorrection()) {
+              // Check if permit is valid (> 7 days) and comment is TK - NEEDS PERMIT EXTENSION
+              if (daysUntilExpiry > 7 && existingTicket.comment7d.toLowerCase().includes('tk - needs permit extension')) {
+                console.log(`Auto-updating database for ticket ${existingTicket.ticketid} from "${existingTicket.comment7d}" to "TK - LAYOUT" (permit expires in ${daysUntilExpiry} days)`);
+                
+                // Update the database directly
+                await db.query(
+                  'UPDATE Tickets SET comment7d = $1, updatedBy = $2 WHERE ticketId = $3;',
+                  ['TK - LAYOUT', 1, existingTicket.ticketid]
+                );
+                
+                // Update the existingTicket object to reflect the change
+                const oldComment = existingTicket.comment7d;
+                existingTicket.comment7d = 'TK - LAYOUT';
+                wasAutoCorrected = true;
+                console.log(`Database updated for ticket ${existingTicket.ticketid}`);
+              }
+              // Check if permit is expiring (≤ 7 days) and comment is TK - LAYOUT, TK - LAY OUT, or empty
+              else if (daysUntilExpiry <= 7 && daysUntilExpiry >= 0 && !existingTicket.comment7d.toLowerCase().includes('tk - needs permit extension')) {
+                console.log(`Auto-updating database for ticket ${existingTicket.ticketid} from "${existingTicket.comment7d}" to "TK - NEEDS PERMIT EXTENSION" (permit expires in ${daysUntilExpiry} days)`);
+                
+                // Update the database directly
+                await db.query(
+                  'UPDATE Tickets SET comment7d = $1, updatedBy = $2 WHERE ticketId = $3;',
+                  ['TK - NEEDS PERMIT EXTENSION', 1, existingTicket.ticketid]
+                );
+                
+                // Update the existingTicket object to reflect the change
+                const oldComment = existingTicket.comment7d;
+                existingTicket.comment7d = 'TK - NEEDS PERMIT EXTENSION';
+                wasAutoCorrected = true;
+                console.log(`Database updated for ticket ${existingTicket.ticketid}`);
+              }
+              // Check if permit is expired (< 0 days) and comment is TK - LAYOUT, TK - LAY OUT, or empty
+              else if (daysUntilExpiry < 0 && !existingTicket.comment7d.toLowerCase().includes('tk - needs permit extension')) {
+                console.log(`Auto-updating database for ticket ${existingTicket.ticketid} from "${existingTicket.comment7d}" to "TK - NEEDS PERMIT EXTENSION" (permit expired ${Math.abs(daysUntilExpiry)} days ago)`);
+                
+                // Update the database directly
+                await db.query(
+                  'UPDATE Tickets SET comment7d = $1, updatedBy = $2 WHERE ticketId = $3;',
+                  ['TK - NEEDS PERMIT EXTENSION', 1, existingTicket.ticketid]
+                );
+                
+                // Update the existingTicket object to reflect the change
+                const oldComment = existingTicket.comment7d;
+                existingTicket.comment7d = 'TK - NEEDS PERMIT EXTENSION';
+                wasAutoCorrected = true;
+                console.log(`Database updated for ticket ${existingTicket.ticketid}`);
+              } else {
+                console.log(`No auto-correction needed for ticket ${existingTicket.ticketid} - current comment: "${existingTicket.comment7d}", days until expiry: ${daysUntilExpiry}`);
+              }
+            } else {
+              console.log(`Skipping auto-correction for ticket ${existingTicket.ticketid} - comment "${existingTicket.comment7d}" is not eligible for auto-correction (must be "TK - LAYOUT", "TK - LAY OUT", "TK - NEEDS PERMIT EXTENSION", or empty)`);
+            }
+          }
+        }
+        
+        // Only compare data if we haven't auto-corrected the database
+        if (!wasAutoCorrected) {
+          console.log(`Comparing data for existing ticket`);
+          const dataInconsistencies = compareTicketData(processedRow, existingTicket);
+          console.log(`Found ${dataInconsistencies.length} inconsistencies:`, dataInconsistencies);
+          inconsistencies.push(...dataInconsistencies);
+        } else {
+          console.log(`Skipping data comparison for auto-corrected ticket`);
+          // For auto-corrected tickets, only compare non-comment fields
+          const dataInconsistencies = compareTicketDataExcludingComments(processedRow, existingTicket);
+          console.log(`Found ${dataInconsistencies.length} non-comment inconsistencies:`, dataInconsistencies);
+          inconsistencies.push(...dataInconsistencies);
+        }
         
         if (inconsistencies.length > 0) {
           console.log(`Adding to inconsistentTickets`);
@@ -1423,11 +1896,11 @@ exports.validateStepperData = async (req, res) => {
     // Validate new tickets
     if (newTickets && Array.isArray(newTickets)) {
       for (const ticket of newTickets) {
-        const ticketValidation = validateTicketData(ticket.excelData);
+        const ticketValidation = validateTicketData(ticket.excelData, false); // New tickets should have all required fields
         if (!ticketValidation.isValid) {
           validation.isValid = false;
           validation.errors.push({
-            ticketCode: ticket.ticketCode,
+            ticketCode: ticket.ticketCode || (ticket.excelData && (ticket.excelData.TASK_WO_NUM || ticket.excelData.RESTN_WO_NUM)) || 'UNKNOWN',
             errors: ticketValidation.errors
           });
           validation.summary.invalidTickets++;
@@ -1441,13 +1914,77 @@ exports.validateStepperData = async (req, res) => {
     // Validate inconsistent tickets with decisions
     if (inconsistentTickets && Array.isArray(inconsistentTickets)) {
       for (const ticket of inconsistentTickets) {
-        const finalData = applyUserDecisions(ticket.excelData, ticket.databaseData, decisions[ticket.ticketId] || {});
-        const ticketValidation = validateTicketData(finalData);
+        // Get ticket identifier for matching
+        const ticketCode = ticket.ticketCode || ticket.taskWoNum || (ticket.excelData && (ticket.excelData.TASK_WO_NUM || ticket.excelData.RESTN_WO_NUM)) || 'UNKNOWN';
+        
+        // Start with the original Excel data as base
+        let finalData = { ...ticket.excelData };
+        
+        // Apply user decisions to Excel data (keep Excel field names for validation)
+        if (decisions && ticket.ticketId && decisions[ticket.ticketId]) {
+          // Define vital fields that should not be set to null/empty (same as in applyUserDecisions)
+          const vitalFields = [
+            'TASK_WO_NUM',
+            'RESTN_WO_NUM', 
+            'ADDRESS',
+            'SAP_ITEM_NUM'
+          ];
+          
+          for (const [field, choice] of Object.entries(decisions[ticket.ticketId])) {
+            if (choice === 'database' && ticket.databaseData) {
+              // Map database field back to Excel field name
+              const excelField = getExcelFieldMapping(field);
+              if (excelField && ticket.databaseData[field] !== undefined) {
+                finalData[excelField] = ticket.databaseData[field];
+              }
+            } else if (choice === 'excel') {
+              // Use the Excel value for this field, but protect vital fields
+              if (ticket.excelData[field] !== undefined) {
+                // Check if this is a vital field and Excel value is null/empty
+                const isVitalField = vitalFields.includes(field);
+                const excelValue = ticket.excelData[field];
+                const isExcelValueEmpty = !excelValue || excelValue === '' || excelValue === null;
+                
+                if (isVitalField && isExcelValueEmpty) {
+                  // For vital fields, keep database value if Excel value is empty
+                  console.log(`Validation: Keeping database value for vital field "${field}" because Excel value is empty`);
+                  // Don't update the field, keep the database value
+                  continue;
+                }
+                
+                // Use Excel value for non-vital fields or when Excel value is not empty
+                finalData[field] = excelValue;
+              }
+            }
+            // If choice is 'excel', keep the Excel value (already in finalData)
+          }
+        }
+        
+        // Merge any missing info that was filled in for this ticket
+        if (missingInfoFilled && Array.isArray(missingInfoFilled)) {
+          const filledInfo = missingInfoFilled.find(info => 
+            info.ticketCode === ticketCode || 
+            info.ticketCode === ticket.taskWoNum ||
+            (info.data && (info.data.TASK_WO_NUM === ticket.excelData?.TASK_WO_NUM || info.data.RESTN_WO_NUM === ticket.excelData?.RESTN_WO_NUM))
+          );
+          
+          if (filledInfo && filledInfo.data) {
+            // Merge the filled missing info with the final data
+            finalData = { ...finalData, ...filledInfo.data };
+          }
+        }
+        
+        // Also merge with original parsed ticket data if available
+        if (req.body.originalParsedTickets && req.body.originalParsedTickets[ticketCode]) {
+          finalData = { ...req.body.originalParsedTickets[ticketCode], ...finalData };
+        }
+        
+        const ticketValidation = validateTicketData(finalData, true); // Allow database values for inconsistent tickets
         if (!ticketValidation.isValid) {
           validation.isValid = false;
           validation.errors.push({
+            ticketCode: ticketCode,
             ticketId: ticket.ticketId,
-            ticketCode: ticket.ticketCode,
             errors: ticketValidation.errors
           });
           validation.summary.invalidTickets++;
@@ -1461,11 +1998,18 @@ exports.validateStepperData = async (req, res) => {
     // Validate filled missing information
     if (missingInfoFilled && Array.isArray(missingInfoFilled)) {
       for (const filledInfo of missingInfoFilled) {
-        const ticketValidation = validateTicketData(filledInfo.data);
+        let finalData = { ...filledInfo.data };
+        
+        // Merge with original parsed ticket data if available
+        if (req.body.originalParsedTickets && req.body.originalParsedTickets[filledInfo.ticketCode]) {
+          finalData = { ...req.body.originalParsedTickets[filledInfo.ticketCode], ...finalData };
+        }
+        
+        const ticketValidation = validateTicketData(finalData, false); // Filled missing info should have all required fields
         if (!ticketValidation.isValid) {
           validation.isValid = false;
           validation.errors.push({
-            ticketCode: filledInfo.ticketCode,
+            ticketCode: filledInfo.ticketCode || (filledInfo.data && (filledInfo.data.TASK_WO_NUM || filledInfo.data.RESTN_WO_NUM)) || 'UNKNOWN',
             errors: ticketValidation.errors
           });
           validation.summary.invalidTickets++;
@@ -1646,22 +2190,61 @@ exports.saveStepperData = async (req, res) => {
       for (let i = 0; i < inconsistentTickets.length; i++) {
         const ticketData = inconsistentTickets[i];
         
+        // Get ticket identifier for matching (moved outside try block for scope)
+        const ticketCode = ticketData.ticketCode || ticketData.taskWoNum || (ticketData.excelData && (ticketData.excelData.TASK_WO_NUM || ticketData.excelData.RESTN_WO_NUM)) || 'UNKNOWN';
+        
+        // Get ticketId from databaseData or decisions key
+        const ticketId = ticketData.ticketId || ticketData.databaseData?.ticketid || 
+                        (decisions && Object.keys(decisions).find(key => 
+                          decisions[key] && Object.keys(decisions[key]).length > 0
+                        ));
+        
+        if (!ticketId) {
+          console.error(`No ticketId found for ticket ${ticketCode}`);
+          results.errors.push({
+            ticketCode: ticketCode,
+            error: 'No ticketId found for inconsistent ticket'
+          });
+          results.summary.failed++;
+          results.summary.total++;
+          continue;
+        }
+        
         try {
-          const finalData = applyUserDecisions(ticketData.excelData, ticketData.databaseData, decisions[ticketData.ticketId] || {});
+          let finalData = applyUserDecisions(ticketData.excelData, ticketData.databaseData, decisions[ticketId] || {});
           
-          const result = await updateTicketWithData(ticketData.ticketId, finalData, updatedBy || 1);
+          // Merge any missing info that was filled in for this ticket
+          if (missingInfoFilled && Array.isArray(missingInfoFilled)) {
+            const filledInfo = missingInfoFilled.find(info => 
+              info.ticketCode === ticketCode || 
+              info.ticketCode === ticketData.taskWoNum ||
+              (info.data && (info.data.TASK_WO_NUM === ticketData.excelData?.TASK_WO_NUM || info.data.RESTN_WO_NUM === ticketData.excelData?.RESTN_WO_NUM))
+            );
+            
+            if (filledInfo && filledInfo.data) {
+              // Merge the filled missing info with the final data
+              finalData = { ...finalData, ...filledInfo.data };
+            }
+          }
+          
+          // Also merge with original parsed ticket data if available
+          if (req.body.originalParsedTickets && req.body.originalParsedTickets[ticketCode]) {
+            finalData = { ...req.body.originalParsedTickets[ticketCode], ...finalData };
+          }
+          
+          const result = await updateTicketWithData(ticketId, finalData, updatedBy || 1);
           
           results.ticketsUpdated.push({
-            ticketId: ticketData.ticketId,
-            ticketCode: ticketData.ticketCode,
+            ticketId: ticketId,
+            ticketCode: ticketCode,
             result: result
           });
           results.summary.updated++;
         } catch (error) {
-          console.error(`Error updating ticket ${ticketData.ticketCode}:`, error);
+          console.error(`Error updating ticket ${ticketCode}:`, error);
           results.errors.push({
-            ticketId: ticketData.ticketId,
-            ticketCode: ticketData.ticketCode,
+            ticketId: ticketId,
+            ticketCode: ticketCode,
             error: error.message
           });
           results.summary.failed++;
@@ -1672,12 +2255,16 @@ exports.saveStepperData = async (req, res) => {
 
     // Step 4: Process filled missing information
     if (missingInfoFilled && Array.isArray(missingInfoFilled)) {
+      // Get original parsed tickets from request (should be a map: { [ticketCode]: originalTicketData })
+      const originalParsedTickets = req.body.originalParsedTickets || {};
       for (let i = 0; i < missingInfoFilled.length; i++) {
         const filledInfo = missingInfoFilled[i];
-        
         try {
-          const result = await RTR.processRTRData([filledInfo.data], createdBy || 1, updatedBy || 1);
-          
+          // Merge original parsed ticket data with filled fields
+          const original = originalParsedTickets[filledInfo.ticketCode] || {};
+          const merged = { ...original, ...filledInfo.data };
+          console.log('Processing missingInfoFilled (merged):', JSON.stringify(merged, null, 2));
+          const result = await RTR.processRTRData([merged], createdBy || 1, updatedBy || 1);
           results.newTicketsCreated.push({
             ticketCode: filledInfo.ticketCode,
             result: result
@@ -1743,13 +2330,22 @@ exports.saveStepperData = async (req, res) => {
     }
 
     // Step 7: Update permit statuses based on expiration dates
+    // PARTIALLY RE-ENABLED: Only updateTicketCommentsToLayout to handle TK - NEEDS PERMIT EXTENSION → TK - LAYOUT
     let permitStatusResults = null;
     try {
-      console.log('Updating permit statuses and checking for permits expiring within 7 days...');
-      permitStatusResults = await RTR.updatePermitStatusesAndCheckExpiring(updatedBy || 1);
-      console.log(`Comprehensive permit update completed: ${permitStatusResults.summary.permitsStatusUpdated} permits updated, ${permitStatusResults.summary.ticketsCommentUpdated} tickets updated`);
+      console.log('Updating tickets with TK - NEEDS PERMIT EXTENSION to TK - LAYOUT if permits are valid...');
+      // Only call updateTicketCommentsToLayout, not the full updatePermitStatusesAndCheckExpiring
+      const layoutResults = await RTR.updateTicketCommentsToLayout(updatedBy || 1);
+      console.log(`Ticket comment updates completed: ${layoutResults.length} tickets updated from TK - NEEDS PERMIT EXTENSION to TK - LAYOUT`);
+      
+      permitStatusResults = {
+        layoutUpdates: layoutResults,
+        summary: {
+          totalTicketsUpdatedToLayout: layoutResults.length
+        }
+      };
     } catch (permitError) {
-      console.error("Failed to update permit statuses and check expiring permits:", permitError);
+      console.error("Failed to update ticket comments to LAYOUT:", permitError);
       // Don't fail the entire operation if permit status update fails
     }
 
@@ -1777,22 +2373,8 @@ exports.saveStepperData = async (req, res) => {
           totalStatusesCreated: ticketStatusResults.summary.totalStatusesCreated
         } : null,
         permitStatusUpdate: permitStatusResults ? {
-          permits: {
-            total: permitStatusResults.summary.totalPermitsChecked,
-            statusUpdated: permitStatusResults.summary.permitsStatusUpdated,
-            unchanged: permitStatusResults.summary.totalPermitsChecked - permitStatusResults.summary.permitsStatusUpdated,
-            statusChanges: {
-              toExpired: permitStatusResults.statusUpdates.filter(r => r.updated && r.newStatus === 'EXPIRED').length,
-              toExpiresToday: permitStatusResults.statusUpdates.filter(r => r.updated && r.newStatus === 'EXPIRES_TODAY').length,
-              toActive: permitStatusResults.statusUpdates.filter(r => r.updated && r.newStatus === 'ACTIVE').length,
-              toPending: permitStatusResults.statusUpdates.filter(r => r.updated && r.newStatus === 'PENDING').length
-            }
-          },
-          tickets: {
-            total: permitStatusResults.summary.totalTicketsChecked,
-            commentUpdated: permitStatusResults.summary.ticketsCommentUpdated,
-            unchanged: permitStatusResults.summary.totalTicketsChecked - permitStatusResults.summary.ticketsCommentUpdated
-          }
+          layoutUpdates: permitStatusResults.layoutUpdates,
+          summary: permitStatusResults.summary
         } : null
       }
     });
@@ -1810,6 +2392,10 @@ exports.saveStepperData = async (req, res) => {
 // Helper function to parse Excel data (extracted from existing uploadExcel function)
 async function parseExcelData(rows, sheetName) {
   try {
+    console.log(`=== parseExcelData Debug ===`);
+    console.log(`Looking for important columns:`, importantColumns);
+    console.log(`Total rows in sheet: ${rows.length}`);
+    console.log(`First few rows:`, rows.slice(0, 3).map(row => row.slice(0, 5))); // Show first 3 rows, first 5 columns
     let headerRowIndex = -1;
     for (let i = 0; i < rows.length; i++) {
       const normalized = rows[i].map(normalize);
@@ -1817,8 +2403,12 @@ async function parseExcelData(rows, sheetName) {
         normalized.includes(normalize(col))
       ).length;
 
-      if (matchCount >= importantColumns.length * 0.6) {
+      console.log(`parseExcelData - Row ${i}: Found ${matchCount}/${importantColumns.length} columns (${Math.round(matchCount/importantColumns.length*100)}%)`);
+      console.log(`parseExcelData - Row ${i} normalized:`, normalized.slice(0, 10)); // Show first 10 columns
+      
+      if (matchCount >= importantColumns.length * 0.4) {
         headerRowIndex = i;
+        console.log(`parseExcelData - Header row detected at row ${i} with ${matchCount} matching columns`);
         break;
       }
     }
@@ -1832,20 +2422,40 @@ async function parseExcelData(rows, sheetName) {
     }
 
     const headers = rows[headerRowIndex];
+    console.log(`Headers found at row ${headerRowIndex}:`, headers);
+    
     const colIndexMap = {};
     importantColumns.forEach((col) => {
       const idx = getClosestHeaderIndex(col, headers);
-      if (idx !== -1) colIndexMap[col] = idx;
+      if (idx !== -1) {
+        colIndexMap[col] = idx;
+        console.log(`Column "${col}" mapped to index ${idx} (header: "${headers[idx]}")`);
+      } else {
+        console.log(`Column "${col}" NOT FOUND in headers`);
+      }
     });
 
-    const missing = importantColumns.filter((col) => !(col in colIndexMap));
-    if (missing.length > 0) {
+    // Check for critical columns that are absolutely required
+    const criticalColumns = ['TASK_WO_NUM', 'RESTN_WO_NUM', 'ADDRESS', 'SAP_ITEM_NUM'];
+    const missingCritical = criticalColumns.filter((col) => !(col in colIndexMap));
+    
+    if (missingCritical.length > 0) {
       return {
         success: false,
-        error: "Missing required columns",
-        missing: missing
+        error: "Missing critical columns",
+        missing: missingCritical,
+        message: `Critical columns are required: ${missingCritical.join(', ')}`
       };
     }
+    
+    // Log which columns were found and which are missing
+    const missingOptional = importantColumns.filter((col) => !(col in colIndexMap));
+    if (missingOptional.length > 0) {
+      console.log(`Warning: Some optional columns are missing: ${missingOptional.join(', ')}`);
+    }
+    
+    console.log(`Found columns: ${Object.keys(colIndexMap).join(', ')}`);
+    console.log(`Missing optional columns: ${missingOptional.join(', ')}`);
 
     const dataRows = [];
     for (let i = headerRowIndex + 1; i < rows.length; i++) {
@@ -1950,7 +2560,7 @@ function checkMissingRequiredFields(row) {
 }
 
 // Helper function to validate ticket data
-function validateTicketData(data) {
+function validateTicketData(data, allowDatabaseValues = false) {
   const validation = {
     isValid: true,
     errors: []
@@ -1966,6 +2576,11 @@ function validateTicketData(data) {
 
   for (const required of requiredFields) {
     if (!data[required.field] || data[required.field] === '' || data[required.field] === null) {
+      // If we're allowing database values and this is a vital field, be more lenient
+      if (allowDatabaseValues && ['TASK_WO_NUM', 'RESTN_WO_NUM', 'ADDRESS', 'SAP_ITEM_NUM'].includes(required.field)) {
+        console.log(`Validation: Allowing empty vital field "${required.field}" because database values are allowed`);
+        continue; // Skip validation for this field
+      }
       validation.isValid = false;
       validation.errors.push(`Missing required field: ${required.name}`);
     }
@@ -2009,6 +2624,18 @@ exports.updateTicketsWithDatabaseValues = async (req, res) => {
 
     // 1. Parse the uploaded Excel file using existing parseExcelData function
     const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
+    
+    // Unhide all columns in all sheets
+    for (const sheetName of workbook.SheetNames) {
+      const sheet = workbook.Sheets[sheetName];
+      if (sheet['!cols']) {
+        for (let i = 0; i < sheet['!cols'].length; i++) {
+          if (sheet['!cols'][i]) {
+            sheet['!cols'][i].hidden = false;
+          }
+        }
+      }
+    }
     
     // Check if "Seven-D" or "Seven-D ALL" sheet exists
     let sheetName = null;

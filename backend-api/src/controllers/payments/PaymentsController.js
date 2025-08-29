@@ -19,6 +19,21 @@ const normalizePayment = (dbRecord) => {
   };
 };
 
+// Helper function to normalize payment-invoice-ticket response
+const normalizePaymentInvoiceTicket = (dbRecord) => {
+  if (!dbRecord) return null;
+  
+  return {
+    paymentNumber: dbRecord.paymentnumber,
+    amountPaid: dbRecord.amountpaid ? Number(dbRecord.amountpaid) : null,
+    invoiceNumber: dbRecord.invoicenumber,
+    amountRequested: dbRecord.amountrequested ? Number(dbRecord.amountrequested) : null,
+    amountToPay: dbRecord.amounttopay ? Number(dbRecord.amounttopay) : null,
+    calculatedCost: dbRecord.calculatedcost ? Number(dbRecord.calculatedcost) : null,
+    ticketCode: dbRecord.ticketcode
+  };
+};
+
 const PaymentsController = {
   async createPayment(req, res) {
     try {
@@ -96,6 +111,17 @@ const PaymentsController = {
     } catch (error) {
       console.error('Error deleting Payment:', error);
       res.status(500).json({ message: 'Error deleting Payment', error: error.message });
+    }
+  },
+
+  async getPaymentInvoiceTicketInfo(req, res) {
+    try {
+      const paymentInvoiceTicketData = await Payments.getPaymentInvoiceTicketInfo();
+      const normalizedData = paymentInvoiceTicketData.map(record => normalizePaymentInvoiceTicket(record));
+      res.status(200).json(normalizedData);
+    } catch (error) {
+      console.error('Error fetching Payment-Invoice-Ticket information:', error);
+      res.status(500).json({ message: 'Error fetching Payment-Invoice-Ticket information', error: error.message });
     }
   },
 };

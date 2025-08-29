@@ -11,7 +11,6 @@ class ExcelItem {
 
   // Example save method
   save() {
-    console.log("Saving item:", this.data);
   }
 }
 
@@ -47,7 +46,6 @@ class RTR {
     if (numberMatch) {
       const number = numberMatch[1];
       const normalizedNumber = parseInt(number, 10).toString(); // Remove leading zeros
-      console.log(`Exact match not found for "${name}", searching for quadrants containing number "${normalizedNumber}"...`);
       
       // Search for quadrants that contain this number (with and without leading zeros)
       const fuzzyRes = await db.query(
@@ -59,7 +57,6 @@ class RTR {
       );
       
       if (fuzzyRes.rows[0]) {
-        console.log(`Found matching quadrant: "${fuzzyRes.rows[0].name}" for input "${name}"`);
         return fuzzyRes.rows[0].quadrantid;
       }
       
@@ -74,17 +71,14 @@ class RTR {
       );
       
       if (flexibleRes.rows[0]) {
-        console.log(`Found flexible matching quadrant: "${flexibleRes.rows[0].name}" for input "${name}"`);
         return flexibleRes.rows[0].quadrantid;
   }
     }
     
-    console.log(`No matching quadrant found for "${name}"`);
     return null;
   }
 
   static async createTicket(incidentId, quadrantId, contractUnitId, wayfindingId, partnerComment, comment7d, ticketCode, partnerSupervisorComment, ticketType, amountToPay, quantity, createdBy, updatedBy) {
-    console.log(`Creating ticket with amountToPay: ${amountToPay} (type: ${typeof amountToPay}) and quantity: ${quantity}`);
     
     const res = await db.query(
       'INSERT INTO Tickets(incidentId, cuadranteId, contractUnitId, wayfindingId, PartnerComment, comment7d, ticketCode, PartnerSupervisorComment, ticketType, amounttopay, quantity, createdBy, updatedBy) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING ticketId;',
@@ -114,14 +108,11 @@ class RTR {
     const existingAddressId = await this.findAddress(addressNumber, addressCardinal, addressStreet, addressSuffix);
     
     if (existingAddressId) {
-      console.log(`Found existing address ID: ${existingAddressId} for ${addressNumber} ${addressCardinal} ${addressStreet} ${addressSuffix}`);
       return existingAddressId;
     }
     
     // If not found, create new address
-    console.log(`Creating new address for ${addressNumber} ${addressCardinal} ${addressStreet} ${addressSuffix}`);
     const newAddressId = await this.createAddress(addressNumber, addressCardinal, addressStreet, addressSuffix, createdBy, updatedBy);
-    console.log(`Created new address ID: ${newAddressId}`);
     return newAddressId;
   }
 
@@ -146,14 +137,11 @@ class RTR {
     const existingTicketAddress = await this.findTicketAddress(ticketId, addressId);
     
     if (existingTicketAddress) {
-      console.log(`Found existing ticket-address relationship: Ticket ${ticketId} - Address ${addressId}`);
       return existingTicketAddress;
     }
     
     // If not found, create new relationship
-    console.log(`Creating new ticket-address relationship: Ticket ${ticketId} - Address ${addressId}`);
     const newTicketAddress = await this.createTicketAddress(ticketId, addressId, isPartner, is7d, createdBy, updatedBy);
-    console.log(`Created new ticket-address relationship`);
     return newTicketAddress;
   }
 
@@ -178,24 +166,152 @@ class RTR {
     return res.rows[0].permitid;
   }
 
+  static async findOrCreatePermit(permitNumber, startDate, expireDate, status, createdBy, updatedBy) {
+    // First try to find existing permit by permit number
+    const existingPermit = await db.query(
+      'SELECT * FROM Permits WHERE permitNumber = $1 AND deletedAt IS NULL;',
+      [permitNumber]
+    );
+
+    if (existingPermit.rows[0]) {
+      // Update existing permit with new dates and status
+      const res = await db.query(
+        'UPDATE Permits SET startDate = $1, expireDate = $2, status = $3, updatedAt = CURRENT_TIMESTAMP, updatedBy = $4 WHERE PermitId = $5 AND deletedAt IS NULL RETURNING PermitId;',
+        [startDate, expireDate, status, updatedBy, existingPermit.rows[0].permitid]
+      );
+      
+      // Check if we need to update ticket comments based on new expiration date
+      await this.updateTicketCommentsForPermit(res.rows[0].permitid, updatedBy);
+      
+      return res.rows[0].permitid;
+    } else {
+      // Create new permit
+      const res = await db.query(
+        'INSERT INTO Permits(permitNumber, startDate, expireDate, status, createdBy, updatedBy) VALUES($1, $2, $3, $4, $5, $6) RETURNING PermitId;',
+        [permitNumber, startDate, expireDate, status, createdBy, updatedBy]
+      );
+      return res.rows[0].permitid;
+    }
+  }
+
+  // Helper method to update ticket comments when permit expiration date changes
+  static async updateTicketCommentsForPermit(permitId, updatedBy) {
+    try {
+      const currentDate = new Date();
+      currentDate.setHours(0, 0, 0, 0);
+      
+      // Get the permit and its associated tickets
+      // EXCLUDE tickets that are on private property (no permits needed)
+      const permitRes = await db.query(
+        `SELECT 
+           p.PermitId,
+           p.permitNumber,
+           p.expireDate,
+           p.status,
+           t.ticketId,
+           t.ticketCode,
+           t.comment7d,
+           w.location
+         FROM Permits p
+         INNER JOIN PermitedTickets pt ON p.PermitId = pt.permitId
+         INNER JOIN Tickets t ON pt.ticketId = t.ticketId
+         INNER JOIN wayfinding w ON t.wayfindingId = w.wayfindingId
+         WHERE p.PermitId = $1 
+         AND p.deletedAt IS NULL 
+         AND pt.deletedAt IS NULL
+         AND t.deletedAt IS NULL
+         AND w.deletedAt IS NULL
+         AND (w.location IS NULL OR LOWER(w.location) NOT LIKE '%private property%');`,
+        [permitId]
+      );
+
+      if (permitRes.rows.length === 0) return;
+
+      const permit = permitRes.rows[0];
+      const daysUntilExpiry = Math.ceil((new Date(permit.expiredate) - currentDate) / (1000 * 60 * 60 * 24));
+      
+      // Skip if comment contains "TK - COMPLETED" or any variant
+      if (permit.comment7d && permit.comment7d.toLowerCase().includes('tk - completed')) {
+        console.log(`Skipping permit update for ticket ${permit.ticketid} - ticket is completed`);
+        return;
+      }
+      
+      // If permit expires within 7 days and ticket comment is empty/null, update it
+      if (daysUntilExpiry <= 7 && daysUntilExpiry >= 0) {
+        if (!permit.comment7d || permit.comment7d === '' || permit.comment7d === 'TK - NEEDS PERMIT EXTENSION') {
+          await db.query(
+            'UPDATE Tickets SET comment7d = $1, updatedBy = $2 WHERE ticketId = $3;',
+            ['TK - NEEDS PERMIT EXTENSION', updatedBy, permit.ticketid]
+          );
+        }
+      } else if (daysUntilExpiry > 7) {
+        // If permit is now more than 7 days away and comment was set to extension, update to LAYOUT
+        if (permit.comment7d && permit.comment7d.toLowerCase().includes('tk - needs permit extension')) {
+          await db.query(
+            'UPDATE Tickets SET comment7d = $1, updatedBy = $2 WHERE ticketId = $3;',
+            ['TK - LAYOUT', updatedBy, permit.ticketid]
+          );
+        }
+      } else if (daysUntilExpiry < 0) {
+        // If permit is expired, set to NEEDS PERMIT EXTENSION
+        if (!permit.comment7d || permit.comment7d === '' || (permit.comment7d && !permit.comment7d.toLowerCase().includes('tk - needs permit extension'))) {
+          await db.query(
+            'UPDATE Tickets SET comment7d = $1, updatedBy = $2 WHERE ticketId = $3;',
+            ['TK - NEEDS PERMIT EXTENSION', updatedBy, permit.ticketid]
+          );
+        }
+      }
+    } catch (error) {
+      console.error('Error updating ticket comments for permit:', error);
+    }
+  }
+
   // Helper method to determine permit status based on expiration date
   static determinePermitStatus(expireDate) {
     if (!expireDate) {
+      console.log(`[determinePermitStatus] No expiration date provided, returning PENDING`);
       return 'PENDING'; // No expiration date set
     }
     
-    const currentDate = new Date();
-    const expirationDate = new Date(expireDate);
+    // Create current date in UTC to avoid timezone issues
+    const now = new Date();
+    const currentDate = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
     
-    // Reset time to start of day for accurate date comparison
-    currentDate.setHours(0, 0, 0, 0);
-    expirationDate.setHours(0, 0, 0, 0);
+    // Parse expiration date and ensure it's in UTC
+    let expirationDate;
+    try {
+      expirationDate = new Date(expireDate);
+      // If the date is invalid, throw an error
+      if (isNaN(expirationDate.getTime())) {
+        throw new Error(`Invalid date: ${expireDate}`);
+      }
+      // Convert to UTC date (start of day)
+      expirationDate = new Date(Date.UTC(expirationDate.getFullYear(), expirationDate.getMonth(), expirationDate.getDate()));
+    } catch (error) {
+      console.error(`[determinePermitStatus] Error parsing expiration date: ${expireDate}`, error);
+      return 'PENDING';
+    }
+    
+    // Add comprehensive logging to debug the date comparison
+    console.log(`[determinePermitStatus] ===== DATE COMPARISON DEBUG =====`);
+    console.log(`[determinePermitStatus] Raw expireDate input: ${expireDate}`);
+    console.log(`[determinePermitStatus] Current date (UTC): ${currentDate.toISOString()}`);
+    console.log(`[determinePermitStatus] Expiration date (UTC): ${expirationDate.toISOString()}`);
+    console.log(`[determinePermitStatus] Current date (local): ${currentDate.toLocaleDateString()}`);
+    console.log(`[determinePermitStatus] Expiration date (local): ${expirationDate.toLocaleDateString()}`);
+    console.log(`[determinePermitStatus] Current date timestamp: ${currentDate.getTime()}`);
+    console.log(`[determinePermitStatus] Expiration date timestamp: ${expirationDate.getTime()}`);
+    console.log(`[determinePermitStatus] Is expiration < current? ${expirationDate < currentDate}`);
+    console.log(`[determinePermitStatus] Is expiration === current? ${expirationDate.getTime() === currentDate.getTime()}`);
     
     if (expirationDate < currentDate) {
+      console.log(`[determinePermitStatus] ❌ Permit EXPIRED - expiration date (${expirationDate.toISOString()}) is before current date (${currentDate.toISOString()})`);
       return 'EXPIRED';
     } else if (expirationDate.getTime() === currentDate.getTime()) {
+      console.log(`[determinePermitStatus] ⚠️ Permit EXPIRES_TODAY - expiration date (${expirationDate.toISOString()}) equals current date (${currentDate.toISOString()})`);
       return 'EXPIRES_TODAY';
     } else {
+      console.log(`[determinePermitStatus] ✅ Permit ACTIVE - expiration date (${expirationDate.toISOString()}) is after current date (${currentDate.toISOString()})`);
       return 'ACTIVE';
     }
   }
@@ -278,7 +394,6 @@ class RTR {
   // Method to check permits expiring within 7 days and update ticket comments
   static async checkPermitsExpiringSoon(updatedBy) {
     try {
-      console.log('Checking for permits expiring within 7 days...');
       
       // Calculate date 7 days from now
       const sevenDaysFromNow = new Date();
@@ -288,9 +403,9 @@ class RTR {
       const currentDate = new Date();
       currentDate.setHours(0, 0, 0, 0); // Start of day
       
-      console.log(`Checking permits expiring between ${currentDate.toISOString()} and ${sevenDaysFromNow.toISOString()}`);
-      
       // Get permits expiring within 7 days and their associated tickets
+      // EXCLUDE tickets that are on private property (no permits needed)
+      // EXCLUDE tickets that already have the correct extension comment
       const permitsRes = await db.query(
         `SELECT 
            p.PermitId,
@@ -299,29 +414,43 @@ class RTR {
            p.status,
            t.ticketId,
            t.ticketCode,
-           t.comment7d
+           t.comment7d,
+           w.location
          FROM Permits p
          INNER JOIN PermitedTickets pt ON p.PermitId = pt.permitId
          INNER JOIN Tickets t ON pt.ticketId = t.ticketId
+         INNER JOIN wayfinding w ON t.wayfindingId = w.wayfindingId
          WHERE p.deletedAt IS NULL 
          AND pt.deletedAt IS NULL
          AND t.deletedAt IS NULL
+         AND w.deletedAt IS NULL
          AND p.expireDate >= $1 
          AND p.expireDate <= $2
-         AND (t.comment7d IS NULL OR t.comment7d = '' OR t.comment7d = 'TK - NEEDS PERMIT EXTENSION')
+         AND (t.comment7d IS NULL OR t.comment7d = '')
+         AND t.comment7d NOT ILIKE '%tk - needs permit extension%'
+         AND t.comment7d NOT ILIKE '%tk - completed%'
+         AND t.comment7d NOT ILIKE '%tk - cancelled%'
+         AND t.comment7d NOT ILIKE '%tk - on hold off%'
+         AND (w.location IS NULL OR LOWER(w.location) NOT LIKE '%private property%')
          ORDER BY p.expireDate ASC;`,
         [currentDate, sevenDaysFromNow]
       );
-      
-      console.log(`Found ${permitsRes.rows.length} tickets with permits expiring within 7 days`);
       
       const results = [];
       
       for (const row of permitsRes.rows) {
         const daysUntilExpiry = Math.ceil((new Date(row.expiredate) - currentDate) / (1000 * 60 * 60 * 24));
         
-        // Only update if comment7d is null, empty, or already has the extension message
-        if (!row.comment7d || row.comment7d === '' || row.comment7d === 'TK - NEEDS PERMIT EXTENSION') {
+        // Only update if comment7d is null or empty
+        // Additional check to avoid updating tickets that shouldn't be changed
+        const comment = row.comment7d || '';
+        const shouldSkip = comment.toLowerCase().includes('tk - on hold off') ||
+                          comment.toLowerCase().includes('tk - on progress') ||
+                          comment.toLowerCase().includes('tk - on schedule') ||
+                          comment.toLowerCase().includes('tk - cancelled') ||
+                          comment.toLowerCase().includes('tk - needs permit extension');
+        
+        if (!shouldSkip && (!row.comment7d || row.comment7d === '')) {
           // Update the ticket's comment7d
           const updateRes = await db.query(
             'UPDATE Tickets SET comment7d = $1, updatedBy = $2 WHERE ticketId = $3 RETURNING ticketId, comment7d;',
@@ -337,10 +466,10 @@ class RTR {
             daysUntilExpiry: daysUntilExpiry,
             oldComment: row.comment7d || '',
             newComment: 'TK - NEEDS PERMIT EXTENSION',
-            updated: true
+            updated: true,
+            location: row.location
           });
           
-          console.log(`Updated ticket ${row.ticketcode} (ID: ${row.ticketid}) - Permit ${row.permitnumber} expires in ${daysUntilExpiry} days`);
         } else {
           results.push({
             ticketId: row.ticketid,
@@ -352,12 +481,11 @@ class RTR {
             oldComment: row.comment7d,
             newComment: row.comment7d,
             updated: false,
-            reason: 'Comment already set to something other than extension message'
+            reason: shouldSkip ? `Skipped: Comment already has status "${comment}"` : 'Comment not null/empty',
+            location: row.location
           });
         }
       }
-      
-      console.log(`Permit extension check completed: ${results.filter(r => r.updated).length} tickets updated`);
       
       return results;
     } catch (error) {
@@ -366,10 +494,151 @@ class RTR {
     }
   }
 
+  // Method to update ticket comments to LAYOUT when permits are valid
+// Method to update ticket comments to LAYOUT when permits are valid
+  static async updateTicketCommentsToLayout(updatedBy) {
+    try {
+      const currentDate = new Date();
+      currentDate.setHours(0, 0, 0, 0);
+      
+      // Calculate date 7 days from now
+      const sevenDaysFromNow = new Date();
+      sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7);
+      sevenDaysFromNow.setHours(23, 59, 59, 999);
+      
+      console.log(`[updateTicketCommentsToLayout] Looking for tickets with TK - NEEDS PERMIT EXTENSION and valid permits (> ${sevenDaysFromNow.toISOString()})`);
+      
+      // Get tickets with valid permits (more than 7 days away) that have extension comments
+      // Exclude tickets with status comments that shouldn't be changed at SQL level
+      const ticketsRes = await db.query(
+        `SELECT 
+          p.PermitId,
+          p.permitNumber,
+          p.expireDate,
+          p.status,
+          t.ticketId,
+          t.ticketCode,
+          t.comment7d,
+          COALESCE(w.location, 'Unknown') as location
+        FROM Permits p
+        INNER JOIN PermitedTickets pt ON p.PermitId = pt.permitId
+        INNER JOIN Tickets t ON pt.ticketId = t.ticketId
+        LEFT JOIN wayfinding w ON t.wayfindingId = w.wayfindingId AND w.deletedAt IS NULL
+        WHERE p.deletedAt IS NULL 
+        AND pt.deletedAt IS NULL
+        AND t.deletedAt IS NULL
+        AND p.expireDate > $1
+        AND t.comment7d ILIKE '%tk - needs permit extension%'
+        AND t.comment7d NOT ILIKE '%tk - completed%'
+        AND t.comment7d NOT ILIKE '%tk - cancelled%'
+        AND t.comment7d NOT ILIKE '%tk - on hold off%'
+        AND t.comment7d NOT ILIKE '%tk - on progress%'
+        AND t.comment7d NOT ILIKE '%tk - on schedule%'
+        AND (w.location IS NULL OR LOWER(w.location) NOT LIKE '%private property%')
+        ORDER BY p.expireDate ASC;`,
+        [sevenDaysFromNow]
+      );
+      
+      console.log(`[updateTicketCommentsToLayout] Found ${ticketsRes.rows.length} tickets with TK - NEEDS PERMIT EXTENSION and valid permits`);
+      
+      // If no tickets found, let's check if there are any tickets with TK - NEEDS PERMIT EXTENSION at all
+      if (ticketsRes.rows.length === 0) {
+        console.log(`[updateTicketCommentsToLayout] No tickets found with main query. Checking for any tickets with TK - NEEDS PERMIT EXTENSION...`);
+        
+        const checkRes = await db.query(
+          `SELECT 
+            t.ticketId,
+            t.ticketCode,
+            t.comment7d,
+            p.PermitId,
+            p.permitNumber,
+            p.expireDate,
+            p.status
+          FROM Tickets t
+          LEFT JOIN PermitedTickets pt ON t.ticketId = pt.ticketId AND pt.deletedAt IS NULL
+          LEFT JOIN Permits p ON pt.permitId = p.PermitId AND p.deletedAt IS NULL
+          WHERE t.deletedAt IS NULL
+          AND t.comment7d ILIKE '%tk - needs permit extension%'
+          ORDER BY t.ticketId ASC;`
+        );
+        
+        console.log(`[updateTicketCommentsToLayout] Found ${checkRes.rows.length} tickets with TK - NEEDS PERMIT EXTENSION (including those without valid permits or missing relationships)`);
+        
+        if (checkRes.rows.length > 0) {
+          console.log(`[updateTicketCommentsToLayout] Sample tickets with TK - NEEDS PERMIT EXTENSION:`);
+          checkRes.rows.slice(0, 5).forEach(row => {
+            console.log(`  - Ticket ${row.ticketid} (${row.ticketcode}): comment7d="${row.comment7d}", permitId=${row.permitid}, expireDate=${row.expiredate}`);
+          });
+        }
+      }
+      
+      const results = [];
+      
+      for (const row of ticketsRes.rows) {
+        const daysUntilExpiry = Math.ceil((new Date(row.expiredate) - currentDate) / (1000 * 60 * 60 * 24));
+        
+        console.log(`[updateTicketCommentsToLayout] Processing ticket ${row.ticketid} (${row.ticketcode}): comment7d="${row.comment7d}", expires in ${daysUntilExpiry} days`);
+        
+        // Double check (though SQL should have filtered these out already)
+        const comment = row.comment7d || '';
+        const shouldSkip = comment.toLowerCase().includes('tk - on hold off') ||
+                          comment.toLowerCase().includes('tk - on progress') ||
+                          comment.toLowerCase().includes('tk - on schedule') ||
+                          comment.toLowerCase().includes('tk - cancelled') ||
+                          comment.toLowerCase().includes('tk - completed');
+        
+        if (!shouldSkip) {
+          // Update to LAYOUT since permit is valid and more than 7 days away
+          await db.query(
+            'UPDATE Tickets SET comment7d = $1, updatedBy = $2 WHERE ticketId = $3;',
+            ['TK - LAYOUT', updatedBy, row.ticketid]
+          );
+          
+          console.log(`[updateTicketCommentsToLayout] ✅ Updated ticket ${row.ticketid} (${row.ticketcode}) from "${row.comment7d}" to "TK - LAYOUT"`);
+          
+          results.push({
+            ticketId: row.ticketid,
+            ticketCode: row.ticketcode,
+            permitId: row.permitid,
+            permitNumber: row.permitnumber,
+            expireDate: row.expiredate,
+            daysUntilExpiry: daysUntilExpiry,
+            oldComment: row.comment7d,
+            newComment: 'TK - LAYOUT',
+            updated: true,
+            location: row.location
+          });
+        } else {
+          // This should rarely happen due to SQL filtering, but kept for safety
+          console.log(`[updateTicketCommentsToLayout] ⚠️ Skipped ticket ${row.ticketid} (${row.ticketcode}): comment "${comment}" should not be changed`);
+          
+          results.push({
+            ticketId: row.ticketid,
+            ticketCode: row.ticketcode,
+            permitId: row.permitid,
+            permitNumber: row.permitnumber,
+            expireDate: row.expiredate,
+            daysUntilExpiry: daysUntilExpiry,
+            oldComment: row.comment7d,
+            newComment: row.comment7d,
+            updated: false,
+            reason: `Skipped: Comment has status "${comment}" that should not be changed`,
+            location: row.location
+          });
+        }
+      }
+      
+      console.log(`[updateTicketCommentsToLayout] Completed: ${results.filter(r => r.updated).length} tickets updated to TK - LAYOUT`);
+      return results;
+    } catch (error) {
+      console.error('Error updating ticket comments to LAYOUT:', error);
+      throw error;
+    }
+  }
+
   // Combined method to update permit statuses and check for expiring permits
   static async updatePermitStatusesAndCheckExpiring(updatedBy) {
     try {
-      console.log('Starting comprehensive permit status and expiration check...');
       
       // First update permit statuses
       const statusResults = await this.updateAllPermitStatuses(updatedBy);
@@ -377,18 +646,23 @@ class RTR {
       // Then check for permits expiring within 7 days
       const expiringResults = await this.checkPermitsExpiringSoon(updatedBy);
       
+      // Then update tickets with valid permits to LAYOUT
+      const layoutResults = await this.updateTicketCommentsToLayout(updatedBy);
+      
       return {
         statusUpdates: statusResults,
         expiringChecks: expiringResults,
+        layoutUpdates: layoutResults,
         summary: {
           totalPermitsChecked: statusResults.length,
           permitsStatusUpdated: statusResults.filter(r => r.updated).length,
           totalTicketsChecked: expiringResults.length,
-          ticketsCommentUpdated: expiringResults.filter(r => r.updated).length
+          ticketsCommentUpdated: expiringResults.filter(r => r.updated).length,
+          totalTicketsUpdatedToLayout: layoutResults.length
         }
       };
     } catch (error) {
-      console.error('Error in comprehensive permit update:', error);
+      console.error('Error updating permit statuses and checking expiring:', error);
       throw error;
     }
   }
@@ -401,35 +675,46 @@ class RTR {
     return res.rows[0];
   }
 
-  static async findContractUnitByItemCode(itemCode) {
-    if (!itemCode) {
-      console.log(`findContractUnitByItemCode: itemCode is null/undefined`);
-      return null;
+  static async findPermitedTicket(permitId, ticketId) {
+    const res = await db.query(
+      'SELECT * FROM PermitedTickets WHERE permitId = $1 AND ticketId = $2 AND deletedAt IS NULL;',
+      [permitId, ticketId]
+    );
+    return res.rows[0];
+  }
+
+  static async findOrCreatePermitedTicket(permitId, ticketId, createdBy, updatedBy) {
+    // First try to find existing permitted ticket association
+    const existingPermitedTicket = await this.findPermitedTicket(permitId, ticketId);
+    
+    if (existingPermitedTicket) {
+      return existingPermitedTicket;
     }
     
-    console.log(`findContractUnitByItemCode: Searching for itemCode "${itemCode}"`);
+    // If not found, create new association
+    const newPermitedTicket = await this.createPermitedTicket(permitId, ticketId, createdBy, updatedBy);
+    return newPermitedTicket;
+  }
+
+  static async findContractUnitByItemCode(itemCode) {
+    if (!itemCode) {
+      return null;
+    }
     
     const res = await db.query(
       'SELECT contractUnitId, CostPerUnit FROM ContractUnits WHERE itemCode = $1 AND deletedAt IS NULL;', 
       [itemCode]
     );
     
-    console.log(`findContractUnitByItemCode: Query returned ${res.rows.length} rows`);
-    
     if (res.rows[0]) {
-      console.log(`findContractUnitByItemCode: Found row:`, res.rows[0]);
-      console.log(`findContractUnitByItemCode: contractUnitId = ${res.rows[0].contractunitid}, CostPerUnit = ${res.rows[0].costperunit}`);
       return {
         contractUnitId: res.rows[0].contractunitid,
         costPerUnit: res.rows[0].costperunit
       };
     }
     
-    console.log(`findContractUnitByItemCode: No ContractUnit found with itemCode "${itemCode}"`);
-    
     // Let's also check what ContractUnits exist in the database
     const allContractUnits = await db.query('SELECT contractUnitId, itemCode, CostPerUnit FROM ContractUnits WHERE deletedAt IS NULL LIMIT 5;');
-    console.log(`findContractUnitByItemCode: Available ContractUnits:`, allContractUnits.rows);
     
     return null;
   }
@@ -437,31 +722,18 @@ class RTR {
   static async processRTRData(data, createdBy, updatedBy) {
     const results = [];
     
-    console.log(`=== Starting RTR Data Processing ===`);
-    console.log(`Total rows to process: ${data.length}`);
-    console.log(`createdBy: ${createdBy}, updatedBy: ${updatedBy}`);
-    
     for (const row of data) {
       try {
-        console.log(`\n=== Processing Row ===`);
-        console.log(`Row data keys: ${Object.keys(row)}`);
-        console.log(`SAP_ITEM_NUM: ${row.SAP_ITEM_NUM}`);
-        console.log(`SQFT_QTY_RES: ${row.SQFT_QTY_RES} (type: ${typeof row.SQFT_QTY_RES})`);
-        console.log(`TASK_WO_NUM: ${row.TASK_WO_NUM}`);
-        console.log(`RESTN_WO_NUM: ${row.RESTN_WO_NUM}`);
         
         // Step 1: Create Incident
-        console.log(`Step 1: Creating incident with RESTN_WO_NUM: ${row.RESTN_WO_NUM}`);
         const incidentId = await this.createIncident(
           row.RESTN_WO_NUM,
           row.Earliest_Rpt_Dt,
           createdBy,
           updatedBy
         );
-        console.log(`Step 1 - Created Incident ID: ${incidentId}`);
 
         // Step 2: Create Wayfinding
-        console.log(`Step 2: Creating wayfinding with LOCATION2_RES: ${row.LOCATION2_RES}`);
         const wayfindingId = await this.createWayfinding(
           row.LOCATION2_RES,
           row.fromAddressNumber,
@@ -477,21 +749,15 @@ class RTR {
           createdBy,
           updatedBy
         );
-        console.log(`Step 2 - Created Wayfinding ID: ${wayfindingId}`);
 
         // Step 3: Find Quadrant (or create if doesn't exist)
-        console.log(`Step 3: Finding quadrant with SQ_MI: ${row.SQ_MI}`);
         const quadrantId = await this.findQuadrantByName(row.SQ_MI);
-        console.log(`Step 3 - Found Quadrant ID: ${quadrantId}`);
 
         // Step 4: Find ContractUnit by SAP_ITEM_NUM
-        console.log(`Step 4: Looking for ContractUnit with itemCode: "${row.SAP_ITEM_NUM}"`);
         const contractUnitData = await this.findContractUnitByItemCode(row.SAP_ITEM_NUM);
         const contractUnitId = contractUnitData ? contractUnitData.contractUnitId : null;
-        console.log(`Step 4 - ContractUnit result:`, contractUnitData);
         
         // Step 5: Calculate amountToPay
-        console.log(`Step 5: Calculating amountToPay`);
         let amountToPay = null;
         let quantity = row.SQFT_QTY_RES || 1; // Get quantity from SQFT_QTY_RES
         
@@ -500,38 +766,11 @@ class RTR {
           quantity = 1;
         }
         
-        console.log(`Step 5 - Raw SQFT_QTY_RES: ${row.SQFT_QTY_RES} (type: ${typeof row.SQFT_QTY_RES})`);
-        console.log(`Step 5 - Final quantity: ${quantity} (type: ${typeof quantity})`);
-        console.log(`Step 5 - ContractUnit data:`, contractUnitData);
-        
         if (contractUnitData && contractUnitData.costPerUnit && quantity) {
           amountToPay = contractUnitData.costPerUnit * quantity;
-          console.log(`Step 5 - Calculated amountToPay: ${contractUnitData.costPerUnit} * ${quantity} = ${amountToPay}`);
-        } else {
-          console.log(`Step 5 - Could not calculate amountToPay:`);
-          console.log(`  - contractUnitData exists: ${!!contractUnitData}`);
-          console.log(`  - costPerUnit: ${contractUnitData?.costPerUnit}`);
-          console.log(`  - quantity: ${quantity}`);
         }
 
         // Step 6: Create Ticket
-        console.log(`Step 6: Creating ticket with TASK_WO_NUM: ${row.TASK_WO_NUM}`);
-        console.log(`Step 6: Ticket parameters:`, {
-          incidentId,
-          quadrantId,
-          contractUnitId,
-          wayfindingId,
-          partnerComment: row['PGL ComD:Wments'],
-          comment7d: row['Contractor Comments'],
-          ticketCode: row.TASK_WO_NUM,
-          partnerSupervisorComment: row.NOTES2_RES,
-          ticketType: row.ticketType,
-          amountToPay,
-          quantity,
-          createdBy,
-          updatedBy
-        });
-        
         const ticketId = await this.createTicket(
           incidentId,
           quadrantId,
@@ -547,10 +786,41 @@ class RTR {
           createdBy,
           updatedBy
         );
-        console.log(`Step 6 - Created Ticket ID: ${ticketId}`);
+
+        // Step 6.5: Auto-correct comment7d based on permit expiration date
+        if (row['Contractor Comments'] && row.EXP_DATE) {
+          // Skip if comment contains "TK - COMPLETED" or any variant
+          if (row['Contractor Comments'].toLowerCase().includes('tk - completed')) {
+            console.log(`Skipping auto-correction for new ticket - ticket is completed`);
+            // Continue with normal processing without auto-correction
+          } else {
+            const currentDate = new Date();
+            currentDate.setHours(0, 0, 0, 0);
+            const expirationDate = new Date(row.EXP_DATE);
+            expirationDate.setHours(0, 0, 0, 0);
+            
+            const daysUntilExpiry = Math.ceil((expirationDate - currentDate) / (1000 * 60 * 60 * 24));
+            
+            // If permit is valid (more than 7 days away) but comment says it needs extension
+            if (daysUntilExpiry > 7 && row['Contractor Comments'].toLowerCase().includes('tk - needs permit extension')) {
+              await db.query(
+                'UPDATE Tickets SET comment7d = $1, updatedBy = $2 WHERE ticketId = $3;',
+                ['TK - LAYOUT', updatedBy, ticketId]
+              );
+              console.log(`Auto-corrected ticket ${ticketId} comment from "${row['Contractor Comments']}" to "TK - LAYOUT" (permit expires in ${daysUntilExpiry} days)`);
+            }
+            // If permit is expiring soon (≤ 7 days) but comment doesn't mention it
+            else if (daysUntilExpiry <= 7 && daysUntilExpiry >= 0 && !row['Contractor Comments'].toLowerCase().includes('tk - needs permit extension')) {
+              await db.query(
+                'UPDATE Tickets SET comment7d = $1, updatedBy = $2 WHERE ticketId = $3;',
+                ['TK - NEEDS PERMIT EXTENSION', updatedBy, ticketId]
+              );
+              console.log(`Auto-corrected ticket ${ticketId} comment to "TK - NEEDS PERMIT EXTENSION" (permit expires in ${daysUntilExpiry} days)`);
+            }
+          }
+        }
 
         // Step 7: Find or Create Address
-        console.log(`Step 7: Finding or creating address with ADDRESS: ${row.ADDRESS}`);
         const addressId = await this.findOrCreateAddress(
           row.addressNumber,
           row.addressCardinal,
@@ -559,10 +829,8 @@ class RTR {
           createdBy,
           updatedBy
         );
-        console.log(`Step 7 - Address ID: ${addressId}`);
 
         // Step 8: Find or Create TicketAddress
-        console.log(`Step 8: Finding or creating ticket address link`);
         await this.findOrCreateTicketAddress(
           ticketId,
           addressId,
@@ -571,14 +839,11 @@ class RTR {
           createdBy,
           updatedBy
         );
-        console.log(`Step 8 - TicketAddress link established`);
 
         // Step 9: Create Permit
-        console.log(`Step 9: Creating permit with AGENCY_NO: ${row.AGENCY_NO}`);
         const permitStatus = this.determinePermitStatus(row.EXP_DATE);
-        console.log(`Step 9 - Permit status determined: ${permitStatus} (expireDate: ${row.EXP_DATE})`);
         
-        const permitId = await this.createPermit(
+        const permitId = await this.findOrCreatePermit(
           row.AGENCY_NO,
           row.START_DATE,
           row.EXP_DATE,
@@ -586,12 +851,9 @@ class RTR {
           createdBy,
           updatedBy
         );
-        console.log(`Step 9 - Created Permit ID: ${permitId} with status: ${permitStatus}`);
 
         // Step 10: Create PermitedTicket
-        console.log(`Step 10: Creating permitted ticket link`);
-        await this.createPermitedTicket(permitId, ticketId, createdBy, updatedBy);
-        console.log(`Step 10 - Created PermitedTicket link`);
+        await this.findOrCreatePermitedTicket(permitId, ticketId, createdBy, updatedBy);
 
         const result = {
           success: true,
@@ -602,9 +864,6 @@ class RTR {
           permitId,
           message: 'Record created successfully'
         };
-        
-        console.log(`=== Row Processing Complete ===`);
-        console.log(`Final result:`, result);
         
         results.push(result);
 
@@ -627,11 +886,6 @@ class RTR {
       }
     }
 
-    console.log(`=== RTR Data Processing Complete ===`);
-    console.log(`Total results: ${results.length}`);
-    console.log(`Successful: ${results.filter(r => r.success).length}`);
-    console.log(`Failed: ${results.filter(r => !r.success).length}`);
-    
     return results;
   }
 
@@ -656,7 +910,6 @@ class RTR {
   // Method to generate TicketStatus records for a ticket based on its ContractUnit phases
   static async generateTicketStatusesForTicket(ticketId, updatedBy) {
     try {
-      console.log(`Generating TicketStatus records for ticket ${ticketId}...`);
       
       // First, get the ticket's contractUnitId and partnerComment
       const ticketRes = await db.query(
@@ -679,7 +932,6 @@ class RTR {
         );
       
       if (hasMobilizationInComment) {
-        console.log(`Ticket ${ticketId} has mobilization-related content in partnerComment: "${partnerComment}", skipping TicketStatus generation`);
         return {
           ticketId: ticketId,
           contractUnitId: contractUnitId,
@@ -691,7 +943,6 @@ class RTR {
       }
       
       if (!contractUnitId) {
-        console.log(`Ticket ${ticketId} has no ContractUnit assigned, skipping TicketStatus generation`);
         return {
           ticketId: ticketId,
           contractUnitId: null,
@@ -701,8 +952,6 @@ class RTR {
           reason: 'No ContractUnit assigned to ticket'
         };
       }
-      
-      console.log(`Ticket ${ticketId} has ContractUnit ${contractUnitId}`);
       
       // Check if ContractUnit name contains mobilization-related keywords
       const contractUnitRes = await db.query(
@@ -718,7 +967,6 @@ class RTR {
           );
         
         if (hasMobilizationInContractUnit) {
-          console.log(`Ticket ${ticketId} has ContractUnit with mobilization-related name: "${contractUnitName}", skipping TicketStatus generation`);
           return {
             ticketId: ticketId,
             contractUnitId: contractUnitId,
@@ -746,10 +994,7 @@ class RTR {
         [contractUnitId]
       );
       
-      console.log(`Found ${phasesRes.rows.length} phases for ContractUnit ${contractUnitId}`);
-      
       if (phasesRes.rows.length === 0) {
-        console.log(`No phases found for ContractUnit ${contractUnitId}, skipping TicketStatus generation`);
         return {
           ticketId: ticketId,
           contractUnitId: contractUnitId,
@@ -767,7 +1012,6 @@ class RTR {
       );
       
       const existingTaskStatusIds = existingStatusesRes.rows.map(row => row.taskstatusid);
-      console.log(`Existing TicketStatus records for ticket ${ticketId}: ${existingTaskStatusIds.length}`);
       
       const results = [];
       let createdCount = 0;
@@ -793,7 +1037,6 @@ class RTR {
             });
             
             createdCount++;
-            console.log(`Created TicketStatus for ticket ${ticketId}, taskStatus: ${phase.taskstatusname} (ID: ${phase.taskstatusid})`);
           } catch (insertError) {
             console.error(`Error creating TicketStatus for ticket ${ticketId}, taskStatus ${phase.taskstatusid}:`, insertError);
             results.push({
@@ -812,11 +1055,8 @@ class RTR {
             created: false,
             reason: 'TicketStatus already exists'
           });
-          console.log(`TicketStatus already exists for ticket ${ticketId}, taskStatus: ${phase.taskstatusname} (ID: ${phase.taskstatusid})`);
         }
       }
-      
-      console.log(`TicketStatus generation completed for ticket ${ticketId}: ${createdCount} new records created`);
       
       return {
         ticketId: ticketId,
@@ -836,20 +1076,18 @@ class RTR {
   // Method to generate TicketStatus records for multiple tickets
   static async generateTicketStatusesForTickets(ticketIds, updatedBy) {
     try {
-      console.log(`Generating TicketStatus records for ${ticketIds.length} tickets...`);
       
       const results = [];
       
       for (const ticketId of ticketIds) {
         try {
-          // First check if the ticket has comment7d as null or empty
+          // Check if the ticket exists (regardless of comment7d value)
           const ticketCheckRes = await db.query(
             'SELECT ticketId, comment7d FROM Tickets WHERE ticketId = $1 AND deletedAt IS NULL;',
             [ticketId]
           );
           
           if (ticketCheckRes.rows.length === 0) {
-            console.log(`Ticket ${ticketId} not found, skipping`);
             results.push({
               ticketId: ticketId,
               error: 'Ticket not found',
@@ -861,19 +1099,8 @@ class RTR {
           const ticket = ticketCheckRes.rows[0];
           const comment7d = ticket.comment7d;
           
-          // Only generate TicketStatus records if comment7d is null or empty
-          if (comment7d !== null && comment7d !== '' && comment7d !== undefined) {
-            console.log(`Ticket ${ticketId} has comment7d: "${comment7d}", skipping TicketStatus generation`);
-            results.push({
-              ticketId: ticketId,
-              comment7d: comment7d,
-              skipped: true,
-              reason: 'comment7d is not null or empty'
-            });
-            continue;
-          }
-          
-          console.log(`Ticket ${ticketId} has comment7d: "${comment7d}", proceeding with TicketStatus generation`);
+          // Generate TicketStatus records for any comment7d value
+          // (Removed restriction - now processes all tickets regardless of comment7d)
           
           const result = await this.generateTicketStatusesForTicket(ticketId, updatedBy);
           results.push(result);
@@ -896,8 +1123,6 @@ class RTR {
         totalPhasesFound: results.reduce((sum, r) => sum + (r.phasesFound || 0), 0),
         totalStatusesCreated: results.reduce((sum, r) => sum + (r.statusesCreated || 0), 0)
       };
-      
-      console.log(`TicketStatus generation completed for all tickets:`, summary);
       
       return {
         summary: summary,

@@ -80,9 +80,9 @@ router.post('/', RoutesController.createRoute);
  * @swagger
  * /routes:
  *   get:
- *     summary: Get all active routes
+ *     summary: Get all active routes with coordinates
  *     tags: [Routes]
- *     description: Retrieves all active routes regardless of their type. Returns routes ordered by creation date (newest first).
+ *     description: Retrieves all active routes regardless of their type with coordinates for Leaflet marker placement. Returns routes ordered by creation date (newest first).
  *     responses:
  *       200:
  *         description: Active routes retrieved successfully
@@ -143,6 +143,163 @@ router.post('/', RoutesController.createRoute);
  *         description: Server error
  */
 router.get('/', RoutesController.getAllActiveRoutes);
+
+/**
+ * @swagger
+ * /routes/all-with-polylines:
+ *   get:
+ *     summary: Get all routes with polylines and addresses for map display
+ *     tags: [Routes]
+ *     description: Retrieves ALL routes (including deleted ones) with their polylines and addresses. Perfect for displaying routes on a map with full route visualization capabilities.
+ *     responses:
+ *       200:
+ *         description: All routes with polylines and addresses retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "All routes with polylines and addresses retrieved successfully"
+ *                 count:
+ *                   type: integer
+ *                   description: Number of routes returned
+ *                   example: 25
+ *                 routes:
+ *                   type: array
+ *                   description: Array of route objects with polylines and addresses
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       routeId:
+ *                         type: integer
+ *                         description: Unique identifier for the route
+ *                         example: 1
+ *                       routeCode:
+ *                         type: string
+ *                         description: Route code/name
+ *                         example: "SPOTTER-2024-001"
+ *                       type:
+ *                         type: string
+ *                         description: Type of route
+ *                         example: "SPOTTER"
+ *                       startDate:
+ *                         type: string
+ *                         format: date
+ *                         description: Start date of the route
+ *                         example: "2024-06-01"
+ *                       endDate:
+ *                         type: string
+ *                         format: date
+ *                         description: End date of the route
+ *                         example: "2024-06-02"
+ *                       encodedPolyline:
+ *                         type: string
+ *                         description: Google Maps encoded polyline for route visualization
+ *                         example: "encoded_polyline_string_here"
+ *                       totalDistance:
+ *                         type: number
+ *                         description: Total distance in meters
+ *                         example: 15420.5
+ *                       totalDuration:
+ *                         type: number
+ *                         description: Total duration in seconds
+ *                         example: 1800
+ *                       optimizedOrder:
+ *                         type: array
+ *                         description: Optimized order of waypoints
+ *                         items:
+ *                           type: integer
+ *                         example: [0, 2, 1, 3, 4]
+ *                       optimizationMetadata:
+ *                         type: object
+ *                         description: Additional optimization data
+ *                         example: {"algorithm": "vroom", "version": "1.0"}
+ *                       createdAt:
+ *                         type: string
+ *                         format: date-time
+ *                         description: Route creation timestamp
+ *                         example: "2024-06-01T10:30:00Z"
+ *                       updatedAt:
+ *                         type: string
+ *                         format: date-time
+ *                         description: Last update timestamp
+ *                         example: "2024-06-01T10:30:00Z"
+ *                       deletedAt:
+ *                         type: string
+ *                         format: date-time
+ *                         description: Soft delete timestamp (null if active)
+ *                         example: null
+ *                       createdBy:
+ *                         type: integer
+ *                         description: User ID who created the route
+ *                         example: 1
+ *                       updatedBy:
+ *                         type: integer
+ *                         description: User ID who last updated the route
+ *                         example: 1
+ *                       tickets:
+ *                         type: array
+ *                         description: Array of tickets in this route with addresses and coordinates
+ *                         items:
+ *                           type: object
+ *                           properties:
+ *                             ticketId:
+ *                               type: integer
+ *                               description: Unique identifier for the ticket
+ *                               example: 101
+ *                             ticketCode:
+ *                               type: string
+ *                               description: Ticket code/name
+ *                               example: "TK6514243"
+ *                             address:
+ *                               type: string
+ *                               description: Address stored in RouteTickets
+ *                               example: "123 N Main St, Chicago, IL"
+ *                             fullAddress:
+ *                               type: string
+ *                               description: Full formatted address
+ *                               example: "123 N Main St, Chicago, IL"
+ *                             queue:
+ *                               type: integer
+ *                               description: Position in the optimized route order
+ *                               example: 0
+ *                             quantity:
+ *                               type: integer
+ *                               description: Quantity for this ticket
+ *                               example: 1
+ *                             amountToPay:
+ *                               type: number
+ *                               description: Amount to pay for this ticket
+ *                               example: 150.00
+ *                             comment7d:
+ *                               type: string
+ *                               description: 7D comment for this ticket
+ *                               example: "TK - ON LAYOUT"
+ *                             coordinates:
+ *                               type: object
+ *                               description: Geographic coordinates for Leaflet marker placement
+ *                               properties:
+ *                                 latitude:
+ *                                   type: number
+ *                                   description: Latitude coordinate
+ *                                   example: 41.8781
+ *                                 longitude:
+ *                                   type: number
+ *                                   description: Longitude coordinate
+ *                                   example: -87.6298
+ *                                 placeid:
+ *                                   type: string
+ *                                   description: Google Places ID (if available)
+ *                                   example: "ChIJN1t_tDeuEmsRUsoyG83frY4"
+ *                       addressCount:
+ *                         type: integer
+ *                         description: Number of addresses in this route
+ *                         example: 15
+ *       500:
+ *         description: Server error
+ */
 
 /**
  * @swagger
@@ -545,13 +702,325 @@ router.get('/asphalt', RoutesController.getAsphaltRoutes);
 
 /**
  * @swagger
+ * /routes/completed/spotting:
+ *   get:
+ *     summary: Get all completed spotting routes
+ *     tags: [Routes]
+ *     description: Retrieves all completed spotting routes (routes with endDate set). This shows routes that have been finished.
+ *     responses:
+ *       200:
+ *         description: Completed spotting routes retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Completed spotting routes retrieved successfully"
+ *                 type:
+ *                   type: string
+ *                   example: "SPOTTER"
+ *                 status:
+ *                   type: string
+ *                   example: "COMPLETED"
+ *                 count:
+ *                   type: integer
+ *                   description: Number of completed spotting routes returned
+ *                   example: 3
+ *                 routes:
+ *                   type: array
+ *                   description: Array of completed spotting route objects
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       routeId:
+ *                         type: integer
+ *                         description: Unique identifier for the route
+ *                         example: 1
+ *                       routeCode:
+ *                         type: string
+ *                         description: Route code/name
+ *                         example: "SPOTTER-2024-001"
+ *                       type:
+ *                         type: string
+ *                         description: Type of route
+ *                         example: "SPOTTER"
+ *                       startDate:
+ *                         type: string
+ *                         format: date
+ *                         description: Start date of the route
+ *                         example: "2024-06-01"
+ *                       endDate:
+ *                         type: string
+ *                         format: date
+ *                         description: End date of the route (completion date)
+ *                         example: "2024-06-02"
+ *                       totalDistance:
+ *                         type: number
+ *                         description: Total distance in meters
+ *                         example: 15420.5
+ *                       totalDuration:
+ *                         type: number
+ *                         description: Total duration in seconds
+ *                         example: 1800
+ *                       createdAt:
+ *                         type: string
+ *                         format: date-time
+ *                         description: Route creation timestamp
+ *                         example: "2024-06-01T10:30:00Z"
+ *                       tickets:
+ *                         type: array
+ *                         description: Array of tickets associated with this route
+ *                         items:
+ *                           type: object
+ *                           properties:
+ *                             ticketId:
+ *                               type: integer
+ *                               description: Unique identifier for the ticket
+ *                               example: 101
+ *                             ticketCode:
+ *                               type: string
+ *                               description: Ticket code/name
+ *                               example: "TICKET-001"
+ *                             address:
+ *                               type: string
+ *                               description: Full address of the ticket location
+ *                               example: "123 Main St, Chicago, IL"
+ *                             queue:
+ *                               type: integer
+ *                               description: Position in the optimized route order
+ *                               example: 0
+ *                             quantity:
+ *                               type: integer
+ *                               description: Quantity for this ticket
+ *                               example: 1
+ *                             amountToPay:
+ *                               type: number
+ *                               description: Amount to pay for this ticket
+ *                               example: 150.00
+ *       500:
+ *         description: Server error
+ */
+router.get('/completed/spotting', RoutesController.getCompletedSpottingRoutes);
+
+/**
+ * @swagger
+ * /routes/completed/concrete:
+ *   get:
+ *     summary: Get all completed concrete routes
+ *     tags: [Routes]
+ *     description: Retrieves all completed concrete routes (routes with endDate set). This shows routes that have been finished.
+ *     responses:
+ *       200:
+ *         description: Completed concrete routes retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Completed concrete routes retrieved successfully"
+ *                 type:
+ *                   type: string
+ *                   example: "CONCRETE"
+ *                 status:
+ *                   type: string
+ *                   example: "COMPLETED"
+ *                 count:
+ *                   type: integer
+ *                   description: Number of completed concrete routes returned
+ *                   example: 2
+ *                 routes:
+ *                   type: array
+ *                   description: Array of completed concrete route objects
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       routeId:
+ *                         type: integer
+ *                         description: Unique identifier for the route
+ *                         example: 1
+ *                       routeCode:
+ *                         type: string
+ *                         description: Route code/name
+ *                         example: "CONCRETE-2024-001"
+ *                       type:
+ *                         type: string
+ *                         description: Type of route
+ *                         example: "CONCRETE"
+ *                       startDate:
+ *                         type: string
+ *                         format: date
+ *                         description: Start date of the route
+ *                         example: "2024-06-01"
+ *                       endDate:
+ *                         type: string
+ *                         format: date
+ *                         description: End date of the route (completion date)
+ *                         example: "2024-06-02"
+ *                       totalDistance:
+ *                         type: number
+ *                         description: Total distance in meters
+ *                         example: 15420.5
+ *                       totalDuration:
+ *                         type: number
+ *                         description: Total duration in seconds
+ *                         example: 1800
+ *                       createdAt:
+ *                         type: string
+ *                         format: date-time
+ *                         description: Route creation timestamp
+ *                         example: "2024-06-01T10:30:00Z"
+ *                       tickets:
+ *                         type: array
+ *                         description: Array of tickets associated with this route
+ *                         items:
+ *                           type: object
+ *                           properties:
+ *                             ticketId:
+ *                               type: integer
+ *                               description: Unique identifier for the ticket
+ *                               example: 101
+ *                             ticketCode:
+ *                               type: string
+ *                               description: Ticket code/name
+ *                               example: "TICKET-001"
+ *                             address:
+ *                               type: string
+ *                               description: Full address of the ticket location
+ *                               example: "123 Main St, Chicago, IL"
+ *                             queue:
+ *                               type: integer
+ *                               description: Position in the optimized route order
+ *                               example: 0
+ *                             quantity:
+ *                               type: integer
+ *                               description: Quantity for this ticket
+ *                               example: 1
+ *                             amountToPay:
+ *                               type: number
+ *                               description: Amount to pay for this ticket
+ *                               example: 150.00
+ *       500:
+ *         description: Server error
+ */
+router.get('/completed/concrete', RoutesController.getCompletedConcreteRoutes);
+
+/**
+ * @swagger
+ * /routes/completed/asphalt:
+ *   get:
+ *     summary: Get all completed asphalt routes
+ *     tags: [Routes]
+ *     description: Retrieves all completed asphalt routes (routes with endDate set). This shows routes that have been finished.
+ *     responses:
+ *       200:
+ *         description: Completed asphalt routes retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Completed asphalt routes retrieved successfully"
+ *                 type:
+ *                   type: string
+ *                   example: "ASPHALT"
+ *                 status:
+ *                   type: string
+ *                   example: "COMPLETED"
+ *                 count:
+ *                   type: integer
+ *                   description: Number of completed asphalt routes returned
+ *                   example: 1
+ *                 routes:
+ *                   type: array
+ *                   description: Array of completed asphalt route objects
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       routeId:
+ *                         type: integer
+ *                         description: Unique identifier for the route
+ *                         example: 1
+ *                       routeCode:
+ *                         type: string
+ *                         description: Route code/name
+ *                         example: "ASPHALT-2024-001"
+ *                       type:
+ *                         type: string
+ *                         description: Type of route
+ *                         example: "ASPHALT"
+ *                       startDate:
+ *                         type: string
+ *                         format: date
+ *                         description: Start date of the route
+ *                         example: "2024-06-01"
+ *                       endDate:
+ *                         type: string
+ *                         format: date
+ *                         description: End date of the route (completion date)
+ *                         example: "2024-06-02"
+ *                       totalDistance:
+ *                         type: number
+ *                         description: Total distance in meters
+ *                         example: 15420.5
+ *                       totalDuration:
+ *                         type: number
+ *                         description: Total duration in seconds
+ *                         example: 1800
+ *                       createdAt:
+ *                         type: string
+ *                         format: date-time
+ *                         description: Route creation timestamp
+ *                         example: "2024-06-01T10:30:00Z"
+ *                       tickets:
+ *                         type: array
+ *                         description: Array of tickets associated with this route
+ *                         items:
+ *                           type: object
+ *                           properties:
+ *                             ticketId:
+ *                               type: integer
+ *                               description: Unique identifier for the ticket
+ *                               example: 101
+ *                             ticketCode:
+ *                               type: string
+ *                               description: Ticket code/name
+ *                               example: "TICKET-001"
+ *                             address:
+ *                               type: string
+ *                               description: Full address of the ticket location
+ *                               example: "123 Main St, Chicago, IL"
+ *                             queue:
+ *                               type: integer
+ *                               description: Position in the optimized route order
+ *                               example: 0
+ *                             quantity:
+ *                               type: integer
+ *                               description: Quantity for this ticket
+ *                               example: 1
+ *                             amountToPay:
+ *                               type: number
+ *                               description: Amount to pay for this ticket
+ *                               example: 150.00
+ *       500:
+ *         description: Server error
+ */
+router.get('/completed/asphalt', RoutesController.getCompletedAsphaltRoutes);
+
+/**
+ * @swagger
  * /routes/tickets-ready/spotting:
  *   get:
  *     summary: Get tickets ready for spotting routes
  *     tags: [Routes]
  *     description: |
  *       Retrieves all tickets that are ready for spotting route optimization, including their addresses. 
- *       These tickets meet the criteria: comment7d is NULL, empty, or TK - PERMIT EXTENDED, and no endingDate for SPOTTING status.
+ *       These tickets meet the criteria: comment7d is NULL, empty, TK - PERMIT EXTENDED, TK - LAYOUT, or TK - LAY OUT, and no endingDate for SPOTTING status.
  *     responses:
  *       200:
  *         description: Tickets ready for spotting routes retrieved successfully
@@ -573,7 +1042,7 @@ router.get('/asphalt', RoutesController.getAsphaltRoutes);
  *                 criteria:
  *                   type: string
  *                   description: Selection criteria used
- *                   example: "comment7d is NULL, empty, or TK - PERMIT EXTENDED, and no endingDate for SPOTTING status"
+ *                   example: "comment7d is NULL, empty, TK - PERMIT EXTENDED, TK - LAYOUT, or TK - LAY OUT, and no endingDate for SPOTTING status"
  *                 tickets:
  *                   type: array
  *                   description: Array of tickets ready for spotting routes
@@ -765,7 +1234,7 @@ router.get('/tickets-ready/concrete', RoutesController.getTicketsReadyForConcret
  *                 criteria:
  *                   type: string
  *                   description: Selection criteria used
- *                   example: "SPOTTING completed and either has GRINDING status (no SAWCUT) OR all concrete phases completed"
+ *                   example: "SPOTTING completed and either has GRINDING status (no SAWCUT) OR all concrete phases completed (SAWCUT, REMOVAL, FRAMING, POURING)"
  *                 tickets:
  *                   type: array
  *                   description: Array of tickets ready for asphalt routes
@@ -865,7 +1334,7 @@ router.get('/test', RoutesController.testRoutesTable);
  * @swagger
  * /routes/{routeId}:
  *   get:
- *     summary: Get a route record by ID
+ *     summary: Get a route record by ID with coordinates
  *     tags: [Routes]
  *     parameters:
  *       - in: path
@@ -876,7 +1345,7 @@ router.get('/test', RoutesController.testRoutesTable);
  *         description: The ID of the route.
  *     responses:
  *       200:
- *         description: Route record found.
+ *         description: Route record found with coordinates for Leaflet markers.
  *         content:
  *           application/json:
  *             schema:
@@ -888,11 +1357,42 @@ router.get('/test', RoutesController.testRoutesTable);
  *                 routeCode:
  *                   type: string
  *                   example: 'ROUTE001'
+ *                 tickets:
+ *                   type: array
+ *                   description: Array of tickets with coordinates for map display
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       ticketId:
+ *                         type: integer
+ *                         example: 101
+ *                       ticketCode:
+ *                         type: string
+ *                         example: "TK6514243"
+ *                       address:
+ *                         type: string
+ *                         example: "123 N Main St, Chicago, IL"
+ *                       coordinates:
+ *                         type: object
+ *                         description: Geographic coordinates for Leaflet marker placement
+ *                         properties:
+ *                           latitude:
+ *                             type: number
+ *                             example: 41.8781
+ *                           longitude:
+ *                             type: number
+ *                             example: -87.6298
+ *                           placeid:
+ *                             type: string
+ *                             example: "ChIJN1t_tDeuEmsRUsoyG83frY4"
  *       404:
  *         description: Route not found
  *       500:
  *         description: Server error
  */
+// Specific routes must come before parameterized routes
+router.get('/all-with-polylines', RoutesController.getAllRoutesWithPolylinesAndAddresses);
+
 router.get('/:routeId', RoutesController.getRouteById);
 
 /**
@@ -1136,7 +1636,7 @@ router.post('/optimize', RoutesController.optimizeRoute);
  *   post:
  *     summary: Optimize and create a spotting route
  *     tags: [Routes]
- *     description: Creates an optimized route for spotter teams. Automatically selects tickets where comment7d is NULL, empty, or TK - PERMIT EXTENDED, and the ticket has no endingDate for its SPOTTING status. If originAddress and destinationAddress are not provided, they will default to "2000 W 43rd St, Chicago, IL 60609, Estados Unidos".
+ *     description: Creates an optimized route for spotter teams. Automatically selects tickets where comment7d is NULL, empty, TK - PERMIT EXTENDED, TK - LAYOUT, or TK - LAY OUT, and the ticket has no endingDate for its SPOTTING status. If originAddress and destinationAddress are not provided, they will default to "2000 W 43rd St, Chicago, IL 60609, Estados Unidos".
  *     requestBody:
  *       required: true
  *       content:
@@ -1248,7 +1748,7 @@ router.post('/optimize', RoutesController.optimizeRoute);
  *                   example: "No tickets found for spotting routes"
  *                 criteria:
  *                   type: string
- *                   example: "comment7d is NULL, empty, or TK - PERMIT EXTENDED, and no endingDate for SPOTTING status"
+ *                   example: "comment7d is NULL, empty, TK - PERMIT EXTENDED, TK - LAYOUT, or TK - LAY OUT, and no endingDate for SPOTTING status"
  *       500:
  *         description: Server error
  */

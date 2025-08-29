@@ -11,6 +11,8 @@ const router = express.Router();
  *   name: Photo Evidence
  *   description: Managing photo evidence for ticket statuses
  */
+router.get('/ticket/:ticketId', PhotoEvidenceController.getPhotoEvidenceByTicketId);
+router.get('/:photoId/file', PhotoEvidenceController.downloadPhotoFile);
 
 /**
  * @swagger
@@ -64,7 +66,7 @@ const router = express.Router();
  *       500:
  *         description: Error creating PhotoEvidence
  */
-router.post('/', upload.single('file'), PhotoEvidenceController.createPhotoEvidence);
+router.post('/',  upload.array('file', 5), PhotoEvidenceController.createPhotoEvidence);
 
 /**
  * @swagger

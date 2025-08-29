@@ -19,6 +19,12 @@ class Payments {
     return res.rows;
   }
 
+  // Find payment by payment number
+  static async findByPaymentNumber(paymentNumber) {
+    const res = await db.query('SELECT * FROM Payments WHERE paymentNumber = $1 AND deletedAt IS NULL;', [paymentNumber]);
+    return res.rows[0];
+  }
+
   static async update(checkId, paymentNumber, datePaid, amountPaid, status, paymentURL, updatedBy) {
     const res = await db.query(
       'UPDATE Payments SET paymentNumber = $1, datePaid = $2, amountPaid = $3, status = $4, paymentURL = $5, updatedAt = CURRENT_TIMESTAMP, updatedBy = $6 WHERE checkId = $7 AND deletedAt IS NULL RETURNING *;',
@@ -30,6 +36,28 @@ class Payments {
   static async delete(checkId) {
     const res = await db.query('UPDATE Payments SET deletedAt = CURRENT_TIMESTAMP WHERE checkId = $1 AND deletedAt IS NULL RETURNING *;', [checkId]);
     return res.rows[0];
+  }
+
+  static async getPaymentInvoiceTicketInfo() {
+    const query = `
+      SELECT 
+        p.paymentNumber,
+        p.amountPaid,
+        i.invoiceNumber,
+        i.amountRequested,
+        t.amountToPay,
+        t.calculatedCost,
+        t.ticketCode
+      FROM Payments p
+      LEFT JOIN Tickets t ON p.checkId = t.paymentId
+      LEFT JOIN Invoices i ON t.ticketId = i.ticketId
+      WHERE p.deletedAt IS NULL 
+        AND (t.deletedAt IS NULL OR t.deletedAt IS NULL)
+        AND (i.deletedAt IS NULL OR i.deletedAt IS NULL)
+      ORDER BY p.checkId, t.ticketId, i.invoiceId;
+    `;
+    const res = await db.query(query);
+    return res.rows;
   }
 }
 
