@@ -1,7 +1,6 @@
 const express = require('express');
-const DiggersController = require('../../controllers/permissions/DiggersController');
-
 const router = express.Router();
+const DiggersController = require('../../controllers/permissions/DiggersController');
 
 /**
  * @swagger
@@ -248,5 +247,11 @@ router.put('/:diggerId', DiggersController.updateDigger);
  *         description: Server error
  */
 router.delete('/:diggerId', DiggersController.deleteDigger);
+
+// Update watchnProtect by ticket ID
+router.patch('/ticket/:ticketId/watchn-protect', DiggersController.updateWatchnProtectByTicketId);
+
+// Get digger information by ticket ID
+router.get('/ticket/:ticketId', DiggersController.getDiggerByTicketId);
 
 module.exports = router; 

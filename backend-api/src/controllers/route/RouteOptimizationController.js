@@ -558,10 +558,10 @@ const RouteOptimizationController = {
         });
       }
 
-      if (route.type !== 'SPOTTING') {
+      if (route.type !== 'SPOTTER') {
         return res.status(400).json({
           success: false,
-          error: `Route ${routeId} is not a SPOTTING route. Route type: ${route.type}`
+          error: `Route ${routeId} is not a SPOTTER route. Route type: ${route.type}`
         });
       }
 
@@ -684,10 +684,10 @@ const RouteOptimizationController = {
           success: false,
           error: `Use /complete-concrete endpoint for CONCRETE routes. Route type: ${route.type}`
         });
-      } else if (route.type === 'SPOTTING') {
+      } else if (route.type === 'SPOTTER') {
         return res.status(400).json({
           success: false,
-          error: `Use /complete-spotting endpoint for SPOTTING routes. Route type: ${route.type}`
+          error: `Use /complete-spotting endpoint for SPOTTER routes. Route type: ${route.type}`
         });
       } else if (route.type === 'ASPHALT') {
         return res.status(400).json({

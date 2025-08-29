@@ -31,6 +31,14 @@ class Diggers {
     const res = await db.query('UPDATE Diggers SET deletedAt = CURRENT_TIMESTAMP WHERE diggerId = $1 AND deletedAt IS NULL RETURNING *;', [diggerId]);
     return res.rows[0];
   }
+
+  static async updateWatchnProtect(diggerId, watchnProtect, updatedBy) {
+    const result = await db.query(
+      'UPDATE Diggers SET watchnProtect = $1, updatedBy = $2, updatedAt = CURRENT_TIMESTAMP WHERE diggerId = $3 AND deletedAt IS NULL RETURNING *',
+      [watchnProtect, updatedBy, diggerId]
+    );
+    return result.rows[0];
+  }
 }
 
 module.exports = Diggers; 
