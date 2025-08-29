@@ -1811,20 +1811,37 @@ class RouteOptimizationService {
                 throw new Error(`No tickets found in route ${routeId}`);
             }
 
-            // Get ticket details with addresses
+            // Get ticket details with addresses using the same logic as optimizeRouteWithTickets
             const ticketIds = routeTickets.map(rt => rt.ticketid);
-            const ticketsWithAddresses = await this.getTicketsWithAddressesBatch(ticketIds);
+            const ticketsWithAddresses = await this.getTicketsWithAddressesBatch(ticketIds, {
+                autoSuggest: false, // Disable auto-suggest for reoptimization to avoid double geocoding
+                minConfidence: 0.8
+            });
 
             if (ticketsWithAddresses.length === 0) {
                 throw new Error('No valid addresses found for route optimization');
             }
 
-            // Optimize the route with existing tickets
-            const addressesToOptimize = ticketsWithAddresses.map(t => t.address);
+            // Deduplicate addresses to optimize API calls (same logic as optimizeRouteWithTickets)
+            const addressToTicketsMap = new Map(); // address -> array of tickets
+            const uniqueAddresses = []; // array of unique addresses for API call
+            
+            for (const ticket of ticketsWithAddresses) {
+                const address = ticket.address;
+                if (!addressToTicketsMap.has(address)) {
+                    addressToTicketsMap.set(address, []);
+                    uniqueAddresses.push(address);
+                }
+                addressToTicketsMap.get(address).push(ticket);
+            }
+
+            console.log(`Reoptimizing route ${routeId}: ${ticketsWithAddresses.length} tickets deduplicated to ${uniqueAddresses.length} unique addresses`);
+
+            // Optimize the route with unique addresses only
             const optimizedRouteResult = await this.optimizeRoute(
                 originAddress,
                 destinationAddress,
-                addressesToOptimize
+                uniqueAddresses
             );
 
             // Update route with new optimization data
@@ -1837,33 +1854,66 @@ class RouteOptimizationService {
                 updatedBy
             );
 
-            // Update ticket queue positions based on optimization
-            // Add safety check to ensure optimizedOrder indices are valid
-            const reorderedTickets = optimizedRouteResult.optimizedOrder
-                .map((originalIndex, queuePosition) => {
-                    // Check if the originalIndex is valid
-                    if (originalIndex >= 0 && originalIndex < ticketsWithAddresses.length) {
-                        return {
-                            ticketId: ticketsWithAddresses[originalIndex].ticketid,
-                            queue: queuePosition
-                        };
-                    } else {
-                        console.warn(`Invalid optimizedOrder index: ${originalIndex} for queue position ${queuePosition}`);
-                        return null;
-                    }
-                })
-                .filter(ticket => ticket !== null); // Remove any null entries
+            // Map optimized order back to all tickets with proper queue positions
+            let optimizedOrder = optimizedRouteResult.optimizedOrder || [];
+            
+            // If there's only one address and no optimized order, create a default order
+            if (uniqueAddresses.length === 1 && optimizedOrder.length === 0) {
+                optimizedOrder = [0];
+                console.log('Single address detected, using default order [0]');
+            }
+            
+            // Validate that optimizedOrder has valid indices
+            if (optimizedOrder.length !== uniqueAddresses.length) {
+                console.warn(`Optimized order length (${optimizedOrder.length}) doesn't match unique addresses length (${uniqueAddresses.length}), using sequential order`);
+                optimizedOrder = Array.from({ length: uniqueAddresses.length }, (_, i) => i);
+            }
 
+            // Create final ticket order with queue positions (same logic as optimizeRouteWithTickets)
+            const reorderedTickets = [];
+            let globalQueuePosition = 0;
+
+            // Process addresses in optimized order
+            for (let addressIndex = 0; addressIndex < optimizedOrder.length; addressIndex++) {
+                const originalAddressIndex = optimizedOrder[addressIndex];
+                
+                // Validate that originalAddressIndex is within bounds
+                if (originalAddressIndex < 0 || originalAddressIndex >= uniqueAddresses.length) {
+                    console.warn(`Invalid optimizedOrder index: ${originalAddressIndex}, skipping`);
+                    continue;
+                }
+                
+                const address = uniqueAddresses[originalAddressIndex];
+                const ticketsAtThisAddress = addressToTicketsMap.get(address);
+                
+                // Assign sequential queue positions to all tickets at this address
+                for (const ticket of ticketsAtThisAddress) {
+                    reorderedTickets.push({
+                        ticketId: ticket.ticketid,
+                        queue: globalQueuePosition++
+                    });
+                }
+            }
+
+            // Update ticket queue positions based on optimization
             for (const ticket of reorderedTickets) {
                 await RouteTickets.updateQueue(routeId, ticket.ticketId, ticket.queue, updatedBy);
             }
+
+            console.log(`Route ${routeId} re-optimized successfully: ${reorderedTickets.length} tickets with ${uniqueAddresses.length} unique addresses`);
 
             return {
                 routeId: routeId,
                 message: 'Route re-optimized successfully',
                 totalDistance: optimizedRouteResult.totalDistance,
                 totalDuration: optimizedRouteResult.totalDuration,
-                totalTickets: ticketsWithAddresses.length
+                totalTickets: reorderedTickets.length,
+                uniqueAddresses: uniqueAddresses.length,
+                addressDeduplication: {
+                    originalTickets: ticketsWithAddresses.length,
+                    uniqueAddresses: uniqueAddresses.length,
+                    savings: ticketsWithAddresses.length - uniqueAddresses.length
+                }
             };
 
         } catch (error) {
