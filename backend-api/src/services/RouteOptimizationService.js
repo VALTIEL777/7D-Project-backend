@@ -2465,14 +2465,18 @@ class RouteOptimizationService {
     }
 
     /**
-     * Generate a proper route code with sequential numbering
+     * Generate a proper route code with sequential numbering and date
      * @param {string} type - Route type (e.g., 'SPOTTER', 'CONCRETE', 'ASPHALT', 'default')
-     * @returns {Promise<string>} - Generated route code like 'ROUTE-001', 'SPOT-2024-001', etc.
+     * @returns {Promise<string>} - Generated route code like 'ROUTE-001-2024-12-25', 'SPOT-2024-001-2024-12-25', etc.
      */
     async generateRouteCode(type = 'default') {
         try {
-            // Get the current year
-            const currentYear = new Date().getFullYear();
+            // Get the current date components
+            const now = new Date();
+            const currentYear = now.getFullYear();
+            const currentMonth = (now.getMonth() + 1).toString().padStart(2, '0');
+            const currentDay = now.getDate().toString().padStart(2, '0');
+            const dateString = `${currentYear}-${currentMonth}-${currentDay}`;
             
             // Get the next route number for this type and year
             const nextNumber = await this.getNextRouteNumber(type, currentYear);
@@ -2480,22 +2484,24 @@ class RouteOptimizationService {
             // Format the number with leading zeros (3 digits)
             const formattedNumber = nextNumber.toString().padStart(3, '0');
             
-            // Generate route code based on type using abbreviated codes
+            // Generate route code based on type using abbreviated codes with date
             if (type.toUpperCase() === 'SPOTTER') {
-                return `SPOT-${currentYear}-${formattedNumber}`;
+                return `SPOT-${currentYear}-${formattedNumber}-${dateString}`;
             } else if (type.toUpperCase() === 'CONCRETE') {
-                return `CONC-${currentYear}-${formattedNumber}`;
+                return `CONC-${currentYear}-${formattedNumber}-${dateString}`;
             } else if (type.toUpperCase() === 'ASPHALT') {
-                return `ASP-${currentYear}-${formattedNumber}`;
+                return `ASP-${currentYear}-${formattedNumber}-${dateString}`;
             } else {
-                return `ROUTE-${formattedNumber}`;
+                return `ROUTE-${formattedNumber}-${dateString}`;
             }
         } catch (error) {
             console.error('Error generating route code:', error);
-            // Better fallback - use random number instead of timestamp
+            // Better fallback - use random number and current date
+            const now = new Date();
+            const fallbackDate = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
             const fallbackNumber = Math.floor(Math.random() * 999) + 1;
             const formattedFallback = fallbackNumber.toString().padStart(3, '0');
-            return `ROUTE-${formattedFallback}`;
+            return `ROUTE-${formattedFallback}-${fallbackDate}`;
         }
     }
 
