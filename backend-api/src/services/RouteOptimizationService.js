@@ -3199,7 +3199,7 @@ class RouteOptimizationService {
     }
 
     /**
-     * Complete a concrete route by completing the current phase and moving to the next phase
+     * Complete a concrete route by completing ALL incomplete phases at once
      * @param {number} routeId - Route ID
      * @param {Array<number>} ticketIds - Array of ticket IDs in the route
      * @param {number} updatedBy - User ID
@@ -3215,85 +3215,24 @@ class RouteOptimizationService {
             try {
                 await client.query('BEGIN');
 
-                // Get the current phase for each ticket and complete it, then move to next phase
-                let completedPhases = 0;
-                let movedToNextPhase = 0;
+                // Complete ALL incomplete phases for all tickets at once
+                const phasesCompletedResult = await client.query(`
+                    UPDATE TicketStatus 
+                    SET endingDate = CURRENT_TIMESTAMP, 
+                        updatedAt = CURRENT_TIMESTAMP, 
+                        updatedBy = $1 
+                    WHERE ticketId = ANY($2) 
+                        AND endingDate IS NULL
+                        AND deletedAt IS NULL
+                        AND taskStatusId IN (
+                            SELECT taskStatusId FROM TaskStatus 
+                            WHERE name IN ('Sawcut', 'Removal', 'Framing', 'Pour', 'Clean') 
+                            AND deletedAt IS NULL
+                        )
+                    RETURNING taskStatusId, ticketId, endingDate
+                `, [updatedBy, ticketIds]);
 
-                for (const ticketId of ticketIds) {
-                    // Get current incomplete phases for this ticket
-                    const currentPhasesResult = await client.query(`
-                        SELECT 
-                            tks.taskStatusId,
-                            tks.ticketId,
-                            ts.name as taskName,
-                            tks.startingDate,
-                            tks.endingDate
-                        FROM TicketStatus tks
-                        JOIN TaskStatus ts ON tks.taskStatusId = ts.taskStatusId
-                        WHERE tks.ticketId = $1
-                        AND tks.endingDate IS NULL
-                        AND tks.deletedAt IS NULL
-                        AND ts.deletedAt IS NULL
-                        AND ts.name IN ('Sawcut', 'Removal', 'Framing', 'Pour', 'Clean')
-                        ORDER BY 
-                            CASE ts.name
-                                WHEN 'Sawcut' THEN 1
-                                WHEN 'Removal' THEN 2
-                                WHEN 'Framing' THEN 3
-                                WHEN 'Pour' THEN 4
-                                WHEN 'Clean' THEN 5
-                                ELSE 6
-                            END
-                        LIMIT 1
-                    `, [ticketId]);
-
-                    if (currentPhasesResult.rows.length > 0) {
-                        const currentPhase = currentPhasesResult.rows[0];
-                        
-                        // Complete the current phase
-                        await client.query(`
-                            UPDATE TicketStatus 
-                            SET endingDate = CURRENT_TIMESTAMP, 
-                                updatedAt = CURRENT_TIMESTAMP, 
-                                updatedBy = $1 
-                            WHERE taskStatusId = $2 
-                                AND ticketId = $3
-                                AND deletedAt IS NULL
-                        `, [updatedBy, currentPhase.taskStatusId, ticketId]);
-
-                        completedPhases++;
-
-                        // Check if there's a next phase to start
-                        const nextPhaseName = this.getNextPhaseName(currentPhase.taskName);
-                        if (nextPhaseName) {
-                            // Get the taskStatusId for the next phase
-                            const nextPhaseResult = await client.query(`
-                                SELECT taskStatusId FROM TaskStatus 
-                                WHERE name = $1 AND deletedAt IS NULL
-                            `, [nextPhaseName]);
-
-                            if (nextPhaseResult.rows.length > 0) {
-                                const nextTaskStatusId = nextPhaseResult.rows[0].taskStatusId;
-                                
-                                // Check if this phase already exists for this ticket
-                                const existingPhaseResult = await client.query(`
-                                    SELECT taskStatusId FROM TicketStatus 
-                                    WHERE ticketId = $1 AND taskStatusId = $2 AND deletedAt IS NULL
-                                `, [ticketId, nextTaskStatusId]);
-
-                                if (existingPhaseResult.rows.length === 0) {
-                                    // Create the next phase
-                                    await client.query(`
-                                        INSERT INTO TicketStatus (taskStatusId, ticketId, startingDate, createdAt, updatedAt, createdBy, updatedBy)
-                                        VALUES ($1, $2, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, $3, $3)
-                                    `, [nextTaskStatusId, ticketId, updatedBy]);
-                                    
-                                    movedToNextPhase++;
-                                }
-                            }
-                        }
-                    }
-                }
+                const totalPhasesCompleted = phasesCompletedResult.rows.length;
 
                 // Update the route's endDate to current timestamp (mark as completed)
                 const routeResult = await client.query(`
@@ -3308,13 +3247,12 @@ class RouteOptimizationService {
 
                 await client.query('COMMIT');
 
-                console.log(`Completed concrete route ${routeId}: ${completedPhases} phases completed, ${movedToNextPhase} moved to next phase`);
+                console.log(`Completed concrete route ${routeId}: ${totalPhasesCompleted} phases completed for all tickets`);
 
                 return {
                     routeId: routeId,
-                    message: `Concrete route completed successfully. Completed ${completedPhases} phases, moved ${movedToNextPhase} to next phase.`,
-                    completedPhases: completedPhases,
-                    movedToNextPhase: movedToNextPhase,
+                    message: `Concrete route completed successfully. Completed ${totalPhasesCompleted} phases for all tickets.`,
+                    totalPhasesCompleted: totalPhasesCompleted,
                     totalTickets: ticketIds.length,
                     routeUpdated: routeResult.rows.length > 0,
                     completionTimestamp: new Date().toISOString()
