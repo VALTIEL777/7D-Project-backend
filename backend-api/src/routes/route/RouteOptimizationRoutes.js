@@ -128,6 +128,34 @@ router.post('/route/:routeId/complete', RouteOptimizationController.completeRout
  */
 router.get('/route/:routeId/details', RouteOptimizationController.getRouteDetails);
 
+/**
+ * @route GET /api/route-optimization/validate-routes
+ * @desc Check all active routes for tickets that should be removed
+ * @access Private (assuming you have auth middleware)
+ */
+router.get('/validate-routes', RouteOptimizationController.validateRoutes);
+
+/**
+ * @route POST /api/route-optimization/cleanup-routes
+ * @desc Remove tickets from routes that are cancelled, on hold, or have expired permits
+ * @access Private (assuming you have auth middleware)
+ */
+router.post('/cleanup-routes', RouteOptimizationController.cleanupRoutes);
+
+/**
+ * @route POST /api/route-optimization/validate-and-cleanup
+ * @desc Check all routes and automatically remove invalid tickets
+ * @access Private (assuming you have auth middleware)
+ */
+router.post('/validate-and-cleanup', RouteOptimizationController.validateAndCleanup);
+
+/**
+ * @route GET /api/route-optimization/validation-status
+ * @desc Get current status of route validation (for monitoring)
+ * @access Private (assuming you have auth middleware)
+ */
+router.get('/validation-status', RouteOptimizationController.getValidationStatus);
+
 // Removed the /optimize-latlng route as it's no longer needed.
 // The main /optimize endpoint now handles address-based input with internal geocoding.
 

@@ -936,6 +936,154 @@ const RouteOptimizationController = {
         details: error.message
       });
     }
+  },
+
+  /**
+   * Check for tickets that should be removed from routes due to status changes
+   * @route GET /api/route-optimization/validate-routes
+   * @desc Check all active routes for tickets that should be removed
+   * @access Private
+   */
+  async validateRoutes(req, res) {
+    try {
+      const result = await RouteOptimizationService.checkTicketsForRouteRemoval();
+      
+      if (!result.success) {
+        return res.status(500).json({
+          success: false,
+          error: 'Failed to validate routes',
+          details: result.error
+        });
+      }
+      
+      res.status(200).json({
+        success: true,
+        message: 'Route validation completed',
+        data: result
+      });
+    } catch (error) {
+      console.error('Error validating routes:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to validate routes',
+        details: error.message
+      });
+    }
+  },
+
+  /**
+   * Remove invalid tickets from routes
+   * @route POST /api/route-optimization/cleanup-routes
+   * @desc Remove tickets from routes that are cancelled, on hold, or have expired permits
+   * @access Private
+   */
+  async cleanupRoutes(req, res) {
+    try {
+      const { ticketsToRemove, updatedBy } = req.body;
+      const userId = req.user?.userId || updatedBy || 1;
+      
+      if (!ticketsToRemove || !Array.isArray(ticketsToRemove)) {
+        return res.status(400).json({
+          success: false,
+          error: 'ticketsToRemove array is required'
+        });
+      }
+      
+      const result = await RouteOptimizationService.removeInvalidTicketsFromRoutes(
+        ticketsToRemove, 
+        userId
+      );
+      
+      res.status(200).json({
+        success: true,
+        message: 'Route cleanup completed',
+        data: result
+      });
+    } catch (error) {
+      console.error('Error cleaning up routes:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to cleanup routes',
+        details: error.message
+      });
+    }
+  },
+
+  /**
+   * Perform complete route validation and cleanup
+   * @route POST /api/route-optimization/validate-and-cleanup
+   * @desc Check all routes and automatically remove invalid tickets
+   * @access Private
+   */
+  async validateAndCleanup(req, res) {
+    try {
+      const { updatedBy } = req.body;
+      const userId = req.user?.userId || updatedBy || 1;
+      
+      const result = await RouteOptimizationService.performRouteValidationAndCleanup(userId);
+      
+      if (!result.success) {
+        return res.status(500).json({
+          success: false,
+          error: 'Failed to perform route validation and cleanup',
+          details: result.error
+        });
+      }
+      
+      res.status(200).json({
+        success: true,
+        message: 'Route validation and cleanup completed',
+        data: result
+      });
+    } catch (error) {
+      console.error('Error performing route validation and cleanup:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to perform route validation and cleanup',
+        details: error.message
+      });
+    }
+  },
+
+  /**
+   * Get route validation status
+   * @route GET /api/route-optimization/validation-status
+   * @desc Get current status of route validation (for monitoring)
+   * @access Private
+   */
+  async getValidationStatus(req, res) {
+    try {
+      const result = await RouteOptimizationService.checkTicketsForRouteRemoval();
+      
+      if (!result.success) {
+        return res.status(500).json({
+          success: false,
+          error: 'Failed to get validation status',
+          details: result.error
+        });
+      }
+      
+      const status = {
+        hasInvalidTickets: result.ticketsToRemove.length > 0,
+        totalInvalidTickets: result.ticketsToRemove.length,
+        routesAffected: result.summary.totalRoutesAffected,
+        lastChecked: new Date().toISOString(),
+        reasons: result.summary.reasons
+      };
+      
+      res.status(200).json({
+        success: true,
+        message: 'Validation status retrieved',
+        data: status
+      });
+    } catch (error) {
+      console.error('Error getting validation status:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to get validation status',
+        details: error.message
+      });
+    }
   }
 };
 

@@ -177,6 +177,6 @@ app.use('/api/unified', unifiedExcelRoutes);
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server listening on port ${PORT}`);
   
-  // Start the notification scheduler
-  //ScheduledTasks.startScheduler();
+  // Start the scheduled tasks scheduler
+  ScheduledTasks.startScheduler();
 });

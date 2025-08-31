@@ -920,6 +920,7 @@ class RouteOptimizationService {
     /**
      * Get tickets for spotting routes
      * Criteria: comment7d is NULL, empty, TK - PERMIT EXTENDED, TK - LAYOUT, or TK - LAY OUT, and SPOTTING status exists but has no endingDate (not completed)
+     * Excludes tickets with permits expiring in less than 4 days
      * @returns {Promise<Array>} - Array of tickets eligible for spotting routes
      */
     async getSpottingTickets() {
@@ -966,7 +967,7 @@ class RouteOptimizationService {
                             OR t.comment7d = 'TK - LAYOUT'
                             OR t.comment7d = 'TK - LAY OUT'
                         )
-                        OR t.comment7d IN ('TK - CANCELLED', 'TK - HOLD OFF', 'TK- ON HOLD OFF')
+                        OR t.comment7d IN ('TK - CANCELLED', 'TK - HOLD OFF', 'TK- ON HOLD OFF', 'TK - COMPLETED', 'TK - COMPLETE', 'COMPLETED', 'COMPLETE')
                     )
                 ORDER BY t.ticketId ASC
             `);
@@ -1025,7 +1026,7 @@ class RouteOptimizationService {
                         OR t.comment7d = 'TK - LAYOUT'
                         OR t.comment7d = 'TK - LAY OUT'
                     )
-                    AND t.comment7d NOT IN ('TK - CANCELLED', 'TK - HOLD OFF', 'TK- ON HOLD OFF')
+                    AND t.comment7d NOT IN ('TK - CANCELLED', 'TK - HOLD OFF', 'TK- ON HOLD OFF', 'TK - COMPLETED', 'TK - COMPLETE', 'COMPLETED', 'COMPLETE')
                     AND ts2.name = 'Spotting'
                     AND tks2.endingdate IS NOT NULL
                     AND tks2.deletedAt IS NULL
@@ -1068,7 +1069,55 @@ class RouteOptimizationService {
                 console.log(`  - Ticket ${ticket.ticketid} (${ticket.ticketcode}): comment7d = "${ticket.comment7d}" - Already in route ${ticket.routeid} (${ticket.routecode})`);
             });
             
-            // Now get the final result
+            // Check tickets excluded by permit expiration (less than 4 days remaining)
+            const excludedByPermitExpirationQuery = await db.query(`
+                SELECT DISTINCT 
+                    t.ticketId,
+                    t.ticketCode,
+                    t.comment7d,
+                    p.expireDate,
+                    (p.expireDate::date - CURRENT_DATE::date) as days_until_expiry
+                FROM Tickets t
+                JOIN PermitedTickets pt ON t.ticketId = pt.ticketId AND pt.deletedAt IS NULL
+                JOIN Permits p ON pt.permitId = p.PermitId AND p.deletedAt IS NULL
+                WHERE t.deletedAt IS NULL
+                    AND (
+                        t.comment7d IS NULL 
+                        OR t.comment7d = '' 
+                        OR t.comment7d = 'TK - PERMIT EXTENDED'
+                        OR t.comment7d = 'TK - LAYOUT'
+                        OR t.comment7d = 'TK - LAY OUT'
+                    )
+                    AND t.comment7d NOT IN ('TK - CANCELLED', 'TK - HOLD OFF', 'TK- ON HOLD OFF', 'TK - COMPLETED', 'TK - COMPLETE', 'COMPLETED', 'COMPLETE')
+                    AND EXISTS (
+                        SELECT 1 FROM TicketStatus tks2 
+                        JOIN TaskStatus ts2 ON tks2.taskStatusId = ts2.taskStatusId 
+                        WHERE tks2.ticketId = t.ticketId 
+                            AND ts2.name = 'Spotting'
+                            AND tks2.endingdate IS NULL
+                            AND tks2.deletedAt IS NULL
+                            AND ts2.deletedAt IS NULL
+                    )
+                    AND NOT EXISTS (
+                        SELECT 1 FROM RouteTickets rt
+                        JOIN Routes r ON rt.routeId = r.routeId
+                        WHERE rt.ticketId = t.ticketId
+                            AND r.type = 'SPOTTER'
+                            AND r.deletedAt IS NULL
+                            AND rt.deletedAt IS NULL
+                    )
+                    AND p.expireDate IS NOT NULL
+                    AND p.expireDate > CURRENT_DATE
+                    AND (p.expireDate::date - CURRENT_DATE::date) < 4
+                ORDER BY t.ticketId ASC
+            `);
+            
+            console.log(`=== DEBUG: Tickets excluded by permit expiration (< 4 days): ${excludedByPermitExpirationQuery.rows.length} ===`);
+            excludedByPermitExpirationQuery.rows.forEach(ticket => {
+                console.log(`  - Ticket ${ticket.ticketid} (${ticket.ticketcode}): comment7d = "${ticket.comment7d}" - Permit expires in ${ticket.days_until_expiry} days on ${ticket.expiredate}`);
+            });
+            
+            // Now get the final result with permit expiration filter
             const result = await db.query(`
                 SELECT DISTINCT 
                     t.ticketId,
@@ -1094,7 +1143,7 @@ class RouteOptimizationService {
                         OR t.comment7d = 'TK - LAYOUT'
                         OR t.comment7d = 'TK - LAY OUT'
                     )
-                    AND t.comment7d NOT IN ('TK - CANCELLED', 'TK - HOLD OFF', 'TK- ON HOLD OFF')
+                    AND t.comment7d NOT IN ('TK - CANCELLED', 'TK - HOLD OFF', 'TK- ON HOLD OFF', 'TK - COMPLETED', 'TK - COMPLETE', 'COMPLETED', 'COMPLETE')
                     AND EXISTS (
                         SELECT 1 FROM TicketStatus tks2 
                         JOIN TaskStatus ts2 ON tks2.taskStatusId = ts2.taskStatusId 
@@ -1112,6 +1161,19 @@ class RouteOptimizationService {
                             AND r.type = 'SPOTTER'
                             AND r.deletedAt IS NULL
                             AND rt.deletedAt IS NULL
+                    )
+                    AND (
+                        -- Exclude tickets with permits that expire in less than 4 days
+                        NOT EXISTS (
+                            SELECT 1 FROM PermitedTickets pt
+                            JOIN Permits p ON pt.permitId = p.PermitId
+                            WHERE pt.ticketId = t.ticketId
+                                AND pt.deletedAt IS NULL
+                                AND p.deletedAt IS NULL
+                                AND p.expireDate IS NOT NULL
+                                AND p.expireDate > CURRENT_DATE
+                                AND (p.expireDate::date - CURRENT_DATE::date) < 4
+                        )
                     )
                 ORDER BY t.ticketId ASC
             `);
@@ -1133,6 +1195,7 @@ class RouteOptimizationService {
     /**
      * Get tickets for concrete routes
      * Criteria: SPOTTING completed (has endingDate) and has SAWCUT status
+     * Excludes tickets with permits expiring in less than 4 days
      * @returns {Promise<Array>} - Array of tickets eligible for concrete routes
      */
     async getConcreteTickets() {
@@ -1159,7 +1222,7 @@ class RouteOptimizationService {
                 -- Exclude tickets with specific comment7d values
                 t.comment7d IS NULL 
                 OR t.comment7d = '' 
-                OR t.comment7d NOT IN ('TK - CANCELLED', 'TK - HOLD OFF', 'TK- ON HOLD OFF')
+                OR t.comment7d NOT IN ('TK - CANCELLED', 'TK - HOLD OFF', 'TK- ON HOLD OFF', 'TK - COMPLETED', 'TK - COMPLETE', 'COMPLETED', 'COMPLETE')
             )
             AND EXISTS (
                 -- SPOTTING completed (has endingDate)
@@ -1220,6 +1283,19 @@ class RouteOptimizationService {
                 AND r.deletedAt IS NULL
                 AND rt.deletedAt IS NULL
             )
+            AND (
+                -- Exclude tickets with permits that expire in less than 4 days
+                NOT EXISTS (
+                    SELECT 1 FROM PermitedTickets pt
+                    JOIN Permits p ON pt.permitId = p.PermitId
+                    WHERE pt.ticketId = t.ticketId
+                        AND pt.deletedAt IS NULL
+                        AND p.deletedAt IS NULL
+                        AND p.expireDate IS NOT NULL
+                        AND p.expireDate > CURRENT_DATE
+                        AND (p.expireDate::date - CURRENT_DATE::date) < 4
+                )
+            )
             ORDER BY t.ticketId ASC
             `);
             
@@ -1236,6 +1312,7 @@ class RouteOptimizationService {
      * 1. SPOTTING completed and has GRINDING status (no SAWCUT)
      * 2. OR all concrete phases completed (SAWCUT, REMOVAL, FRAMING, POURING)
      * 3. comment7d must be TK- ON PROGRESS, TK - ON LAYOUT, TK - LAYOUT, or TK - LAY OUT
+     * Excludes tickets with permits expiring in less than 4 days
      * @returns {Promise<Array>} - Array of tickets eligible for asphalt routes
      */
     async getAsphaltTickets() {
@@ -1322,6 +1399,19 @@ class RouteOptimizationService {
                     AND tks_concrete.endingdate IS NULL
                     AND tks_concrete.deletedAt IS NULL
                     AND ts_concrete.deletedAt IS NULL
+                )
+                AND (
+                    -- Exclude tickets with permits that expire in less than 4 days
+                    NOT EXISTS (
+                        SELECT 1 FROM PermitedTickets pt
+                        JOIN Permits p ON pt.permitId = p.PermitId
+                        WHERE pt.ticketId = t.ticketId
+                            AND pt.deletedAt IS NULL
+                            AND p.deletedAt IS NULL
+                            AND p.expireDate IS NOT NULL
+                            AND p.expireDate > CURRENT_DATE
+                            AND (p.expireDate::date - CURRENT_DATE::date) < 4
+                    )
                 )
                 GROUP BY 
                     t.ticketId,
@@ -1818,7 +1908,52 @@ class RouteOptimizationService {
                 minConfidence: 0.8
             });
 
-            if (ticketsWithAddresses.length === 0) {
+            // Filter out tickets with invalid statuses before optimization
+            const validTickets = ticketsWithAddresses.filter(ticket => {
+                const comment7d = (ticket.comment7d || '').toLowerCase();
+                const currentDate = new Date();
+                
+                // Check for cancellation or hold status
+                if (comment7d.includes('tk - cancelled') || 
+                    comment7d.includes('tk - hold off') || 
+                    comment7d.includes('tk - on hold off') ||
+                    comment7d.includes('tk - completed') || 
+                    comment7d.includes('tk - complete') || 
+                    comment7d.includes('completed') || 
+                    comment7d.includes('complete')) {
+                    console.log(`Filtering out ticket ${ticket.ticketcode} due to status: ${ticket.comment7d}`);
+                    return false;
+                }
+                
+                // Check for expired permit
+                if (ticket.expiredate) {
+                    const permitExpireDate = new Date(ticket.expiredate);
+                    if (permitExpireDate < currentDate) {
+                        console.log(`Filtering out ticket ${ticket.ticketcode} due to expired permit: ${ticket.expiredate}`);
+                        return false;
+                    }
+                }
+                
+                return true;
+            });
+
+            console.log(`Route ${routeId}: ${ticketsWithAddresses.length} total tickets, ${validTickets.length} valid tickets after filtering`);
+
+            // Remove invalid tickets from the route
+            const invalidTickets = ticketsWithAddresses.filter(ticket => !validTickets.includes(ticket));
+            if (invalidTickets.length > 0) {
+                console.log(`Removing ${invalidTickets.length} invalid tickets from route ${routeId}`);
+                for (const ticket of invalidTickets) {
+                    await RouteTickets.deleteByRouteAndTicket(routeId, ticket.ticketid, updatedBy);
+                    console.log(`Removed ticket ${ticket.ticketcode} from route ${routeId} due to invalid status`);
+                }
+            }
+
+            if (validTickets.length === 0) {
+                throw new Error('No valid tickets found for route optimization after filtering invalid statuses');
+            }
+
+            if (validTickets.length === 0) {
                 throw new Error('No valid addresses found for route optimization');
             }
 
@@ -1826,7 +1961,7 @@ class RouteOptimizationService {
             const addressToTicketsMap = new Map(); // address -> array of tickets
             const uniqueAddresses = []; // array of unique addresses for API call
             
-            for (const ticket of ticketsWithAddresses) {
+            for (const ticket of validTickets) {
                 const address = ticket.address;
                 if (!addressToTicketsMap.has(address)) {
                     addressToTicketsMap.set(address, []);
@@ -1835,7 +1970,7 @@ class RouteOptimizationService {
                 addressToTicketsMap.get(address).push(ticket);
             }
 
-            console.log(`Reoptimizing route ${routeId}: ${ticketsWithAddresses.length} tickets deduplicated to ${uniqueAddresses.length} unique addresses`);
+            console.log(`Reoptimizing route ${routeId}: ${validTickets.length} tickets deduplicated to ${uniqueAddresses.length} unique addresses`);
 
             // Optimize the route with unique addresses only
             const optimizedRouteResult = await this.optimizeRoute(
@@ -1909,10 +2044,17 @@ class RouteOptimizationService {
                 totalDuration: optimizedRouteResult.totalDuration,
                 totalTickets: reorderedTickets.length,
                 uniqueAddresses: uniqueAddresses.length,
+                ticketsRemoved: invalidTickets.length,
+                removedTickets: invalidTickets.map(t => ({
+                    ticketId: t.ticketid,
+                    ticketCode: t.ticketcode,
+                    comment7d: t.comment7d,
+                    reason: this.getTicketRemovalReason(t)
+                })),
                 addressDeduplication: {
-                    originalTickets: ticketsWithAddresses.length,
+                    originalTickets: validTickets.length,
                     uniqueAddresses: uniqueAddresses.length,
-                    savings: ticketsWithAddresses.length - uniqueAddresses.length
+                    savings: validTickets.length - uniqueAddresses.length
                 }
             };
 
@@ -1920,6 +2062,38 @@ class RouteOptimizationService {
             console.error('Failed to re-optimize route:', error);
             throw error;
         }
+    }
+
+    /**
+     * Get the reason why a ticket was removed from a route
+     * @param {Object} ticket - Ticket object
+     * @returns {string} - Removal reason
+     */
+    getTicketRemovalReason(ticket) {
+        const comment7d = (ticket.comment7d || '').toLowerCase();
+        const currentDate = new Date();
+        
+        // Check for cancellation or hold status
+        if (comment7d.includes('tk - cancelled')) {
+            return 'TICKET_CANCELLED';
+        }
+        if (comment7d.includes('tk - hold off') || comment7d.includes('tk - on hold off')) {
+            return 'TICKET_ON_HOLD';
+        }
+        if (comment7d.includes('tk - completed') || comment7d.includes('tk - complete') || 
+            comment7d.includes('completed') || comment7d.includes('complete')) {
+            return 'TICKET_COMPLETED';
+        }
+        
+        // Check for expired permit
+        if (ticket.expiredate) {
+            const permitExpireDate = new Date(ticket.expiredate);
+            if (permitExpireDate < currentDate) {
+                return 'PERMIT_EXPIRED';
+            }
+        }
+        
+        return 'UNKNOWN_REASON';
     }
 
     /**
@@ -3482,6 +3656,317 @@ class RouteOptimizationService {
         } catch (error) {
             console.error('Failed to complete asphalt route:', error);
             throw error;
+        }
+    }
+
+    /**
+     * Check for tickets that should be removed from routes due to status changes
+     * This method identifies tickets in routes that have been cancelled, put on hold, or have expired permits
+     * @returns {Promise<Object>} - Object containing tickets to remove and summary
+     */
+    async checkTicketsForRouteRemoval() {
+        try {
+            console.log('=== Starting route ticket validation check ===');
+            
+            const db = require('../config/db');
+            
+            // Get all active routes with their tickets
+            const activeRoutesQuery = await db.query(`
+                SELECT DISTINCT
+                    r.routeId,
+                    r.routeCode,
+                    r.type,
+                    rt.ticketId,
+                    rt.queue,
+                    t.ticketCode,
+                    t.comment7d,
+                    t.daysOutstanding,
+                    p.expireDate,
+                    p.permitNumber
+                FROM Routes r
+                JOIN RouteTickets rt ON r.routeId = rt.routeId AND rt.deletedAt IS NULL
+                JOIN Tickets t ON rt.ticketId = t.ticketId AND t.deletedAt IS NULL
+                LEFT JOIN PermitedTickets pt ON t.ticketId = pt.ticketId AND pt.deletedAt IS NULL
+                LEFT JOIN Permits p ON pt.permitId = p.permitId AND p.deletedAt IS NULL
+                WHERE r.deletedAt IS NULL
+                    AND (r.endDate IS NULL OR r.endDate > CURRENT_DATE)
+                ORDER BY r.routeId, rt.queue
+            `);
+            
+            const ticketsToRemove = [];
+            const routeSummary = new Map();
+            
+            for (const row of activeRoutesQuery.rows) {
+                const shouldRemove = this.shouldRemoveTicketFromRoute(row);
+                
+                if (shouldRemove.shouldRemove) {
+                    ticketsToRemove.push({
+                        routeId: row.routeid,
+                        routeCode: row.routecode,
+                        routeType: row.type,
+                        ticketId: row.ticketid,
+                        ticketCode: row.ticketcode,
+                        queue: row.queue,
+                        reason: shouldRemove.reason,
+                        comment7d: row.comment7d,
+                        daysOutstanding: row.daysoutstanding,
+                        permitExpireDate: row.expiredate,
+                        permitNumber: row.permitnumber
+                    });
+                    
+                    // Track summary by route
+                    if (!routeSummary.has(row.routeid)) {
+                        routeSummary.set(row.routeid, {
+                            routeId: row.routeid,
+                            routeCode: row.routecode,
+                            routeType: row.type,
+                            ticketsToRemove: 0,
+                            reasons: new Set()
+                        });
+                    }
+                    
+                    const summary = routeSummary.get(row.routeid);
+                    summary.ticketsToRemove++;
+                    summary.reasons.add(shouldRemove.reason);
+                }
+            }
+            
+            console.log(`=== Route ticket validation complete ===`);
+            console.log(`- Total tickets checked: ${activeRoutesQuery.rows.length}`);
+            console.log(`- Tickets to remove: ${ticketsToRemove.length}`);
+            console.log(`- Routes affected: ${routeSummary.size}`);
+            
+            return {
+                success: true,
+                totalTicketsChecked: activeRoutesQuery.rows.length,
+                ticketsToRemove: ticketsToRemove,
+                routesAffected: Array.from(routeSummary.values()).map(summary => ({
+                    ...summary,
+                    reasons: Array.from(summary.reasons)
+                })),
+                summary: {
+                    totalTicketsToRemove: ticketsToRemove.length,
+                    totalRoutesAffected: routeSummary.size,
+                    reasons: [...new Set(ticketsToRemove.map(t => t.reason))]
+                }
+            };
+            
+        } catch (error) {
+            console.error('Error checking tickets for route removal:', error);
+            return {
+                success: false,
+                error: error.message,
+                ticketsToRemove: [],
+                routesAffected: []
+            };
+        }
+    }
+
+    /**
+     * Determine if a ticket should be removed from its route based on status
+     * @param {Object} ticketData - Ticket data from database
+     * @returns {Object} - { shouldRemove: boolean, reason: string }
+     */
+    shouldRemoveTicketFromRoute(ticketData) {
+        const comment7d = (ticketData.comment7d || '').toLowerCase();
+        const currentDate = new Date();
+        
+        // Check for cancellation or hold status
+        if (comment7d.includes('tk - cancelled') || 
+            comment7d.includes('tk - hold off') || 
+            comment7d.includes('tk - on hold off')) {
+            return {
+                shouldRemove: true,
+                reason: 'TICKET_CANCELLED_OR_ON_HOLD',
+                details: `Ticket status: ${ticketData.comment7d}`
+            };
+        }
+        
+        // Check for expired permit
+        if (ticketData.expiredate) {
+            const permitExpireDate = new Date(ticketData.expiredate);
+            if (permitExpireDate < currentDate) {
+                return {
+                    shouldRemove: true,
+                    reason: 'PERMIT_EXPIRED',
+                    details: `Permit expired on ${ticketData.expiredate}`
+                };
+            }
+        }
+        
+        // Check for completed status
+        if (comment7d.includes('tk - completed') || 
+            comment7d.includes('tk - complete') || 
+            comment7d.includes('completed') || 
+            comment7d.includes('complete')) {
+            return {
+                shouldRemove: true,
+                reason: 'TICKET_COMPLETED',
+                details: `Ticket marked as completed: ${ticketData.comment7d}`
+            };
+        }
+        
+        return {
+            shouldRemove: false,
+            reason: null
+        };
+    }
+
+    /**
+     * Remove tickets from routes based on validation check
+     * @param {Array} ticketsToRemove - Array of tickets to remove
+     * @param {number} updatedBy - User ID performing the update
+     * @returns {Promise<Object>} - Results of removal operation
+     */
+    async removeInvalidTicketsFromRoutes(ticketsToRemove, updatedBy = 1) {
+        try {
+            console.log(`=== Starting removal of ${ticketsToRemove.length} invalid tickets from routes ===`);
+            
+            const db = require('../config/db');
+            const client = await db.pool.connect();
+            
+            const results = {
+                success: [],
+                failed: [],
+                routesReoptimized: new Set(),
+                summary: {
+                    totalProcessed: ticketsToRemove.length,
+                    successful: 0,
+                    failed: 0,
+                    routesAffected: 0
+                }
+            };
+            
+            try {
+                await client.query('BEGIN');
+                
+                for (const ticket of ticketsToRemove) {
+                    try {
+                        // Remove ticket from route
+                        const removeResult = await client.query(
+                            'UPDATE RouteTickets SET deletedAt = CURRENT_TIMESTAMP, updatedAt = CURRENT_TIMESTAMP, updatedBy = $1 WHERE routeId = $2 AND ticketId = $3 AND deletedAt IS NULL RETURNING *;',
+                            [updatedBy, ticket.routeId, ticket.ticketId]
+                        );
+                        
+                        if (removeResult.rows.length > 0) {
+                            results.success.push({
+                                ...ticket,
+                                removedAt: new Date().toISOString()
+                            });
+                            results.summary.successful++;
+                            results.routesReoptimized.add(ticket.routeId);
+                            results.summary.routesAffected = results.routesReoptimized.size;
+                            
+                            console.log(`✓ Removed ticket ${ticket.ticketCode} from route ${ticket.routeCode} - Reason: ${ticket.reason}`);
+                        } else {
+                            results.failed.push({
+                                ...ticket,
+                                error: 'Ticket not found in route'
+                            });
+                            results.summary.failed++;
+                        }
+                        
+                    } catch (error) {
+                        console.error(`✗ Failed to remove ticket ${ticket.ticketCode} from route ${ticket.routeCode}:`, error.message);
+                        results.failed.push({
+                            ...ticket,
+                            error: error.message
+                        });
+                        results.summary.failed++;
+                    }
+                }
+                
+                await client.query('COMMIT');
+                
+                // Note: Automatic re-optimization and route completion disabled
+                // Routes will remain as-is after ticket removal
+                console.log(`=== ${results.routesReoptimized.size} routes affected by ticket removal ===`);
+                console.log(`=== Routes will remain active and require manual re-optimization if needed ===`);
+                
+            } catch (error) {
+                await client.query('ROLLBACK');
+                throw error;
+            } finally {
+                client.release();
+            }
+            
+            console.log(`=== Ticket removal complete ===`);
+            console.log(`- Successfully removed: ${results.summary.successful}`);
+            console.log(`- Failed removals: ${results.summary.failed}`);
+            console.log(`- Routes affected: ${results.routesReoptimized.size}`);
+            
+            return results;
+            
+        } catch (error) {
+            console.error('Error removing invalid tickets from routes:', error);
+            return {
+                success: false,
+                error: error.message,
+                summary: {
+                    totalProcessed: ticketsToRemove.length,
+                    successful: 0,
+                    failed: ticketsToRemove.length,
+                    routesAffected: 0
+                }
+            };
+        }
+    }
+
+
+
+    /**
+     * Perform a complete route validation and cleanup
+     * This method checks all active routes and removes invalid tickets
+     * @param {number} updatedBy - User ID performing the cleanup
+     * @returns {Promise<Object>} - Complete validation and cleanup results
+     */
+    async performRouteValidationAndCleanup(updatedBy = 1) {
+        try {
+            console.log('=== Starting complete route validation and cleanup ===');
+            
+            // Step 1: Check for tickets that should be removed
+            const validationResult = await this.checkTicketsForRouteRemoval();
+            
+            if (!validationResult.success) {
+                return {
+                    success: false,
+                    error: 'Failed to validate routes',
+                    details: validationResult.error
+                };
+            }
+            
+            if (validationResult.ticketsToRemove.length === 0) {
+                return {
+                    success: true,
+                    message: 'No invalid tickets found in routes',
+                    summary: validationResult.summary
+                };
+            }
+            
+            // Step 2: Remove invalid tickets
+            const removalResult = await this.removeInvalidTicketsFromRoutes(
+                validationResult.ticketsToRemove, 
+                updatedBy
+            );
+            
+            return {
+                success: true,
+                validation: validationResult,
+                removal: removalResult,
+                summary: {
+                    totalTicketsChecked: validationResult.totalTicketsChecked,
+                    ticketsRemoved: removalResult.summary.successful,
+                    routesAffected: validationResult.summary.totalRoutesAffected,
+                    routesReoptimized: removalResult.summary.routesReoptimized
+                }
+            };
+            
+        } catch (error) {
+            console.error('Error performing route validation and cleanup:', error);
+            return {
+                success: false,
+                error: error.message
+            };
         }
     }
 }
