@@ -147,17 +147,17 @@ class ScheduledTasks {
       await this.runAllTasks();
     }, 60 * 60 * 1000); // 1 hour
 
-    // Run route re-optimization every 5 minutes (for testing - normally 6 hours)
+    // Run route re-optimization every 30 minutes (for testing - normally 6 hours)
     setInterval(async () => {
       await this.runRouteReoptimizationTask();
-    }, 5 * 60 * 1000); // 5 minutes
+    }, 30 * 60 * 1000); // 30 minutes
 
     // Also run immediately on startup
     this.runAllTasks();
     
     console.log('Scheduler started:');
     console.log('- Monitoring tasks will run every hour');
-    console.log('- Route re-optimization will run every 5 minutes (TESTING MODE)');
+    console.log('- Route re-optimization will run every 30 minutes (TESTING MODE)');
   }
 }
 
