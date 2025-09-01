@@ -1,6 +1,6 @@
 const XLSX = require("xlsx");
-const RTR = require("../../models/RTR/rtr").RTR;
-const NotificationService = require("../../services/NotificationService");
+const RTR = require("../../models/RTR/rtr");
+// const NotificationService = require("../../services/NotificationService");
 const { getMinioClient, generatePublicPresignedUrl } = require('../../config/minio');
 const path = require('path');
 const Tickets = require("../../models/ticket-logic/Tickets");
@@ -265,11 +265,11 @@ exports.uploadExcel = async (req, res) => {
 
     // 4. Create notification for RTR upload
     if (rtrRecord) {
-      await NotificationService.notifyRTRUploaded(
-        rtrRecord.rtrId,
-        originalName,
-        req.body.createdBy || 1
-      );
+      // await NotificationService.notifyRTRUploaded(
+      //   rtrRecord.rtrId,
+      //   originalName,
+      //   req.body.createdBy || 1
+      // );
     }
 
     // 5. Continue with Excel processing - only process "Seven-D" sheet

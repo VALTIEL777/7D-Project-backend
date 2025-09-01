@@ -1,18 +1,6 @@
-const NotificationService = require('./NotificationService');
 const RouteOptimizationService = require('./RouteOptimizationService');
 
 class ScheduledTasks {
-  // Check expiring permits daily
-  static async checkExpiringPermits() {
-    try {
-      console.log('Checking for expiring permits...');
-      await NotificationService.checkExpiringPermits();
-      console.log('Expiring permits check completed');
-    } catch (error) {
-      console.error('Error checking expiring permits:', error);
-    }
-  }
-
   // Re-optimize all non-completed routes
   static async reoptimizeAllActiveRoutes() {
     try {
@@ -126,9 +114,6 @@ class ScheduledTasks {
   static async runAllTasks() {
     try {
       console.log('Running scheduled tasks...');
-      
-      // Check expiring permits
-      await this.checkExpiringPermits();
       
       // Check route validation status (monitoring only)
       await this.checkRouteValidationStatus();

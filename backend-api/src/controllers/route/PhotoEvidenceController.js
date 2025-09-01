@@ -1,5 +1,4 @@
 const PhotoEvidence = require('../../models/route/PhotoEvidence');
-const NotificationService = require('../../services/NotificationService');
 const Tickets = require('../../models/ticket-logic/Tickets');
 const { getMinioClient } = require('../../config/minio');  // <-- Cambio aquí
 const path = require('path');

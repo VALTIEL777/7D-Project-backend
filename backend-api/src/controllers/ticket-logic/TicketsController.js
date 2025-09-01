@@ -66,8 +66,76 @@ const TicketsController = {
 
   async getAllTickets(req, res) {
     try {
-      const allTickets = await Tickets.findAll();
-      res.status(200).json(normalizeTicketsData(allTickets));
+      const allTicketsWithAddresses = await Tickets.findAllWithAddresses();
+      
+      // Group tickets by ticketId and collect addresses
+      const ticketsMap = new Map();
+      
+      allTicketsWithAddresses.forEach(row => {
+        const ticketId = row.ticketid;
+        
+        if (!ticketsMap.has(ticketId)) {
+          // Create ticket object
+          const ticket = {
+            ticketId: row.ticketid,
+            ticketid: row.ticketid,
+            incidentId: row.incidentid,
+            incidentName: row.incidentname,
+            quadrantId: row.cuadranteid,
+            cuadranteId: row.cuadranteid,
+            contractUnitId: row.contractunitid,
+            contractUnitName: row.contractunitname,
+            wayfindingId: row.wayfindingid,
+            wayfindingid: row.wayfindingid,
+            paymentId: row.paymentid,
+            mobilizationId: row.mobilizationid,
+            ticketCode: row.ticketcode,
+            ticketcode: row.ticketcode,
+            quantity: row.quantity,
+            daysOutstanding: row.daysoutstanding,
+            comment7d: row.comment7d,
+            partnerComment: row.partnercomment,
+            partnerSupervisorComment: row.partnersupervisorcomment,
+            contractNumber: row.contractnumber,
+            amountToPay: row.amounttopay,
+            ticketType: row.tickettype,
+            createdAt: row.createdat,
+            updatedAt: row.updatedat,
+            deletedAt: row.deletedat,
+            createdBy: row.createdby,
+            updatedBy: row.updatedby,
+            addresses: []
+          };
+          
+          ticketsMap.set(ticketId, ticket);
+        }
+        
+        // Add address if it exists
+        if (row.addressid) {
+          const address = {
+            addressNumber: row.addressnumber,
+            addressCardinal: row.addresscardinal,
+            addressStreet: row.addressstreet,
+            addressSuffix: row.addressesuffix,
+            fullAddress: row.fulladdress
+          };
+          
+          // Check if this address is already added to avoid duplicates
+          const existingAddress = ticketsMap.get(ticketId).addresses.find(addr => 
+            addr.addressNumber === address.addressNumber &&
+            addr.addressCardinal === address.addressCardinal &&
+            addr.addressStreet === address.addressStreet &&
+            addr.addressSuffix === address.addressSuffix
+          );
+          
+          if (!existingAddress) {
+            ticketsMap.get(ticketId).addresses.push(address);
+          }
+        }
+      });
+
+      const tickets = Array.from(ticketsMap.values());
+      res.status(200).json(tickets);
     } catch (error) {
       console.error('Error fetching all Tickets:', error);
       res.status(500).json({ message: 'Error fetching Tickets', error: error.message });

@@ -52,6 +52,39 @@ class Tickets {
     return result.rows;
   }
 
+  static async findAllWithAddresses() {
+    const result = await db.query(`
+      SELECT 
+        t.*,
+        cu.name as contractUnitName,
+        i.name as incidentName,
+        -- Address information
+        a.addressId,
+        a.addressNumber,
+        a.addressCardinal,
+        a.addressStreet,
+        a.addressSuffix,
+        -- Build full address string
+        CONCAT(
+          COALESCE(a.addressNumber, ''),
+          ' ',
+          COALESCE(a.addressCardinal, ''),
+          ' ',
+          COALESCE(a.addressStreet, ''),
+          ' ',
+          COALESCE(a.addressSuffix, '')
+        ) as fullAddress
+      FROM Tickets t
+      LEFT JOIN ContractUnits cu ON t.contractUnitId = cu.contractUnitId AND cu.deletedAt IS NULL
+      LEFT JOIN IncidentsMx i ON t.incidentId = i.incidentId AND i.deletedAt IS NULL
+      LEFT JOIN TicketAddresses ta ON t.ticketId = ta.ticketId AND ta.deletedAt IS NULL
+      LEFT JOIN Addresses a ON ta.addressId = a.addressId AND a.deletedAt IS NULL
+      WHERE t.deletedAt IS NULL
+      ORDER BY t.ticketId ASC, a.addressId ASC
+    `);
+    return result.rows;
+  }
+
   static async update(ticketId, incidentId, cuadranteId, contractUnitId, wayfindingId, paymentId, mobilizationId, ticketCode, quantity, daysOutstanding, comment7d, PartnerComment, PartnerSupervisorComment, contractNumber, amountToPay, ticketType, updatedBy) {    const result = await db.query(
       'UPDATE Tickets SET incidentId = $1, cuadranteId = $2, contractUnitId = $3, wayfindingId = $4, paymentId = $5, mobilizationId = $6, ticketCode = $7, quantity = $8, daysOutstanding = $9, comment7d = $10, PartnerComment = $11, PartnerSupervisorComment = $12, contractNumber = $13, amountToPay = $14, ticketType = $15, updatedBy = $16 WHERE ticketId = $17 AND deletedAt IS NULL RETURNING *',
       [incidentId, cuadranteId, contractUnitId, wayfindingId, paymentId, mobilizationId, ticketCode, quantity, daysOutstanding, comment7d, PartnerComment, PartnerSupervisorComment, contractNumber, amountToPay, ticketType, updatedBy, ticketId]
