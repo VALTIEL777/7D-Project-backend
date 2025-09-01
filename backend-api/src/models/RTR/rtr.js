@@ -23,10 +23,10 @@ class RTR {
     return res.rows[0].incidentid;
   }
 
-  static async createWayfinding(location, fromAddressNumber, fromAddressCardinal, fromAddressStreet, fromAddressSuffix, toAddressNumber, toAddressCardinal, toAddressStreet, toAddressSuffix, length, width, createdBy, updatedBy) {
+  static async createWayfinding(location, fromAddressNumber, fromAddressCardinal, fromAddressStreet, fromAddressSuffix, toAddressNumber, toAddressCardinal, toAddressStreet, toAddressSuffix, length, width, surfaceTotal, createdBy, updatedBy) {
     const res = await db.query(
-      'INSERT INTO wayfinding(location, fromAddressNumber, fromAddressCardinal, fromAddressStreet, fromAddressSuffix, toAddressNumber, toAddressCardinal, toAddressStreet, toAddressSuffix, length, width, createdBy, updatedBy) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING wayfindingId;',
-      [location, fromAddressNumber, fromAddressCardinal, fromAddressStreet, fromAddressSuffix, toAddressNumber, toAddressCardinal, toAddressStreet, toAddressSuffix, length, width, createdBy, updatedBy]
+      'INSERT INTO wayfinding(location, fromAddressNumber, fromAddressCardinal, fromAddressStreet, fromAddressSuffix, toAddressNumber, toAddressCardinal, toAddressStreet, toAddressSuffix, length, width, surfaceTotal, createdBy, updatedBy) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING wayfindingId;',
+      [location, fromAddressNumber, fromAddressCardinal, fromAddressStreet, fromAddressSuffix, toAddressNumber, toAddressCardinal, toAddressStreet, toAddressSuffix, length, width, surfaceTotal, createdBy, updatedBy]
     );
     return res.rows[0].wayfindingid;
   }
@@ -746,6 +746,7 @@ class RTR {
           row.toAddressSuffix,
           row.length,
           row.width,
+          row.surfaceTotal,
           createdBy,
           updatedBy
         );

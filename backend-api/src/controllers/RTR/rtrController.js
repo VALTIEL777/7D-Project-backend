@@ -1,5 +1,5 @@
 const XLSX = require("xlsx");
-const RTR = require("../../models/RTR/rtr");
+const { RTR } = require("../../models/RTR/rtr");
 // const NotificationService = require("../../services/NotificationService");
 const { getMinioClient, generatePublicPresignedUrl } = require('../../config/minio');
 const path = require('path');
@@ -21,6 +21,11 @@ const importantColumns = [
   "SAP_ITEM_NUM",
   "LOCATION2_RES",
   "length_x_width",
+  "SIZE / Dims",
+  "SIZE",
+  "DIMS",
+  "DIMENSIONS",
+  "LENGTH_X_WIDTH",
   "AGENCY_NO",
   "ILL_ONLY",
   "START_DATE",
@@ -499,11 +504,21 @@ exports.uploadExcel = async (req, res) => {
               typeof raw === "number"
             ) {
               entry[key] = parseDateValue(raw);
-            } else if (key === "length_x_width") {
-              entry[key] = raw ?? null;
+            } else if (["length_x_width", "SIZE / Dims", "SIZE", "DIMS", "DIMENSIONS", "LENGTH_X_WIDTH"].includes(key)) {
+              // Handle dimensions column with different possible names
+              entry["length_x_width"] = raw ?? null;
               const { length, width } = extractDimensions(raw);
               entry["length"] = length;
               entry["width"] = width;
+              
+              // Calculate surfaceTotal if we have both length and width
+              if (length && width) {
+                entry["surfaceTotal"] = length * width;
+              } else {
+                entry["surfaceTotal"] = null;
+              }
+              
+              console.log(`Dimensions processing: raw="${raw}" -> length=${length}, width=${width}, surfaceTotal=${entry["surfaceTotal"]}`);
             } else if (key === "ADDRESS") {
               entry[key] = raw ?? null;
               const {
@@ -2468,11 +2483,21 @@ async function parseExcelData(rows, sheetName) {
 
         if (["Earliest_Rpt_Dt", "START_DATE", "EXP_DATE"].includes(key) && typeof raw === "number") {
           entry[key] = parseDateValue(raw);
-        } else if (key === "length_x_width") {
-          entry[key] = raw ?? null;
+        } else if (["length_x_width", "SIZE / Dims", "SIZE", "DIMS", "DIMENSIONS", "LENGTH_X_WIDTH"].includes(key)) {
+          // Handle dimensions column with different possible names
+          entry["length_x_width"] = raw ?? null;
           const { length, width } = extractDimensions(raw);
           entry["length"] = length;
           entry["width"] = width;
+          
+          // Calculate surfaceTotal if we have both length and width
+          if (length && width) {
+            entry["surfaceTotal"] = length * width;
+          } else {
+            entry["surfaceTotal"] = null;
+          }
+          
+          console.log(`Dimensions processing: raw="${raw}" -> length=${length}, width=${width}, surfaceTotal=${entry["surfaceTotal"]}`);
         } else if (key === "ADDRESS") {
           entry[key] = raw ?? null;
           const { addressNumber, addressCardinal, addressStreet, addressSuffix } = parseAddress(raw);
