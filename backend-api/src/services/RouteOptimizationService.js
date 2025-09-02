@@ -1916,11 +1916,7 @@ class RouteOptimizationService {
                 // Check for cancellation or hold status
                 if (comment7d.includes('tk - cancelled') || 
                     comment7d.includes('tk - hold off') || 
-                    comment7d.includes('tk - on hold off') ||
-                    comment7d.includes('tk - completed') || 
-                    comment7d.includes('tk - complete') || 
-                    comment7d.includes('completed') || 
-                    comment7d.includes('complete')) {
+                    comment7d.includes('tk - on hold off')) {
                     console.log(`Filtering out ticket ${ticket.ticketcode} due to status: ${ticket.comment7d}`);
                     return false;
                 }
@@ -2079,10 +2075,6 @@ class RouteOptimizationService {
         }
         if (comment7d.includes('tk - hold off') || comment7d.includes('tk - on hold off')) {
             return 'TICKET_ON_HOLD';
-        }
-        if (comment7d.includes('tk - completed') || comment7d.includes('tk - complete') || 
-            comment7d.includes('completed') || comment7d.includes('complete')) {
-            return 'TICKET_COMPLETED';
         }
         
         // Check for expired permit
