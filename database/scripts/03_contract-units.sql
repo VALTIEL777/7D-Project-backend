@@ -557,3 +557,62 @@ VALUES ('69012207', 'MOBILIZATION FEE - BASE TO GRADE', 'EA',
 
 
 
+INSERT INTO ContractUnits (
+itemCode, 
+    name, 
+    unit, 
+    description,
+    CostPerUnit
+) 
+VALUES (
+    '69012208',
+    'MOBILIZATION FEE - GENERAL HARD',
+    'EA',
+    'Initial setup and preparation costs for project mobilization including equipment transport, site establishment, and preliminary administrative expenses',
+    1000.00
+); --FOrm some reason it is allready on the database the code
+
+INSERT INTO ContractUnits (
+    itemCode, 
+    name, 
+    unit, 
+    description,
+    CostPerUnit
+) 
+VALUES (
+    '800119',
+    'REST_OM_TCUT_NOTHERMO',
+    'PSF',
+    'Restoration of T-cut trench areas excluding thermal considerations, including backfilling, compaction, and surface restoration',
+    18.00
+);
+
+INSERT INTO ContractUnits (
+    itemCode, 
+    name, 
+    unit, 
+    description,
+    CostPerUnit
+) 
+VALUES (
+    'MI1',
+    'MISCELLANEOUS ITEM',
+    'EA',
+    'General miscellaneous item for various unspecified project requirements and incidental work',
+    NULL
+); --All ready on the database
+
+INSERT INTO ContractUnits (
+    itemCode, 
+    name, 
+    unit, 
+    description,
+    CostPerUnit
+) 
+VALUES (
+    '800409',
+    'REST_OM_10GRADE_DRIVE',
+    'PSF',
+    'Restoration of 10-inch graded driveway surfaces including excavation, base preparation, grading, and final surface restoration to original specifications',
+    20.00
+);
