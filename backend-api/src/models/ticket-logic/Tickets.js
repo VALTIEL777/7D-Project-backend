@@ -588,6 +588,13 @@ class Tickets {
         tks.endingDate,
         tks.observation,
         tks.crewId,
+        -- Crew leader information
+        cl.employeeId as crewLeaderId,
+        cl.firstname as crewLeaderFirstName,
+        cl.lastname as crewLeaderLastName,
+        cl.role as crewLeaderRole,
+        cl.phone as crewLeaderPhone,
+        cl.email as crewLeaderEmail,
         -- Photo evidence information
         pe.photoId,
         pe.name as photoName,
@@ -606,6 +613,8 @@ class Tickets {
       LEFT JOIN TicketStatus tks ON t.ticketId = tks.ticketId AND tks.deletedAt IS NULL
       LEFT JOIN TaskStatus ts ON tks.taskStatusId = ts.taskStatusId AND ts.deletedAt IS NULL
       LEFT JOIN PhotoEvidence pe ON tks.taskStatusId = pe.ticketStatusId AND t.ticketId = pe.ticketId AND pe.deletedAt IS NULL
+      LEFT JOIN CrewEmployees ce ON tks.crewId = ce.crewId AND ce.crewLeader = true
+      LEFT JOIN People cl ON ce.employeeId = cl.employeeId AND cl.deletedAt IS NULL
       WHERE t.ticketCode = $1 AND t.deletedAt IS NULL
       ORDER BY t.ticketId, a.addressId, ts.taskStatusId, pe.photoId
     `, [ticketCode]);
@@ -684,6 +693,13 @@ class Tickets {
         tks.endingDate,
         tks.observation,
         tks.crewId,
+        -- Crew leader information
+        cl.employeeId as crewLeaderId,
+        cl.firstname as crewLeaderFirstName,
+        cl.lastname as crewLeaderLastName,
+        cl.role as crewLeaderRole,
+        cl.phone as crewLeaderPhone,
+        cl.email as crewLeaderEmail,
         -- Photo evidence information
         pe.photoId,
         pe.name as photoName,
@@ -704,6 +720,8 @@ class Tickets {
       LEFT JOIN TicketStatus tks ON t.ticketId = tks.ticketId AND tks.deletedAt IS NULL
       LEFT JOIN TaskStatus ts ON tks.taskStatusId = ts.taskStatusId AND ts.deletedAt IS NULL
       LEFT JOIN PhotoEvidence pe ON tks.taskStatusId = pe.ticketStatusId AND t.ticketId = pe.ticketId AND pe.deletedAt IS NULL
+      LEFT JOIN CrewEmployees ce ON tks.crewId = ce.crewId AND ce.crewLeader = true
+      LEFT JOIN People cl ON ce.employeeId = cl.employeeId AND cl.deletedAt IS NULL
       WHERE i.deletedAt IS NULL
       ORDER BY 
         ipc.photo_count DESC NULLS LAST,  -- Incidents with photos first

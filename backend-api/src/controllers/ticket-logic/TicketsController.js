@@ -800,6 +800,15 @@ const TicketsController = {
               endingDate: row.endingdate,
               observation: row.observation,
               crewId: row.crewid,
+              crewLeader: row.crewleaderid ? {
+                employeeId: row.crewleaderid,
+                firstName: row.crewleaderfirstname,
+                lastName: row.crewleaderlastname,
+                fullName: `${row.crewleaderfirstname || ''} ${row.crewleaderlastname || ''}`.trim(),
+                role: row.crewleaderrole,
+                phone: row.crewleaderphone,
+                email: row.crewleaderemail
+              } : null,
               photoEvidence: []
             });
           }
@@ -964,6 +973,15 @@ const TicketsController = {
                 endingDate: row.endingdate,
                 observation: row.observation,
                 crewId: row.crewid,
+                crewLeader: row.crewleaderid ? {
+                  employeeId: row.crewleaderid,
+                  firstName: row.crewleaderfirstname,
+                  lastName: row.crewleaderlastname,
+                  fullName: `${row.crewleaderfirstname || ''} ${row.crewleaderlastname || ''}`.trim(),
+                  role: row.crewleaderrole,
+                  phone: row.crewleaderphone,
+                  email: row.crewleaderemail
+                } : null,
                 photoEvidence: []
               };
               ticket.taskStatuses.push(taskStatus);
