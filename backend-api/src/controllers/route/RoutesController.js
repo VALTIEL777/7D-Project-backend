@@ -637,7 +637,7 @@ const RoutesController = {
         message: 'Tickets ready for spotting routes retrieved successfully',
         type: 'SPOTTER',
         count: ticketsWithAddresses.length,
-        criteria: 'comment7d is NULL, empty, TK - PERMIT EXTENDED, TK - LAYOUT, or TK - LAY OUT, and no endingDate for SPOTTING status',
+        criteria: 'comment7d is NULL, empty, or contains TK - PERMIT EXTENDED, TK - LAYOUT, or TK - LAY OUT, and no endingDate for SPOTTING status. Excludes tickets with comment7d containing: TK - CANCELLED, TK - HOLD OFF, TK- ON HOLD OFF, TK - COMPLETED, TK - COMPLETE, COMPLETED, COMPLETE, TK - EXPIRED, TK - NEEDS PERMIT EXTENSION',
         tickets: ticketsWithAddresses,
         debug: {
           totalEligible: tickets.length,
@@ -674,7 +674,7 @@ const RoutesController = {
         message: 'Tickets ready for concrete routes retrieved successfully',
         type: 'CONCRETE',
         count: ticketsWithAddresses.length,
-        criteria: 'SPOTTING completed (has endingDate) and has SAWCUT status',
+        criteria: 'SPOTTING completed (has endingDate) and has SAWCUT status. Excludes tickets with comment7d containing: TK - CANCELLED, TK - HOLD OFF, TK - ON HOLD OFF, TK- ON HOLD OFF, TK - COMPLETED, TK - COMPLETE, COMPLETED, COMPLETE, TK - EXPIRED, TK - NEEDS PERMIT EXTENSION',
         tickets: ticketsWithAddresses
       });
     } catch (error) {
@@ -705,7 +705,7 @@ const RoutesController = {
         message: 'Tickets ready for asphalt routes retrieved successfully',
         type: 'ASPHALT',
         count: ticketsWithAddresses.length,
-        criteria: 'SPOTTING completed and either has GRINDING status (no SAWCUT) OR all concrete phases completed',
+        criteria: 'SPOTTING completed and either has GRINDING status (no SAWCUT) OR all concrete phases completed. Includes tickets with comment7d containing: TK - ON PROGRESS, TK - ON LAYOUT, TK - LAYOUT, TK - LAY OUT, TK- ON PROGRESS, TK- ON LAYOUT, TK- LAYOUT (allowing text before and after keywords)',
         tickets: ticketsWithAddresses
       });
     } catch (error) {

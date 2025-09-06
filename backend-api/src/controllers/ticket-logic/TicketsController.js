@@ -552,9 +552,7 @@ const TicketsController = {
         message: 'Tickets with issues retrieved successfully',
         summary: {
           totalTickets: normalizedTickets.length,
-          ticketsOnHoldOff: normalizedTickets.filter(t => t.comment7d === 'TK - ON HOLD OFF').length,
-          ticketsWillBeScheduled: normalizedTickets.filter(t => t.comment7d === 'TK - WILL BE SCHEDULE').length,
-          ticketsNeedsPermitExtension: normalizedTickets.filter(t => t.comment7d === 'TK - NEEDS PERMIT EXTENSION').length,
+          ticketsOnHoldOff: normalizedTickets.filter(t => (t.comment7d || '').toLowerCase().includes('tk - on hold off')).length,
           ticketsWithCrewComments: normalizedTickets.filter(t => t.taskStatuses.length > 0).length,
           totalCrewComments: normalizedTickets.reduce((sum, t) => sum + t.taskStatuses.length, 0)
         },
@@ -565,6 +563,82 @@ const TicketsController = {
       res.status(500).json({ 
         success: false,
         message: 'Error fetching tickets with issues', 
+        error: error.message 
+      });
+    }
+  },
+
+  // Get tickets with expired or needs permit extension status
+  async getTicketsExpiredOrNeedsPermit(req, res) {
+    try {
+      // Step 1: Get tickets with expired or needs permit extension status
+      const tickets = await Tickets.findTicketsExpiredOrNeedsPermit();
+      const ticketIds = tickets.map(t => t.ticketid);
+
+      // Step 2: Get addresses and task statuses for these tickets
+      const [addresses, taskStatuses] = await Promise.all([
+        Tickets.getAddressesForTickets(ticketIds),
+        Tickets.getTaskStatusesForTickets(ticketIds)
+      ]);
+
+      // Step 3: Assemble the data
+      const addressesByTicket = {};
+      addresses.forEach(addr => {
+        if (!addressesByTicket[addr.ticketid]) addressesByTicket[addr.ticketid] = [];
+        addressesByTicket[addr.ticketid].push(addr);
+      });
+
+      const statusesByTicket = {};
+      taskStatuses.forEach(status => {
+        if (!statusesByTicket[status.ticketid]) statusesByTicket[status.ticketid] = [];
+        statusesByTicket[status.ticketid].push({
+          taskStatusId: status.taskstatusid,
+          name: status.name,
+          description: status.description,
+          startingDate: status.startingdate,
+          endingDate: status.endingdate,
+          crewComment: status.crewcomment,
+          crewId: status.crewid
+        });
+      });
+
+      // Step 4: Normalize and build the response
+      const normalizedTickets = tickets.map(ticket => ({
+        ticketId: ticket.ticketid,
+        ticketCode: ticket.ticketcode,
+        contractNumber: ticket.contractnumber,
+        contractUnitName: ticket.contractunitname,
+        amountToPay: ticket.amounttopay,
+        ticketType: ticket.tickettype,
+        daysOutstanding: ticket.daysoutstanding,
+        comment7d: ticket.comment7d,
+        quantity: ticket.quantity,
+        createdAt: ticket.createdat,
+        updatedAt: ticket.updatedat,
+        incidentName: ticket.incidentname,
+        addresses: (addressesByTicket[ticket.ticketid] || []).map(a => a.fulladdress).join(', '),
+        addressDetails: addressesByTicket[ticket.ticketid] || [],
+        taskStatuses: statusesByTicket[ticket.ticketid] || [],
+        taskStatusCount: (statusesByTicket[ticket.ticketid] || []).length
+      }));
+
+      res.status(200).json({
+        success: true,
+        message: 'Tickets with expired or needs permit extension status retrieved successfully',
+        summary: {
+          totalTickets: normalizedTickets.length,
+          ticketsExpired: normalizedTickets.filter(t => (t.comment7d || '').toLowerCase().includes('tk - expired')).length,
+          ticketsNeedsPermitExtension: normalizedTickets.filter(t => (t.comment7d || '').toLowerCase().includes('tk - needs permit extension')).length,
+          ticketsWithCrewComments: normalizedTickets.filter(t => t.taskStatuses.length > 0).length,
+          totalCrewComments: normalizedTickets.reduce((sum, t) => sum + t.taskStatuses.length, 0)
+        },
+        data: normalizedTickets
+      });
+    } catch (error) {
+      console.error('Error fetching tickets with expired or needs permit extension status:', error);
+      res.status(500).json({ 
+        success: false,
+        message: 'Error fetching tickets with expired or needs permit extension status', 
         error: error.message 
       });
     }

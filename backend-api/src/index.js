@@ -123,6 +123,48 @@ app.get('/api/health', (req, res) => {
   res.status(200).json({ status: 'OK' });
 });
 
+// Test endpoint to manually trigger permit expiration check
+app.get('/api/test/permit-expiration', async (req, res) => {
+  try {
+    console.log('Manual trigger: Starting permit expiration check...');
+    await ScheduledTasks.checkPermitExpiration();
+    res.status(200).json({ 
+      status: 'OK', 
+      message: 'Permit expiration check completed successfully',
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Error in manual permit expiration check:', error);
+    res.status(500).json({ 
+      status: 'ERROR', 
+      message: 'Permit expiration check failed',
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Test endpoint to manually trigger all scheduled tasks
+app.get('/api/test/scheduled-tasks', async (req, res) => {
+  try {
+    console.log('Manual trigger: Starting all scheduled tasks...');
+    await ScheduledTasks.runAllTasks();
+    res.status(200).json({ 
+      status: 'OK', 
+      message: 'All scheduled tasks completed successfully',
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Error in manual scheduled tasks:', error);
+    res.status(500).json({ 
+      status: 'ERROR', 
+      message: 'Scheduled tasks failed',
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 // New endpoint to test database connection
 app.get('/api/test-db', async (req, res) => {
   try {

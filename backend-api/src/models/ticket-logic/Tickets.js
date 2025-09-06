@@ -408,7 +408,7 @@ class Tickets {
       LEFT JOIN TicketStatus tks ON t.ticketId = tks.ticketId AND tks.deletedAt IS NULL
       LEFT JOIN TaskStatus ts ON tks.taskStatusId = ts.taskStatusId AND ts.deletedAt IS NULL
       WHERE t.deletedAt IS NULL 
-        AND t.comment7d IN ('TK - ON HOLD OFF', 'TK - WILL BE SCHEDULE', 'TK - NEEDS PERMIT EXTENSION')
+        AND t.comment7d ILIKE '%tk - on hold off%'
       GROUP BY 
         t.ticketId, t.ticketCode, t.contractNumber, t.amountToPay, t.ticketType, 
         t.daysOutstanding, t.comment7d, t.quantity, t.createdAt, t.updatedAt,
@@ -437,12 +437,35 @@ class Tickets {
       FROM Tickets t
       LEFT JOIN ContractUnits cu ON t.contractUnitId = cu.contractUnitId AND cu.deletedAt IS NULL
       LEFT JOIN IncidentsMx i ON t.incidentId = i.incidentId AND i.deletedAt IS NULL
-      INNER JOIN TicketStatus tks ON t.ticketId = tks.ticketId AND tks.deletedAt IS NULL
+      LEFT JOIN TicketStatus tks ON t.ticketId = tks.ticketId AND tks.deletedAt IS NULL
       WHERE t.deletedAt IS NULL 
-        AND t.comment7d IN ('TK - ON HOLD OFF', 'TK - WILL BE SCHEDULE', 'TK - NEEDS PERMIT EXTENSION')
-        AND tks.observation IS NOT NULL 
-        AND tks.observation != ''
-        AND tks.observation != ' '
+        AND t.comment7d ILIKE '%tk - on hold off%'
+      ORDER BY t.ticketId ASC
+    `);
+    return result.rows;
+  }
+
+  // Find tickets with expired or needs permit extension status
+  static async findTicketsExpiredOrNeedsPermit() {
+    const result = await db.query(`
+      SELECT DISTINCT
+        t.ticketId,
+        t.ticketCode,
+        t.contractNumber,
+        t.amountToPay,
+        t.ticketType,
+        t.daysOutstanding,
+        t.comment7d,
+        t.quantity,
+        t.createdAt,
+        t.updatedAt,
+        cu.name as contractUnitName,
+        i.name as incidentName
+      FROM Tickets t
+      LEFT JOIN ContractUnits cu ON t.contractUnitId = cu.contractUnitId AND cu.deletedAt IS NULL
+      LEFT JOIN IncidentsMx i ON t.incidentId = i.incidentId AND i.deletedAt IS NULL
+      WHERE t.deletedAt IS NULL 
+        AND (t.comment7d ILIKE '%tk - expired%' OR t.comment7d ILIKE '%tk - needs permit extension%')
       ORDER BY t.ticketId ASC
     `);
     return result.rows;

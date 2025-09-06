@@ -1020,7 +1020,9 @@ router.get('/completed/asphalt', RoutesController.getCompletedAsphaltRoutes);
  *     tags: [Routes]
  *     description: |
  *       Retrieves all tickets that are ready for spotting route optimization, including their addresses. 
- *       These tickets meet the criteria: comment7d is NULL, empty, TK - PERMIT EXTENDED, TK - LAYOUT, or TK - LAY OUT, and no endingDate for SPOTTING status.
+ *       These tickets meet the criteria: comment7d is NULL, empty, or contains TK - PERMIT EXTENDED, TK - LAYOUT, or TK - LAY OUT, and no endingDate for SPOTTING status.
+ *       Excludes tickets with comment7d containing: TK - CANCELLED, TK - HOLD OFF, TK- ON HOLD OFF, 
+ *       TK - COMPLETED, TK - COMPLETE, COMPLETED, COMPLETE, TK - EXPIRED, TK - NEEDS PERMIT EXTENSION.
  *     responses:
  *       200:
  *         description: Tickets ready for spotting routes retrieved successfully
@@ -1117,6 +1119,8 @@ router.get('/tickets-ready/spotting', RoutesController.getTicketsReadyForSpottin
  *     description: |
  *       Retrieves all tickets that are ready for concrete route optimization, including their addresses. 
  *       These tickets meet the criteria: SPOTTING completed (has endingDate) and has SAWCUT status.
+ *       Excludes tickets with comment7d containing: TK - CANCELLED, TK - HOLD OFF, TK - ON HOLD OFF, TK- ON HOLD OFF, 
+ *       TK - COMPLETED, TK - COMPLETE, COMPLETED, COMPLETE, TK - EXPIRED, TK - NEEDS PERMIT EXTENSION.
  *     responses:
  *       200:
  *         description: Tickets ready for concrete routes retrieved successfully
@@ -1213,6 +1217,8 @@ router.get('/tickets-ready/concrete', RoutesController.getTicketsReadyForConcret
  *     description: |
  *       Retrieves all tickets that are ready for asphalt route optimization, including their addresses. 
  *       These tickets meet the criteria: SPOTTING completed and either has GRINDING status (no SAWCUT) or all concrete phases completed.
+ *       Includes tickets with comment7d containing: TK - ON PROGRESS, TK - ON LAYOUT, TK - LAYOUT, TK - LAY OUT, 
+ *       TK- ON PROGRESS, TK- ON LAYOUT, TK- LAYOUT (allowing text before and after keywords).
  *     responses:
  *       200:
  *         description: Tickets ready for asphalt routes retrieved successfully

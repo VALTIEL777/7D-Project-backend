@@ -16,7 +16,7 @@ const router = express.Router();
  *   get:
  *     summary: Get tickets with issues
  *     tags: [Tickets]
- *     description: Retrieve all tickets with comment7d values of "TK - ON HOLD OFF", "TK - WILL BE SCHEDULE", or "TK - NEEDS PERMIT EXTENSION" along with their crew comments from task statuses
+ *     description: Retrieve all tickets where comment7d contains "TK - ON HOLD OFF" (case-insensitive) along with their crew comments from task statuses
  *     responses:
  *       200:
  *         description: Tickets with issues retrieved successfully
@@ -42,14 +42,6 @@ const router = express.Router();
  *                       type: integer
  *                       description: Number of tickets with "TK - ON HOLD OFF" status
  *                       example: 5
- *                     ticketsWillBeScheduled:
- *                       type: integer
- *                       description: Number of tickets with "TK - WILL BE SCHEDULE" status
- *                       example: 7
- *                     ticketsNeedsPermitExtension:
- *                       type: integer
- *                       description: Number of tickets with "TK - NEEDS PERMIT EXTENSION" status
- *                       example: 3
  *                     ticketsWithCrewComments:
  *                       type: integer
  *                       description: Number of tickets that have crew comments
@@ -176,6 +168,199 @@ const router = express.Router();
  *                   example: "Database connection failed"
  */
 router.get('/with-issues', TicketsController.getTicketsWithIssues);
+
+/**
+ * @swagger
+ * /tickets/expired-or-needs-permit:
+ *   get:
+ *     summary: Get tickets with expired or needs permit extension status
+ *     tags: [Tickets]
+ *     description: Retrieve all tickets where comment7d contains "TK - EXPIRED" or "TK - NEEDS PERMIT EXTENSION" (case-insensitive) along with their crew comments from task statuses
+ *     responses:
+ *       200:
+ *         description: Tickets with expired or needs permit extension status retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Tickets with expired or needs permit extension status retrieved successfully"
+ *                 summary:
+ *                   type: object
+ *                   properties:
+ *                     totalTickets:
+ *                       type: integer
+ *                       description: Total number of tickets with expired or needs permit extension status
+ *                       example: 10
+ *                     ticketsExpired:
+ *                       type: integer
+ *                       description: Number of tickets with "TK - EXPIRED" status
+ *                       example: 3
+ *                     ticketsNeedsPermitExtension:
+ *                       type: integer
+ *                       description: Number of tickets with "TK - NEEDS PERMIT EXTENSION" status
+ *                       example: 7
+ *                     ticketsWithCrewComments:
+ *                       type: integer
+ *                       description: Number of tickets that have crew comments
+ *                       example: 8
+ *                     totalCrewComments:
+ *                       type: integer
+ *                       description: Total number of crew comments across all tickets
+ *                       example: 15
+ *                 data:
+ *                   type: array
+ *                   description: Array of tickets with expired or needs permit extension status and their crew comments
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       ticketId:
+ *                         type: integer
+ *                         description: The ticket ID
+ *                         example: 123
+ *                       ticketCode:
+ *                         type: string
+ *                         description: The ticket code
+ *                         example: "TK6514243"
+ *                       contractNumber:
+ *                         type: string
+ *                         description: The contract number
+ *                         example: "CONTRACT-2024-001"
+ *                       contractUnitName:
+ *                         type: string
+ *                         description: The contract unit name
+ *                         example: "Concrete Repair"
+ *                       amountToPay:
+ *                         type: number
+ *                         description: The amount to pay
+ *                         example: 1500.00
+ *                       ticketType:
+ *                         type: string
+ *                         description: The type of ticket
+ *                         example: "regular"
+ *                       daysOutstanding:
+ *                         type: integer
+ *                         description: The number of days outstanding
+ *                         example: 5
+ *                       comment7d:
+ *                         type: string
+ *                         description: The 7D comment indicating the status
+ *                         example: "TK - EXPIRED"
+ *                       quantity:
+ *                         type: integer
+ *                         description: The ticket quantity
+ *                         example: 1
+ *                       createdAt:
+ *                         type: string
+ *                         format: date-time
+ *                         description: When the ticket was created
+ *                         example: "2024-01-15T10:30:00Z"
+ *                       updatedAt:
+ *                         type: string
+ *                         format: date-time
+ *                         description: When the ticket was last updated
+ *                         example: "2024-01-20T14:45:00Z"
+ *                       incidentName:
+ *                         type: string
+ *                         description: The incident name
+ *                         example: "Pothole Repair"
+ *                       addresses:
+ *                         type: string
+ *                         description: Comma-separated list of addresses for this ticket
+ *                         example: "123 N Main St, 456 W Oak Ave"
+ *                       addressDetails:
+ *                         type: array
+ *                         description: Array of address objects with detailed information
+ *                         items:
+ *                           type: object
+ *                           properties:
+ *                             addressId:
+ *                               type: integer
+ *                               description: Address ID
+ *                               example: 456
+ *                             addressNumber:
+ *                               type: string
+ *                               description: House or building number
+ *                               example: "123"
+ *                             addressCardinal:
+ *                               type: string
+ *                               description: Cardinal direction
+ *                               example: "N"
+ *                             addressStreet:
+ *                               type: string
+ *                               description: Street name
+ *                               example: "Main"
+ *                             addressSuffix:
+ *                               type: string
+ *                               description: Street suffix
+ *                               example: "St"
+ *                             fullAddress:
+ *                               type: string
+ *                               description: Complete formatted address
+ *                               example: "123 N Main St"
+ *                       taskStatuses:
+ *                         type: array
+ *                         description: Array of task statuses with crew comments
+ *                         items:
+ *                           type: object
+ *                           properties:
+ *                             taskStatusId:
+ *                               type: integer
+ *                               description: Task status ID
+ *                               example: 1
+ *                             name:
+ *                               type: string
+ *                               description: Task status name
+ *                               example: "Sawcut"
+ *                             description:
+ *                               type: string
+ *                               description: Task status description
+ *                               example: "Cutting the damaged pavement section with a saw"
+ *                             startingDate:
+ *                               type: string
+ *                               format: date
+ *                               description: Start date of this status
+ *                               example: "2024-01-15"
+ *                             endingDate:
+ *                               type: string
+ *                               format: date
+ *                               description: End date of this status
+ *                               example: "2024-01-16"
+ *                             crewComment:
+ *                               type: string
+ *                               description: Crew comment/observation for this task status
+ *                               example: "Permit expired, work halted"
+ *                             crewId:
+ *                               type: integer
+ *                               description: Associated crew ID
+ *                               example: 1
+ *                       taskStatusCount:
+ *                         type: integer
+ *                         description: Number of task statuses for this ticket
+ *                         example: 3
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Error fetching tickets with expired or needs permit extension status"
+ *                 error:
+ *                   type: string
+ *                   example: "Database connection failed"
+ */
+router.get('/expired-or-needs-permit', TicketsController.getTicketsExpiredOrNeedsPermit);
 
 /**
  * @swagger
