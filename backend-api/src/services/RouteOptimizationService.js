@@ -109,6 +109,105 @@ class RouteOptimizationService {
     }
 
     /**
+     * Safely geocode an address by first checking the Addresses table for coordinates.
+     * Falls back to Google Geocoding only when coordinates are missing.
+     * @param {string} address
+     * @returns {Promise<{address: string, latitude: number, longitude: number, placeId: string|null}>}
+     */
+    async geocodeAddressSafe(address) {
+        // Try database first
+        try {
+            const existing = await this.getCoordinatesFromDatabase(address);
+            if (existing && existing.latitude && existing.longitude) {
+                return {
+                    address,
+                    latitude: Number(existing.latitude),
+                    longitude: Number(existing.longitude),
+                    placeId: existing.placeid || null
+                };
+            }
+        } catch (err) {
+            console.warn('Database coordinate lookup failed:', err.message);
+        }
+
+        // Fallback to Google Geocoding
+        return await this.geocodeAddress(address);
+    }
+
+    /**
+     * Attempt to find coordinates in the Addresses table using parsed components.
+     * @param {string} fullAddress - e.g., "4039 W OGDEN AVE, Chicago, Illinois"
+     * @returns {Promise<{latitude:number, longitude:number, placeid:string}|null>}
+     */
+    async getCoordinatesFromDatabase(fullAddress) {
+        const parsed = this.parseAddressComponents(fullAddress);
+        if (!parsed) return null;
+
+        const query = `
+            SELECT latitude, longitude, placeid
+            FROM Addresses
+            WHERE addressNumber = $1
+              AND COALESCE(addressCardinal,'') = $2
+              AND addressStreet = $3
+              AND COALESCE(addressSuffix,'') = $4
+              AND deletedAt IS NULL
+            LIMIT 1
+        `;
+
+        const params = [
+            parsed.addressNumber,
+            parsed.addressCardinal,
+            parsed.addressStreet,
+            parsed.addressSuffix
+        ];
+
+        const res = await db.query(query, params);
+        return res.rows[0] || null;
+    }
+
+    /**
+     * Parse a full address string into table components.
+     * Very simple parser for formats like:
+     *   "4039 W OGDEN AVE, Chicago, Illinois"
+     * @param {string} fullAddress
+     * @returns {{addressNumber:string, addressCardinal:string, addressStreet:string, addressSuffix:string}|null}
+     */
+    parseAddressComponents(fullAddress) {
+        if (!fullAddress || typeof fullAddress !== 'string') return null;
+
+        // Remove trailing ", Chicago, Illinois" (or variants)
+        const cleaned = fullAddress.replace(/,?\s*Chicago,?\s*Illinois.?$/i, '').trim();
+        const parts = cleaned.split(/\s+/);
+        if (parts.length < 2) return null;
+
+        const addressNumber = parts[0];
+        let addressCardinal = '';
+        let addressStreet = '';
+        let addressSuffix = '';
+
+        const cardinals = new Set(['N','S','E','W','NORTH','SOUTH','EAST','WEST']);
+
+        if (parts.length >= 3 && cardinals.has(parts[1].toUpperCase())) {
+            addressCardinal = parts[1].toUpperCase().charAt(0); // Normalize to single-letter
+            if (parts.length >= 3) {
+                addressSuffix = parts[parts.length - 1].toUpperCase();
+                addressStreet = parts.slice(2, parts.length - 1).join(' ').toUpperCase();
+            }
+        } else {
+            addressCardinal = '';
+            addressSuffix = parts[parts.length - 1].toUpperCase();
+            addressStreet = parts.slice(1, parts.length - 1).join(' ').toUpperCase();
+        }
+
+        return {
+            addressNumber,
+            addressCardinal,
+            addressStreet,
+            addressSuffix
+        };
+    }
+
+    /**
      * Optimizes a single route for one vehicle using the Google Maps Platform Routes API (ComputeRoutes).
      * This method handles the full process: geocoding addresses, calling the Routes API for optimization,
      * and parsing the relevant response data including the encoded polyline and optimized waypoint order.
@@ -131,11 +230,11 @@ class RouteOptimizationService {
 
         console.log(`Starting VROOM route optimization process for ${intermediateAddresses.length} intermediate stops.`);
 
-        // --- STEP 1: Geocode all addresses (origin and intermediates) ---
+        // --- STEP 1: Geocode all addresses safely (DB first, then Google) ---
         // Only geocode origin and intermediates (no destination)
         const [originGeo, ...geocodedIntermediates] = await Promise.all([
-            this.geocodeAddress(originAddress),
-            ...intermediateAddresses.map(address => this.geocodeAddress(address))
+            this.geocodeAddressSafe(originAddress),
+            ...intermediateAddresses.map(address => this.geocodeAddressSafe(address))
         ]);
 
         // --- STEP 2: Use VROOM for waypoint optimization ---
