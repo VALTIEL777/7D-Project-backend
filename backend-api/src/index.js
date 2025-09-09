@@ -10,11 +10,12 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 const allowedOrigins = [
+  'https://d2zfngjqfagk2h.cloudfront.net',
+  'http://7d-compass-alb-1374325729.us-east-1.elb.amazonaws.com',
   'http://13.221.110.249:3000',
   'http://13.221.110.249',
   'http://34.228.116.58',
   'http://34.228.116.58:3000',
-
   'http://localhost:3005',
   'http://localhost:3000',
   'http://localhost:3001',
@@ -26,20 +27,18 @@ const allowedOrigins = [
   'http://localhost:9000',
   'http://localhost:9001',
   'http://localhost:5432',
-  'http://localhost:8080',  // Added for Nginx proxy
+  'http://localhost:8080',
   'http://127.0.0.1:3000',
   'http://127.0.0.1:3001',
   'http://127.0.0.1:3002',
   'http://127.0.0.1:3003',
   'http://127.0.0.1:3004',
   'http://127.0.0.1:3005',
-  'http://127.0.0.1:8080',  // Added for Nginx proxy
-  // Container-to-container communication
+  'http://127.0.0.1:8080',
   'http://compass:3005',
   'http://api:3000',
   'http://api:3000/api',
   'http://compass:3005/api',
-  // Additional localhost variations for browser testing
   'http://localhost',
   'http://127.0.0.1'
 ];
