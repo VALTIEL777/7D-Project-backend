@@ -1,11 +1,12 @@
 FROM node:18-slim
 WORKDIR /usr/src/app
 
-# Install gcloud CLI and curl for health checks
+# Install dependencies including OpenSSL for SSL certificates
 RUN apt-get update && apt-get install -y \
     curl \
     gnupg \
     lsb-release \
+    openssl \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -15,6 +16,9 @@ RUN npm install
 
 # Copy rest of files
 COPY . .
+
+# Generate SSL certificates
+RUN openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 365 -nodes -subj "/C=US/ST=State/L=City/O=Organization/CN=localhost"
 
 EXPOSE 3000
 CMD ["npm", "start"]

@@ -1,6 +1,9 @@
 // index.js
 require('dotenv').config();
 const express = require('express');
+const https = require('https');
+const fs = require('fs');
+const path = require('path');
 const cors = require('cors');
 const db = require('./config/db.js');
 const swaggerUi = require('swagger-ui-express');
@@ -173,9 +176,24 @@ app.use('/api/notifications', notificationsRoutes);
 app.use('/api/route-optimization', routeOptimizationRoutes);
 app.use('/api/unified', unifiedExcelRoutes);
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server listening on port ${PORT}`);
+// Try to load SSL certificates, fallback to HTTP if not available
+let server;
+try {
+  const sslOptions = {
+    key: fs.readFileSync(path.join(__dirname, '../key.pem')),
+    cert: fs.readFileSync(path.join(__dirname, '../cert.pem'))
+  };
   
-  // Start the notification scheduler
-  //ScheduledTasks.startScheduler();
-});
+  server = https.createServer(sslOptions, app);
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log(`HTTPS Server listening on port ${PORT}`);
+  });
+} catch (error) {
+  console.log('SSL certificates not found, starting HTTP server');
+  server = app.listen(PORT, '0.0.0.0', () => {
+    console.log(`HTTP Server listening on port ${PORT}`);
+  });
+}
+
+// Start the notification scheduler
+//ScheduledTasks.startScheduler();
