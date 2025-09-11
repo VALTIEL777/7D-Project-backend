@@ -1102,7 +1102,10 @@ function compareTicketData(excelData, databaseTicket) {
     'TASK_WO_NUM': 'ticketcode',  // Compare TASK_WO_NUM with database ticketcode
     'PGL ComD:Wments': 'partnercomment',  // PGL comments go to partnerComment field
     'Contractor Comments': 'comment7d',   // Contractor comments go to comment7d field
-    'NOTES2_RES': 'partnersupervisorcomment'  // NOTES2_RES goes to PartnerSupervisorComment field
+    'NOTES2_RES': 'partnersupervisorcomment',  // NOTES2_RES goes to PartnerSupervisorComment field
+    'EXP_DATE': 'expDate',        // Permit expiration date
+    'START_DATE': 'startDate',    // Permit start date
+    'AGENCY_NO': 'agencyNo'       // Permit agency number
   };
 
   for (const [excelField, dbField] of Object.entries(fieldMappings)) {
@@ -1122,6 +1125,30 @@ function compareTicketData(excelData, databaseTicket) {
     
     // Skip if both values are null/undefined/empty
     if ((!excelValue || excelValue === '') && (!dbValue || dbValue === '')) continue;
+    
+    // Special handling for date fields - skip if they represent the same date
+    if (['EXP_DATE', 'START_DATE', 'Earliest_Rpt_Dt'].includes(excelField)) {
+      if (excelValue && dbValue) {
+        try {
+          const excelDate = new Date(excelValue);
+          const dbDate = new Date(dbValue);
+          
+          // If both are valid dates and represent the same day, skip this comparison
+          if (!isNaN(excelDate.getTime()) && !isNaN(dbDate.getTime())) {
+            const excelDateOnly = excelDate.toISOString().split('T')[0];
+            const dbDateOnly = dbDate.toISOString().split('T')[0];
+            
+            if (excelDateOnly === dbDateOnly) {
+              console.log(`Skipping date comparison for ${excelField}: same date (${excelDateOnly})`);
+              continue;
+            }
+          }
+        } catch (dateError) {
+          console.log(`Date parsing error for ${excelField}:`, dateError);
+          // Continue with normal comparison if date parsing fails
+        }
+      }
+    }
     
     // Normalize values for comparison
     const normalizedExcel = normalizeValue(excelValue);
@@ -1154,7 +1181,10 @@ function compareTicketDataExcludingComments(excelData, databaseTicket) {
   const fieldMappings = {
     'TASK_WO_NUM': 'ticketcode',  // Compare TASK_WO_NUM with database ticketcode
     'PGL ComD:Wments': 'partnercomment',  // PGL comments go to partnerComment field
-    'NOTES2_RES': 'partnersupervisorcomment'  // NOTES2_RES goes to PartnerSupervisorComment field
+    'NOTES2_RES': 'partnersupervisorcomment',  // NOTES2_RES goes to PartnerSupervisorComment field
+    'EXP_DATE': 'expDate',        // Permit expiration date
+    'START_DATE': 'startDate',    // Permit start date
+    'AGENCY_NO': 'agencyNo'       // Permit agency number
   };
 
   for (const [excelField, dbField] of Object.entries(fieldMappings)) {
@@ -1163,6 +1193,30 @@ function compareTicketDataExcludingComments(excelData, databaseTicket) {
     
     // Skip if both values are null/undefined/empty
     if ((!excelValue || excelValue === '') && (!dbValue || dbValue === '')) continue;
+    
+    // Special handling for date fields - skip if they represent the same date
+    if (['EXP_DATE', 'START_DATE', 'Earliest_Rpt_Dt'].includes(excelField)) {
+      if (excelValue && dbValue) {
+        try {
+          const excelDate = new Date(excelValue);
+          const dbDate = new Date(dbValue);
+          
+          // If both are valid dates and represent the same day, skip this comparison
+          if (!isNaN(excelDate.getTime()) && !isNaN(dbDate.getTime())) {
+            const excelDateOnly = excelDate.toISOString().split('T')[0];
+            const dbDateOnly = dbDate.toISOString().split('T')[0];
+            
+            if (excelDateOnly === dbDateOnly) {
+              console.log(`Skipping date comparison for ${excelField}: same date (${excelDateOnly})`);
+              continue;
+            }
+          }
+        } catch (dateError) {
+          console.log(`Date parsing error for ${excelField}:`, dateError);
+          // Continue with normal comparison if date parsing fails
+        }
+      }
+    }
     
     // Normalize values for comparison
     const normalizedExcel = normalizeValue(excelValue);
@@ -1200,7 +1254,10 @@ function normalizeValue(value) {
     return trimmed;
   }
   if (typeof value === 'number') return value.toString();
-  if (value instanceof Date) return value.toISOString();
+  if (value instanceof Date) {
+    // For dates, normalize to YYYY-MM-DD format to ignore time differences
+    return value.toISOString().split('T')[0];
+  }
   return String(value).trim().toLowerCase();
 }
 
@@ -1353,27 +1410,71 @@ async function updateTicketWithData(ticketId, finalData, updatedBy) {
     );
 
     // Handle permit updates for existing tickets
-    if (finalData.agencyNo && finalData.startDate && finalData.expDate) {
+    // Check if we have permit-related data to update
+    const hasPermitData = finalData.agencyNo || finalData.startDate || finalData.expDate;
+    
+    if (hasPermitData) {
       try {
-        console.log(`Updating permit for existing ticket ${ticketId}: AGENCY_NO=${finalData.agencyNo}, START_DATE=${finalData.startDate}, EXP_DATE=${finalData.expDate}`);
-        
-        // Determine permit status based on expiration date
-        const permitStatus = RTR.determinePermitStatus(finalData.expDate);
-        
-        // Update or create permit for this ticket
-        const permitId = await RTR.findOrCreatePermit(
-          finalData.agencyNo,
-          finalData.startDate,
-          finalData.expDate,
-          permitStatus,
-          updatedBy,
-          updatedBy
+        // Get current ticket's permit information
+        const existingPermit = await db.query(
+          `SELECT p.PermitId, p.permitNumber, p.startDate, p.expireDate 
+           FROM Permits p
+           JOIN PermitedTickets pt ON p.PermitId = pt.permitId
+           WHERE pt.ticketId = $1 AND pt.deletedAt IS NULL AND p.deletedAt IS NULL
+           ORDER BY p.createdAt DESC
+           LIMIT 1`,
+          [ticketId]
         );
         
-        // Ensure the ticket is associated with this permit
-        await RTR.findOrCreatePermitedTicket(permitId, ticketId, updatedBy, updatedBy);
-        
-        console.log(`Successfully updated permit ${permitId} for ticket ${ticketId} with status: ${permitStatus}`);
+        if (existingPermit.rows.length > 0) {
+          // Update existing permit for this ticket
+          const existingPermitData = existingPermit.rows[0];
+          const permitId = existingPermitData.permitid;
+          
+          // Use Excel data if provided, otherwise keep existing data
+          const permitNumber = finalData.agencyNo || existingPermitData.permitnumber;
+          const startDate = finalData.startDate || existingPermitData.startdate;
+          const expDate = finalData.expDate || existingPermitData.expiredate;
+          
+          console.log(`Updating existing permit ${permitId} for ticket ${ticketId}: AGENCY_NO=${permitNumber}, START_DATE=${startDate}, EXP_DATE=${expDate}`);
+          
+          // Determine permit status based on expiration date
+          const permitStatus = RTR.determinePermitStatus(expDate);
+          
+          // Update the existing permit directly
+          await db.query(
+            'UPDATE Permits SET permitNumber = $1, startDate = $2, expireDate = $3, status = $4, updatedAt = CURRENT_TIMESTAMP, updatedBy = $5 WHERE PermitId = $6 AND deletedAt IS NULL',
+            [permitNumber, startDate, expDate, permitStatus, updatedBy, permitId]
+          );
+          
+          // Update ticket comments based on new expiration date
+          await RTR.updateTicketCommentsForPermit(permitId, updatedBy);
+          
+          console.log(`Successfully updated existing permit ${permitId} for ticket ${ticketId} with status: ${permitStatus}`);
+        } else if (finalData.agencyNo && finalData.startDate && finalData.expDate) {
+          // Create new permit only if ticket doesn't have one and we have all required data
+          console.log(`Creating new permit for ticket ${ticketId}: AGENCY_NO=${finalData.agencyNo}, START_DATE=${finalData.startDate}, EXP_DATE=${finalData.expDate}`);
+          
+          // Determine permit status based on expiration date
+          const permitStatus = RTR.determinePermitStatus(finalData.expDate);
+          
+          // Create new permit for this ticket
+          const permitId = await RTR.findOrCreatePermit(
+            finalData.agencyNo,
+            finalData.startDate,
+            finalData.expDate,
+            permitStatus,
+            updatedBy,
+            updatedBy
+          );
+          
+          // Ensure the ticket is associated with this permit
+          await RTR.findOrCreatePermitedTicket(permitId, ticketId, updatedBy, updatedBy);
+          
+          console.log(`Successfully updated permit ${permitId} for ticket ${ticketId} with status: ${permitStatus}`);
+        } else {
+          console.log(`Skipping permit update for ticket ${ticketId}: No existing permit found and missing required permit data`);
+        }
       } catch (permitError) {
         console.error(`Error updating permit for ticket ${ticketId}:`, permitError);
         // Don't fail the entire operation if permit update fails

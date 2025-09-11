@@ -280,7 +280,20 @@ class RTR {
     // Parse expiration date and ensure it's in UTC
     let expirationDate;
     try {
-      expirationDate = new Date(expireDate);
+      // Fix date parsing to handle both mm/dd/yyyy and yyyy-mm-dd formats
+      if (typeof expireDate === 'string') {
+        // Check if it's in mm/dd/yyyy format (contains slashes)
+        if (expireDate.includes('/')) {
+          const [month, day, year] = expireDate.split('/');
+          expirationDate = new Date(year, month - 1, day); // month is 0-indexed
+        } else {
+          // Assume it's in yyyy-mm-dd format
+          expirationDate = new Date(expireDate);
+        }
+      } else {
+        expirationDate = new Date(expireDate);
+      }
+      
       // If the date is invalid, throw an error
       if (isNaN(expirationDate.getTime())) {
         throw new Error(`Invalid date: ${expireDate}`);
@@ -777,10 +790,10 @@ class RTR {
           quadrantId,
           contractUnitId, // Pass the found contractUnitId
           wayfindingId,
-          row['PGL ComD:Wments'],
-          row['Contractor Comments'],
+          row['PGL Comments'],        // This goes to partnerComment parameter
+          row['Contractor Comments'], // This goes to comment7d parameter
           row.TASK_WO_NUM,
-          row.NOTES2_RES,
+          row.NOTES2_RES,            // This goes to partnerSupervisorComment parameter
           row.ticketType,
           amountToPay, // Pass the calculated amountToPay
           quantity, // Pass the calculated quantity
@@ -797,7 +810,21 @@ class RTR {
           } else {
             const currentDate = new Date();
             currentDate.setHours(0, 0, 0, 0);
-            const expirationDate = new Date(row.EXP_DATE);
+            
+            // Fix date parsing to handle both mm/dd/yyyy and yyyy-mm-dd formats
+            let expirationDate;
+            if (typeof row.EXP_DATE === 'string') {
+              // Check if it's in mm/dd/yyyy format (contains slashes)
+              if (row.EXP_DATE.includes('/')) {
+                const [month, day, year] = row.EXP_DATE.split('/');
+                expirationDate = new Date(year, month - 1, day); // month is 0-indexed
+              } else {
+                // Assume it's in yyyy-mm-dd format
+                expirationDate = new Date(row.EXP_DATE);
+              }
+            } else {
+              expirationDate = new Date(row.EXP_DATE);
+            }
             expirationDate.setHours(0, 0, 0, 0);
             
             const daysUntilExpiry = Math.ceil((expirationDate - currentDate) / (1000 * 60 * 60 * 24));

@@ -1246,6 +1246,7 @@ class RouteOptimizationService {
                         t.comment7d NOT ILIKE '%TK - CANCELLED%' 
                         AND t.comment7d NOT ILIKE '%TK - HOLD OFF%' 
                         AND t.comment7d NOT ILIKE '%TK- ON HOLD OFF%' 
+                        AND t.comment7d NOT ILIKE '%TK - ON HOLD OFF%' 
                         AND t.comment7d NOT ILIKE '%TK - COMPLETED%' 
                         AND t.comment7d NOT ILIKE '%TK - COMPLETE%' 
                         AND t.comment7d NOT ILIKE '%COMPLETED%' 
@@ -1328,21 +1329,27 @@ class RouteOptimizationService {
             LEFT JOIN IncidentsMx i ON t.incidentId = i.incidentId AND i.deletedAt IS NULL
             WHERE t.deletedAt IS NULL
             AND (
-                -- Exclude tickets with specific comment7d values
+                -- Include comment7d values with flexible matching (allows text before and after)
                 t.comment7d IS NULL 
                 OR t.comment7d = '' 
-                OR (
-                    t.comment7d NOT ILIKE '%TK - CANCELLED%' 
-                    AND t.comment7d NOT ILIKE '%TK - HOLD OFF%' 
-                    AND t.comment7d NOT ILIKE '%TK - ON HOLD OFF%' 
-                    AND t.comment7d NOT ILIKE '%TK- ON HOLD OFF%' 
-                    AND t.comment7d NOT ILIKE '%TK - COMPLETED%' 
-                    AND t.comment7d NOT ILIKE '%TK - COMPLETE%' 
-                    AND t.comment7d NOT ILIKE '%COMPLETED%' 
-                    AND t.comment7d NOT ILIKE '%COMPLETE%'
-                    AND t.comment7d NOT ILIKE '%TK - EXPIRED%'
-                    AND t.comment7d NOT ILIKE '%TK - NEEDS PERMIT EXTENSION%'
-                )
+                OR t.comment7d ILIKE '%TK - PERMIT EXTENDED%'
+                OR t.comment7d ILIKE '%TK - LAYOUT%'
+                OR t.comment7d ILIKE '%TK - LAY OUT%'
+                OR t.comment7d ILIKE '%TK - ON PROGRESS%'
+                OR t.comment7d ILIKE '%TK- ON PROGRESS%'
+            )
+            AND (
+                -- Exclude tickets with hold-off and other exclusion comments
+                t.comment7d NOT ILIKE '%TK - CANCELLED%' 
+                AND t.comment7d NOT ILIKE '%TK - HOLD OFF%' 
+                AND t.comment7d NOT ILIKE '%TK- ON HOLD OFF%' 
+                AND t.comment7d NOT ILIKE '%TK - ON HOLD OFF%' 
+                AND t.comment7d NOT ILIKE '%TK - COMPLETED%' 
+                AND t.comment7d NOT ILIKE '%TK - COMPLETE%' 
+                AND t.comment7d NOT ILIKE '%COMPLETED%' 
+                AND t.comment7d NOT ILIKE '%COMPLETE%'
+                AND t.comment7d NOT ILIKE '%TK - EXPIRED%'
+                AND t.comment7d NOT ILIKE '%TK - NEEDS PERMIT EXTENSION%'
             )
             AND EXISTS (
                 -- SPOTTING completed (has endingDate)
@@ -1465,7 +1472,19 @@ class RouteOptimizationService {
                     OR t.comment7d ILIKE '%TK- ON LAYOUT%'
                     OR t.comment7d ILIKE '%TK- LAYOUT%'
                 )
-                AND t.contractUnitId NOT IN (1,2,3,4,5,10,11,13,14,16,17,18,21,22,23,24,25,26,27,28,29,30,33)
+                AND (
+                    -- Exclude tickets with hold-off and other exclusion comments
+                    t.comment7d NOT ILIKE '%TK - CANCELLED%' 
+                    AND t.comment7d NOT ILIKE '%TK - HOLD OFF%' 
+                    AND t.comment7d NOT ILIKE '%TK- ON HOLD OFF%' 
+                    AND t.comment7d NOT ILIKE '%TK - ON HOLD OFF%' 
+                    AND t.comment7d NOT ILIKE '%TK - COMPLETED%' 
+                    AND t.comment7d NOT ILIKE '%TK - COMPLETE%' 
+                    AND t.comment7d NOT ILIKE '%COMPLETED%' 
+                    AND t.comment7d NOT ILIKE '%COMPLETE%'
+                    AND t.comment7d NOT ILIKE '%TK - EXPIRED%'
+                    AND t.comment7d NOT ILIKE '%TK - NEEDS PERMIT EXTENSION%'
+                )
                 AND EXISTS (
                     -- SPOTTING completed (has endingDate)
                     SELECT 1 FROM TicketStatus tks1 
@@ -1506,7 +1525,7 @@ class RouteOptimizationService {
                     AND rt.deletedAt IS NULL
                 )
                 AND NOT EXISTS (
-                    -- Exclude asphalt tickets if there are concrete tickets in the same incident with incomplete concrete phases
+                    -- Exclude asphalt tickets if there are concrete tickets in the same incident with incomplete Pour phase
                     SELECT 1 FROM Tickets t_concrete
                     JOIN TicketStatus tks_concrete ON t_concrete.ticketId = tks_concrete.ticketId
                     JOIN TaskStatus ts_concrete ON tks_concrete.taskStatusId = ts_concrete.taskStatusId
@@ -1514,8 +1533,7 @@ class RouteOptimizationService {
                     JOIN IncidentsMx i_current ON t.incidentId = i_current.incidentId AND i_current.deletedAt IS NULL
                     WHERE i_concrete.name = i_current.name
                     AND t_concrete.deletedAt IS NULL
-                    AND t_concrete.contractUnitId IN (1,2,3,4,5,10,11,13,14,16,17,18,21,22,23,24,25,26,27,28,29,30,33)
-                    AND ts_concrete.name IN ('Sawcut', 'Removal', 'Framing', 'Pour')
+                    AND ts_concrete.name = 'Pour'
                     AND tks_concrete.endingdate IS NULL
                     AND tks_concrete.deletedAt IS NULL
                     AND ts_concrete.deletedAt IS NULL

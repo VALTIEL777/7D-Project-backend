@@ -110,6 +110,46 @@ class ScheduledTasks {
     }
   }
 
+  // Update permit statuses based on expiration dates
+  static async updatePermitStatuses() {
+    try {
+      console.log('=== Starting permit status update ===');
+      
+      const RTR = require('../models/RTR/rtr');
+      const systemUserId = 1; // System user for automated updates
+      
+      // Update all permit statuses based on expiration dates
+      const results = await RTR.updateAllPermitStatuses(systemUserId);
+      
+      console.log(`✓ Updated ${results.length} permit statuses`);
+      
+      // Log summary of changes
+      const updatedPermits = results.filter(r => r.updated);
+      if (updatedPermits.length > 0) {
+        console.log(`📊 Permit status changes:`);
+        updatedPermits.forEach(permit => {
+          console.log(`  - Permit ${permit.permitId}: ${permit.oldStatus} → ${permit.newStatus}`);
+        });
+      } else {
+        console.log(`✓ No permit status changes needed`);
+      }
+      
+      return {
+        success: true,
+        totalPermits: results.length,
+        updatedPermits: updatedPermits.length,
+        results: results
+      };
+      
+    } catch (error) {
+      console.error('Error updating permit statuses:', error);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+
   // Check tickets for permit expiration and update comment7d
   static async checkPermitExpiration() {
     try {
@@ -239,33 +279,87 @@ class ScheduledTasks {
       // Check each ticket's permit expiration
       for (const ticket of tickets) {
         try {
-          const expireDate = new Date(ticket.expiredate);
+          // Fix date parsing to handle both mm/dd/yyyy and yyyy-mm-dd formats
+          let expireDate;
+          if (typeof ticket.expiredate === 'string') {
+            // Check if it's in mm/dd/yyyy format (contains slashes)
+            if (ticket.expiredate.includes('/')) {
+              const [month, day, year] = ticket.expiredate.split('/');
+              expireDate = new Date(year, month - 1, day); // month is 0-indexed
+            } else {
+              // Assume it's in yyyy-mm-dd format
+              expireDate = new Date(ticket.expiredate);
+            }
+          } else {
+            expireDate = new Date(ticket.expiredate);
+          }
           const today = new Date();
           const daysUntilExpiration = Math.ceil((expireDate - today) / (1000 * 60 * 60 * 24));
           
           console.log(`Checking ticket ${ticket.ticketcode} (Permit: ${ticket.permitnumber}, Expires: ${ticket.expiredate})`);
           console.log(`  Days until expiration: ${daysUntilExpiration}`);
           
-          // If permit expires in 2 days or less, update comment7d
-          if (daysUntilExpiration <= 2) {
-            const updateQuery = `
-              UPDATE Tickets 
-              SET comment7d = 'TK - NEEDS PERMIT EXTENSION',
-                  updatedAt = CURRENT_TIMESTAMP,
-                  updatedBy = 1
+          // If permit expires in 4 days or less, update comment7d
+          if (daysUntilExpiration <= 4) {
+            // Check if ticket already has "NEEDS PERMIT EXTENSION" to avoid duplicate updates
+            const needsExtensionQuery = `
+              SELECT comment7d 
+              FROM Tickets 
               WHERE ticketId = $1 AND deletedAt IS NULL
-              RETURNING ticketCode, comment7d;
             `;
             
-            const updateResult = await db.query(updateQuery, [ticket.ticketid]);
+            const currentCommentResult = await db.query(needsExtensionQuery, [ticket.ticketid]);
             
-            if (updateResult.rows.length > 0) {
-              results.updatedTickets++;
-              results.updatedTicketCodes.push(ticket.ticketcode);
-              console.log(`✓ Updated ticket ${ticket.ticketcode} - Permit expires in ${daysUntilExpiration} days`);
+            if (currentCommentResult.rows.length > 0) {
+              const currentComment = currentCommentResult.rows[0].comment7d;
+              
+              // Only update if it doesn't already contain "NEEDS PERMIT EXTENSION"
+              if (!currentComment || !currentComment.includes('TK - NEEDS PERMIT EXTENSION')) {
+                const updateQuery = `
+                  UPDATE Tickets 
+                  SET comment7d = REPLACE(
+                    REPLACE(
+                      REPLACE(
+                        REPLACE(
+                          REPLACE(
+                            REPLACE(
+                              COALESCE(comment7d, ''),
+                              'TK - LAYOUT', ''
+                            ),
+                            'TK - LAY OUT', ''
+                          ),
+                          'TK - ON PROGRESS', ''
+                        ),
+                        'TK- LAYOUT', ''
+                      ),
+                      'TK- LAY OUT', ''
+                    ),
+                    'TK- ON PROGRESS', ''
+                  ) || 'TK - NEEDS PERMIT EXTENSION',
+                      updatedAt = CURRENT_TIMESTAMP,
+                      updatedBy = 1
+                  WHERE ticketId = $1 AND deletedAt IS NULL
+                  RETURNING ticketCode, comment7d;
+                `;
+                
+                const updateResult = await db.query(updateQuery, [ticket.ticketid]);
+                
+                if (updateResult.rows.length > 0) {
+                  results.updatedTickets++;
+                  results.updatedTicketCodes.push(ticket.ticketcode);
+                  console.log(`✓ Updated ticket ${ticket.ticketcode} - Permit expires in ${daysUntilExpiration} days`);
+                  console.log(`  New comment7d: "${updateResult.rows[0].comment7d}"`);
+                } else {
+                  results.skippedTickets++;
+                  console.log(`⚠️  Could not update ticket ${ticket.ticketcode} - may have been deleted`);
+                }
+              } else {
+                results.skippedTickets++;
+                console.log(`✓ Ticket ${ticket.ticketcode} - Already marked as NEEDS PERMIT EXTENSION`);
+              }
             } else {
               results.skippedTickets++;
-              console.log(`⚠️  Could not update ticket ${ticket.ticketcode} - may have been deleted`);
+              console.log(`⚠️  Could not find ticket ${ticket.ticketcode} - may have been deleted`);
             }
           } else {
             results.skippedTickets++;
@@ -278,14 +372,131 @@ class ScheduledTasks {
         }
       }
       
+      // ROLLBACK LOGIC: Check tickets currently marked as "NEEDS PERMIT EXTENSION" 
+      // and revert them back to "TK - LAYOUT" if their permits have been extended
+      console.log('\n=== Checking for tickets to rollback (permit extensions) ===');
+      
+      const rollbackQuery = `
+        SELECT DISTINCT
+          t.ticketId,
+          t.ticketCode,
+          t.comment7d,
+          p.PermitId,
+          p.permitNumber,
+          p.expireDate,
+          p.status as permitStatus
+        FROM Tickets t
+        JOIN PermitedTickets pt ON t.ticketId = pt.ticketId
+        JOIN Permits p ON pt.permitId = p.PermitId
+        WHERE t.deletedAt IS NULL
+          AND pt.deletedAt IS NULL
+          AND p.deletedAt IS NULL
+          AND t.comment7d ILIKE '%TK - NEEDS PERMIT EXTENSION%'
+          AND p.expireDate IS NOT NULL
+        ORDER BY t.ticketId;
+      `;
+      
+      const rollbackResult = await db.query(rollbackQuery);
+      const rollbackTickets = rollbackResult.rows;
+      
+      if (rollbackTickets.length === 0) {
+        console.log('✓ No tickets found with "TK - NEEDS PERMIT EXTENSION" status to check for rollback');
+      } else {
+        console.log(`Found ${rollbackTickets.length} tickets with "NEEDS PERMIT EXTENSION" status to check for rollback`);
+        
+        const rollbackResults = {
+          totalChecked: rollbackTickets.length,
+          rolledBack: 0,
+          keptAsIs: 0,
+          errors: [],
+          rolledBackTicketCodes: []
+        };
+        
+        // Check each ticket for rollback
+        for (const ticket of rollbackTickets) {
+          try {
+            // Fix date parsing to handle both mm/dd/yyyy and yyyy-mm-dd formats
+            let expireDate;
+            if (typeof ticket.expiredate === 'string') {
+              // Check if it's in mm/dd/yyyy format (contains slashes)
+              if (ticket.expiredate.includes('/')) {
+                const [month, day, year] = ticket.expiredate.split('/');
+                expireDate = new Date(year, month - 1, day); // month is 0-indexed
+              } else {
+                // Assume it's in yyyy-mm-dd format
+                expireDate = new Date(ticket.expiredate);
+              }
+            } else {
+              expireDate = new Date(ticket.expiredate);
+            }
+            const today = new Date();
+            const daysUntilExpiration = Math.ceil((expireDate - today) / (1000 * 60 * 60 * 24));
+            
+            console.log(`Checking rollback for ticket ${ticket.ticketcode} (Permit: ${ticket.permitnumber}, Expires: ${ticket.expiredate})`);
+            console.log(`  Days until expiration: ${daysUntilExpiration}`);
+            
+            // If permit now expires in more than 4 days, rollback to TK - LAYOUT
+            if (daysUntilExpiration > 4) {
+              const rollbackUpdateQuery = `
+                UPDATE Tickets 
+                SET comment7d = REPLACE(comment7d, 'TK - NEEDS PERMIT EXTENSION', 'TK - LAYOUT'),
+                    updatedAt = CURRENT_TIMESTAMP,
+                    updatedBy = 1
+                WHERE ticketId = $1 AND deletedAt IS NULL
+                RETURNING ticketCode, comment7d;
+              `;
+              
+              const rollbackUpdateResult = await db.query(rollbackUpdateQuery, [ticket.ticketid]);
+              
+              if (rollbackUpdateResult.rows.length > 0) {
+                rollbackResults.rolledBack++;
+                rollbackResults.rolledBackTicketCodes.push(ticket.ticketcode);
+                console.log(`✓ Rolled back ticket ${ticket.ticketcode} to TK - LAYOUT - Permit now expires in ${daysUntilExpiration} days`);
+                console.log(`  New comment7d: "${rollbackUpdateResult.rows[0].comment7d}"`);
+              } else {
+                rollbackResults.keptAsIs++;
+                console.log(`⚠️  Could not rollback ticket ${ticket.ticketcode} - may have been deleted`);
+              }
+            } else {
+              rollbackResults.keptAsIs++;
+              console.log(`✓ Ticket ${ticket.ticketcode} - Permit still expires in ${daysUntilExpiration} days (keeping as NEEDS PERMIT EXTENSION)`);
+            }
+            
+          } catch (error) {
+            rollbackResults.errors.push(`Failed to process rollback for ticket ${ticket.ticketcode}: ${error.message}`);
+            console.error(`✗ Error processing rollback for ticket ${ticket.ticketcode}:`, error.message);
+          }
+        }
+        
+        // Log rollback summary
+        console.log('\n=== Rollback check completed ===');
+        console.log(`✓ Total tickets checked for rollback: ${rollbackResults.totalChecked}`);
+        console.log(`✓ Tickets rolled back to TK - LAYOUT: ${rollbackResults.rolledBack}`);
+        console.log(`✓ Tickets kept as NEEDS PERMIT EXTENSION: ${rollbackResults.keptAsIs}`);
+        
+        if (rollbackResults.rolledBackTicketCodes.length > 0) {
+          console.log(`📋 Rolled back ticket codes: ${rollbackResults.rolledBackTicketCodes.join(', ')}`);
+        }
+        
+        if (rollbackResults.errors.length > 0) {
+          console.log(`⚠️  Rollback errors encountered:`);
+          rollbackResults.errors.forEach(error => console.log(`  - ${error}`));
+        }
+        
+        // Update main results with rollback data
+        results.updatedTickets += rollbackResults.rolledBack;
+        results.updatedTicketCodes.push(...rollbackResults.rolledBackTicketCodes);
+        results.errors.push(...rollbackResults.errors);
+      }
+      
       // Log final summary
-      console.log('=== Permit expiration check completed ===');
-      console.log(`✓ Total tickets checked: ${results.totalTickets}`);
-      console.log(`✓ Tickets updated: ${results.updatedTickets}`);
+      console.log('\n=== Permit expiration check completed ===');
+      console.log(`✓ Total tickets checked for expiration: ${results.totalTickets}`);
+      console.log(`✓ Total tickets updated: ${results.updatedTickets}`);
       console.log(`✓ Tickets skipped: ${results.skippedTickets}`);
       
       if (results.updatedTicketCodes.length > 0) {
-        console.log(`📋 Updated ticket codes: ${results.updatedTicketCodes.join(', ')}`);
+        console.log(`📋 All updated ticket codes: ${results.updatedTicketCodes.join(', ')}`);
       }
       
       if (results.errors.length > 0) {
@@ -305,6 +516,9 @@ class ScheduledTasks {
       
       // Check route validation status (monitoring only)
       await this.checkRouteValidationStatus();
+      
+      // Update permit statuses based on expiration dates
+      await this.updatePermitStatuses();
       
       // Check permit expiration and update tickets
       await this.checkPermitExpiration();
@@ -331,6 +545,17 @@ class ScheduledTasks {
     }
   }
 
+  // Run permit status update task (separate from monitoring)
+  static async runPermitStatusUpdateTask() {
+    try {
+      console.log('Running permit status update task...');
+      await this.updatePermitStatuses();
+      console.log('Permit status update task completed');
+    } catch (error) {
+      console.error('Error running permit status update task:', error);
+    }
+  }
+
   // Run permit expiration check task (separate from monitoring)
   static async runPermitExpirationTask() {
     try {
@@ -342,30 +567,226 @@ class ScheduledTasks {
     }
   }
 
+  // Run mobilization completion check task (separate from monitoring)
+  static async runMobilizationCompletionTask() {
+    try {
+      console.log('Running mobilization completion check task...');
+      await this.checkMobilizationCompletion();
+      console.log('Mobilization completion check task completed');
+    } catch (error) {
+      console.error('Error running mobilization completion check task:', error);
+    }
+  }
+
+  // Check mobilization tickets and mark as completed if all non-mobilization tickets in same incident are completed
+  static async checkMobilizationCompletion() {
+    try {
+      console.log('=== Starting mobilization completion check ===');
+      
+      const db = require('../config/db');
+      
+      // Find all mobilization tickets that are not yet completed
+      const mobilizationTicketsQuery = `
+        SELECT DISTINCT
+          t.ticketId,
+          t.ticketCode,
+          t.comment7d,
+          t.incidentId,
+          t.PartnerComment,
+          cu.name as contractUnitName,
+          cu.itemCode as contractUnitItemCode
+        FROM Tickets t
+        LEFT JOIN ContractUnits cu ON t.contractUnitId = cu.contractUnitId AND cu.deletedAt IS NULL
+        WHERE t.deletedAt IS NULL
+          AND (
+            -- Check if ticket is mobilization based on ContractUnit name
+            (cu.name ILIKE '%mobilization%' OR cu.name ILIKE '%mob%')
+          )
+          AND t.comment7d NOT ILIKE '%tk - completed%'
+          AND t.comment7d NOT ILIKE '%tk - cancelled%'
+        ORDER BY t.incidentId, t.ticketId;
+      `;
+      
+      const mobilizationResult = await db.query(mobilizationTicketsQuery);
+      const mobilizationTickets = mobilizationResult.rows;
+      
+      if (mobilizationTickets.length === 0) {
+        console.log('✓ No mobilization tickets found that need completion check');
+        return;
+      }
+      
+      console.log(`Found ${mobilizationTickets.length} mobilization tickets to check`);
+      
+      const results = {
+        totalMobilizationTickets: mobilizationTickets.length,
+        completedMobilizationTickets: 0,
+        skippedMobilizationTickets: 0,
+        errors: [],
+        completedTicketCodes: []
+      };
+      
+      // Group mobilization tickets by incidentId
+      const mobilizationByIncident = {};
+      mobilizationTickets.forEach(ticket => {
+        if (!mobilizationByIncident[ticket.incidentid]) {
+          mobilizationByIncident[ticket.incidentid] = [];
+        }
+        mobilizationByIncident[ticket.incidentid].push(ticket);
+      });
+      
+      console.log(`Checking ${Object.keys(mobilizationByIncident).length} incidents with mobilization tickets`);
+      
+      // Check each incident
+      for (const [incidentId, mobilizationTicketsInIncident] of Object.entries(mobilizationByIncident)) {
+        try {
+          console.log(`\nChecking incident ${incidentId} with ${mobilizationTicketsInIncident.length} mobilization tickets`);
+          
+          // Get all non-mobilization tickets for this incident
+          const nonMobilizationQuery = `
+            SELECT 
+              t.ticketId,
+              t.ticketCode,
+              t.comment7d,
+              cu.name as contractUnitName,
+              cu.itemCode as contractUnitItemCode
+            FROM Tickets t
+            LEFT JOIN ContractUnits cu ON t.contractUnitId = cu.contractUnitId AND cu.deletedAt IS NULL
+            WHERE t.deletedAt IS NULL
+              AND t.incidentId = $1
+              AND NOT (
+                -- Exclude mobilization tickets
+                (cu.name ILIKE '%mobilization%' OR cu.name ILIKE '%mob%')
+              )
+            ORDER BY t.ticketId;
+          `;
+          
+          const nonMobilizationResult = await db.query(nonMobilizationQuery, [incidentId]);
+          const nonMobilizationTickets = nonMobilizationResult.rows;
+          
+          console.log(`  Found ${nonMobilizationTickets.length} non-mobilization tickets in incident ${incidentId}`);
+          
+          if (nonMobilizationTickets.length === 0) {
+            console.log(`  ⚠️  No non-mobilization tickets found in incident ${incidentId} - skipping mobilization completion check`);
+            results.skippedMobilizationTickets += mobilizationTicketsInIncident.length;
+            continue;
+          }
+          
+          // Check if all non-mobilization tickets are completed
+          const completedNonMobilizationTickets = nonMobilizationTickets.filter(ticket => 
+            ticket.comment7d && ticket.comment7d.toLowerCase().includes('tk - completed')
+          );
+          
+          console.log(`  Non-mobilization tickets: ${nonMobilizationTickets.length} total, ${completedNonMobilizationTickets.length} completed`);
+          
+          // Show details of non-completed tickets
+          const nonCompletedTickets = nonMobilizationTickets.filter(ticket => 
+            !ticket.comment7d || !ticket.comment7d.toLowerCase().includes('tk - completed')
+          );
+          
+          if (nonCompletedTickets.length > 0) {
+            console.log(`  Non-completed tickets: ${nonCompletedTickets.map(t => `${t.ticketcode} (${t.comment7d || 'NULL'})`).join(', ')}`);
+          }
+          
+          // If all non-mobilization tickets are completed, mark mobilization tickets as completed
+          if (completedNonMobilizationTickets.length === nonMobilizationTickets.length) {
+            console.log(`  ✅ All non-mobilization tickets completed - marking mobilization tickets as completed`);
+            
+            for (const mobilizationTicket of mobilizationTicketsInIncident) {
+              try {
+                const updateQuery = `
+                  UPDATE Tickets 
+                  SET comment7d = 'TK - COMPLETED',
+                      updatedAt = CURRENT_TIMESTAMP,
+                      updatedBy = 1
+                  WHERE ticketId = $1 AND deletedAt IS NULL
+                  RETURNING ticketCode, comment7d;
+                `;
+                
+                const updateResult = await db.query(updateQuery, [mobilizationTicket.ticketid]);
+                
+                if (updateResult.rows.length > 0) {
+                  results.completedMobilizationTickets++;
+                  results.completedTicketCodes.push(mobilizationTicket.ticketcode);
+                  console.log(`    ✓ Marked mobilization ticket ${mobilizationTicket.ticketcode} as completed`);
+                  console.log(`      New comment7d: "${updateResult.rows[0].comment7d}"`);
+                } else {
+                  console.log(`    ⚠️  Could not update mobilization ticket ${mobilizationTicket.ticketcode} - may have been deleted`);
+                }
+              } catch (error) {
+                results.errors.push(`Failed to update mobilization ticket ${mobilizationTicket.ticketcode}: ${error.message}`);
+                console.error(`    ✗ Error updating mobilization ticket ${mobilizationTicket.ticketcode}:`, error.message);
+              }
+            }
+          } else {
+            console.log(`  ⏳ Not all non-mobilization tickets completed yet - skipping mobilization completion`);
+            results.skippedMobilizationTickets += mobilizationTicketsInIncident.length;
+          }
+          
+        } catch (error) {
+          results.errors.push(`Failed to process incident ${incidentId}: ${error.message}`);
+          console.error(`✗ Error processing incident ${incidentId}:`, error.message);
+        }
+      }
+      
+      // Log final summary
+      console.log('\n=== Mobilization completion check completed ===');
+      console.log(`✓ Total mobilization tickets checked: ${results.totalMobilizationTickets}`);
+      console.log(`✓ Mobilization tickets marked as completed: ${results.completedMobilizationTickets}`);
+      console.log(`✓ Mobilization tickets skipped: ${results.skippedMobilizationTickets}`);
+      
+      if (results.completedTicketCodes.length > 0) {
+        console.log(`📋 Completed mobilization ticket codes: ${results.completedTicketCodes.join(', ')}`);
+      }
+      
+      if (results.errors.length > 0) {
+        console.log(`⚠️  Errors encountered:`);
+        results.errors.forEach(error => console.log(`  - ${error}`));
+      }
+      
+    } catch (error) {
+      console.error('Error during mobilization completion check:', error);
+    }
+  }
+
   // Start the scheduler
   static startScheduler() {
+    const isDevelopment = process.env.NODE_ENV === 'development';
+    
     // Run monitoring tasks every hour
     setInterval(async () => {
       await this.runAllTasks();
     }, 60 * 60 * 1000); // 1 hour
 
-    // Run route re-optimization every 30 minutes (for testing - normally 6 hours)
+    // Route re-optimization frequency - same for both environments
     setInterval(async () => {
       await this.runRouteReoptimizationTask();
-    }, 30 * 60 * 1000); // 30 minutes
+    }, 60 * 60 * 1000); // 1 hour for both development and production
 
-    // Run permit expiration check every 30 minutes (same frequency as route re-optimization)
+    // Permit status update frequency - same for both environments
+    setInterval(async () => {
+      await this.runPermitStatusUpdateTask();
+    }, 2 * 60 * 60 * 1000); // 2 hours for both development and production
+
+    // Permit expiration check frequency - same for both environments
     setInterval(async () => {
       await this.runPermitExpirationTask();
-    }, 30 * 60 * 1000); // 30 minutes
+    }, 2 * 60 * 60 * 1000); // 2 hours for both development and production
+
+    // Mobilization completion check frequency - same for both environments
+    setInterval(async () => {
+      await this.runMobilizationCompletionTask();
+    }, 2 * 60 * 60 * 1000); // 2 hours for both development and production
 
     // Also run immediately on startup
     this.runAllTasks();
     
     console.log('Scheduler started:');
+    console.log(`- Environment: ${isDevelopment ? 'DEVELOPMENT' : 'PRODUCTION'}`);
     console.log('- Monitoring tasks will run every hour');
-    console.log('- Route re-optimization will run every 30 minutes (TESTING MODE)');
-    console.log('- Permit expiration check will run every 30 minutes');
+    console.log('- Route re-optimization will run every 1 hour');
+    console.log('- Permit status update will run every 2 hours');
+    console.log('- Permit expiration check will run every 2 hours');
+    console.log('- Mobilization completion check will run every 2 hours');
   }
 }
 

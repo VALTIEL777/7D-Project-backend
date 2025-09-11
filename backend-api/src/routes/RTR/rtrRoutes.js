@@ -1641,8 +1641,8 @@ router.post("/generate-ticket-statuses", generateTicketStatuses);
  * @swagger
  * /rtr/update-permit-statuses:
  *   post:
- *     summary: Update all permit statuses based on expiration dates and check for permits expiring within 7 days
- *     description: Checks all permits in the database and updates their status based on their expiration date. Also checks for permits expiring within 7 days and updates the corresponding tickets' comment7d field to 'TK - NEEDS PERMIT EXTENSION' if the comment is null or empty.
+ *     summary: Update all permit statuses based on expiration dates and check for permits expiring within 4 days
+ *     description: Checks all permits in the database and updates their status based on their expiration date. Also checks for permits expiring within 4 days and updates the corresponding tickets' comment7d field to 'TK - NEEDS PERMIT EXTENSION' if the comment is null or empty.
  *     tags: [RTR]
  *     requestBody:
  *       required: false
@@ -1714,7 +1714,7 @@ router.post("/generate-ticket-statuses", generateTicketStatuses);
  *                           properties:
  *                             total:
  *                               type: integer
- *                               description: Total number of tickets with permits expiring within 7 days
+ *                               description: Total number of tickets with permits expiring within 4 days
  *                               example: 8
  *                             commentUpdated:
  *                               type: integer
