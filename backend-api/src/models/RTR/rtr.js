@@ -14,6 +14,63 @@ class ExcelItem {
   }
 }
 
+// ==========================
+// Address normalization utils
+// ==========================
+function normalizeSuffix(rawSuffix) {
+  if (!rawSuffix) return null;
+  const s = String(rawSuffix).trim().toUpperCase().replace(/\./g, '');
+  const mapping = {
+    STREET: 'ST', ST: 'ST',
+    AVENUE: 'AVE', AVE: 'AVE',
+    BOULEVARD: 'BLVD', BLVD: 'BLVD',
+    ROAD: 'RD', RD: 'RD',
+    LANE: 'LN', LN: 'LN',
+    DRIVE: 'DR', DR: 'DR',
+    PLACE: 'PL', PL: 'PL',
+    COURT: 'CT', CT: 'CT',
+    CIRCLE: 'CIR', CIR: 'CIR',
+    WAY: 'WAY',
+    TERRACE: 'TER', TER: 'TER',
+    TRAIL: 'TRL', TRL: 'TRL',
+    PARKWAY: 'PKWY', PKWY: 'PKWY',
+    HIGHWAY: 'HWY', HWY: 'HWY',
+    EXPRESSWAY: 'EXPY', EXPY: 'EXPY',
+    CRESCENT: 'CRES', CRES: 'CRES',
+    SQUARE: 'SQ', SQ: 'SQ',
+    ALLEY: 'ALY', ALY: 'ALY',
+    PLAZA: 'PLZ', PLZ: 'PLZ',
+    BEND: 'BND', BND: 'BND',
+    POINT: 'PT', PT: 'PT',
+    ROUTE: 'RTE', RTE: 'RTE'
+  };
+  return mapping[s] || s;
+}
+
+function normalizeCardinal(rawCardinal) {
+  if (!rawCardinal) return null;
+  const c = String(rawCardinal).trim().toUpperCase();
+  const valid = new Set(['N','S','E','W','NE','NW','SE','SW']);
+  return valid.has(c) ? c : null;
+}
+
+function normalizeStreet(rawStreet) {
+  if (!rawStreet) return null;
+  // Keep ordinals and words; collapse multiple spaces; trim; uppercase
+  return String(rawStreet)
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toUpperCase();
+}
+
+function normalizeAddressComponents(addressNumber, addressCardinal, addressStreet, addressSuffix) {
+  const num = addressNumber ? String(addressNumber).trim() : null;
+  const card = normalizeCardinal(addressCardinal);
+  const street = normalizeStreet(addressStreet);
+  const suffix = normalizeSuffix(addressSuffix);
+  return { number: num, cardinal: card, street, suffix };
+}
+
 class RTR {
   static async createIncident(name, earliestRptDate, createdBy, updatedBy) {
     const res = await db.query(
@@ -88,31 +145,41 @@ class RTR {
   }
 
   static async findAddress(addressNumber, addressCardinal, addressStreet, addressSuffix) {
+    const { number, cardinal, street, suffix } = normalizeAddressComponents(addressNumber, addressCardinal, addressStreet, addressSuffix);
     const res = await db.query(
       'SELECT addressId FROM Addresses WHERE addressNumber = $1 AND addressCardinal = $2 AND addressStreet = $3 AND addressSuffix = $4 AND deletedAt IS NULL;',
-      [addressNumber, addressCardinal, addressStreet, addressSuffix]
+      [number, cardinal, street, suffix]
     );
     return res.rows[0]?.addressid;
   }
 
   static async createAddress(addressNumber, addressCardinal, addressStreet, addressSuffix, createdBy, updatedBy) {
+    const { number, cardinal, street, suffix } = normalizeAddressComponents(addressNumber, addressCardinal, addressStreet, addressSuffix);
     const res = await db.query(
       'INSERT INTO Addresses(addressNumber, addressCardinal, addressStreet, addressSuffix, createdBy, updatedBy) VALUES($1, $2, $3, $4, $5, $6) RETURNING addressId;',
-      [addressNumber, addressCardinal, addressStreet, addressSuffix, createdBy, updatedBy]
+      [number, cardinal, street, suffix, createdBy, updatedBy]
     );
     return res.rows[0].addressid;
   }
 
   static async findOrCreateAddress(addressNumber, addressCardinal, addressStreet, addressSuffix, createdBy, updatedBy) {
-    // First try to find existing address
-    const existingAddressId = await this.findAddress(addressNumber, addressCardinal, addressStreet, addressSuffix);
-    
-    if (existingAddressId) {
-      return existingAddressId;
+    // Normalize first to maximize reuse of existing addresses
+    const { number, cardinal, street, suffix } = normalizeAddressComponents(addressNumber, addressCardinal, addressStreet, addressSuffix);
+
+    // Exact match
+    const exactId = await this.findAddress(number, cardinal, street, suffix);
+    if (exactId) {
+      return exactId;
     }
-    
-    // If not found, create new address
-    const newAddressId = await this.createAddress(addressNumber, addressCardinal, addressStreet, addressSuffix, createdBy, updatedBy);
+
+    // Create new address as last resort
+    if (!suffix || suffix === '') {
+      console.warn(
+        `[RTR] Address suffix missing; creating new address for: ` +
+        `${number || ''} ${cardinal || ''} ${street || ''}`.replace(/\s+/g, ' ').trim()
+      );
+    }
+    const newAddressId = await this.createAddress(number, cardinal, street, suffix, createdBy, updatedBy);
     return newAddressId;
   }
 
@@ -197,9 +264,6 @@ class RTR {
   // Helper method to update ticket comments when permit expiration date changes
   static async updateTicketCommentsForPermit(permitId, updatedBy) {
     try {
-      const currentDate = new Date();
-      currentDate.setHours(0, 0, 0, 0);
-      
       // Get the permit and its associated tickets
       // EXCLUDE tickets that are on private property (no permits needed)
       const permitRes = await db.query(
@@ -211,7 +275,8 @@ class RTR {
            t.ticketId,
            t.ticketCode,
            t.comment7d,
-           w.location
+           w.location,
+           (p.expireDate::date - CURRENT_DATE::date) AS days_until_expire
          FROM Permits p
          INNER JOIN PermitedTickets pt ON p.PermitId = pt.permitId
          INNER JOIN Tickets t ON pt.ticketId = t.ticketId
@@ -228,7 +293,7 @@ class RTR {
       if (permitRes.rows.length === 0) return;
 
       const permit = permitRes.rows[0];
-      const daysUntilExpiry = Math.ceil((new Date(permit.expiredate) - currentDate) / (1000 * 60 * 60 * 24));
+      const daysUntilExpiry = Number(permit.days_until_expire);
       
       // Skip if comment contains "TK - COMPLETED" or any variant
       if (permit.comment7d && permit.comment7d.toLowerCase().includes('tk - completed')) {
@@ -236,16 +301,16 @@ class RTR {
         return;
       }
       
-      // If permit expires within 7 days and ticket comment is empty/null, update it
-      if (daysUntilExpiry <= 7 && daysUntilExpiry >= 0) {
+      // If permit expires within 4 days and ticket comment is empty/null, update it
+      if (daysUntilExpiry <= 4 && daysUntilExpiry >= 0) {
         if (!permit.comment7d || permit.comment7d === '' || permit.comment7d === 'TK - NEEDS PERMIT EXTENSION') {
           await db.query(
             'UPDATE Tickets SET comment7d = $1, updatedBy = $2 WHERE ticketId = $3;',
             ['TK - NEEDS PERMIT EXTENSION', updatedBy, permit.ticketid]
           );
         }
-      } else if (daysUntilExpiry > 7) {
-        // If permit is now more than 7 days away and comment was set to extension, update to LAYOUT
+      } else if (daysUntilExpiry > 4) {
+        // If permit is now more than 4 days away and comment was set to extension, update to LAYOUT
         if (permit.comment7d && permit.comment7d.toLowerCase().includes('tk - needs permit extension')) {
           await db.query(
             'UPDATE Tickets SET comment7d = $1, updatedBy = $2 WHERE ticketId = $3;',
@@ -404,19 +469,19 @@ class RTR {
     }
   }
 
-  // Method to check permits expiring within 7 days and update ticket comments
+  // Method to check permits expiring within 4 days and update ticket comments
   static async checkPermitsExpiringSoon(updatedBy) {
     try {
       
-      // Calculate date 7 days from now
+      // Calculate date 4 days from now
       const sevenDaysFromNow = new Date();
-      sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7);
+      sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 4);
       sevenDaysFromNow.setHours(23, 59, 59, 999); // End of day
       
       const currentDate = new Date();
       currentDate.setHours(0, 0, 0, 0); // Start of day
       
-      // Get permits expiring within 7 days and their associated tickets
+      // Get permits expiring within 4 days and their associated tickets
       // EXCLUDE tickets that are on private property (no permits needed)
       // EXCLUDE tickets that already have the correct extension comment
       const permitsRes = await db.query(
@@ -514,14 +579,14 @@ class RTR {
       const currentDate = new Date();
       currentDate.setHours(0, 0, 0, 0);
       
-      // Calculate date 7 days from now
+      // Calculate date 4 days from now
       const sevenDaysFromNow = new Date();
-      sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7);
+      sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 4);
       sevenDaysFromNow.setHours(23, 59, 59, 999);
       
       console.log(`[updateTicketCommentsToLayout] Looking for tickets with TK - NEEDS PERMIT EXTENSION and valid permits (> ${sevenDaysFromNow.toISOString()})`);
       
-      // Get tickets with valid permits (more than 7 days away) that have extension comments
+      // Get tickets with valid permits (more than 4 days away) that have extension comments
       // Exclude tickets with status comments that shouldn't be changed at SQL level
       const ticketsRes = await db.query(
         `SELECT 
@@ -601,7 +666,7 @@ class RTR {
                           comment.toLowerCase().includes('tk - completed');
         
         if (!shouldSkip) {
-          // Update to LAYOUT since permit is valid and more than 7 days away
+          // Update to LAYOUT since permit is valid and more than 4 days away
           await db.query(
             'UPDATE Tickets SET comment7d = $1, updatedBy = $2 WHERE ticketId = $3;',
             ['TK - LAYOUT', updatedBy, row.ticketid]
@@ -828,22 +893,33 @@ class RTR {
             expirationDate.setHours(0, 0, 0, 0);
             
             const daysUntilExpiry = Math.ceil((expirationDate - currentDate) / (1000 * 60 * 60 * 24));
-            
-            // If permit is valid (more than 7 days away) but comment says it needs extension
-            if (daysUntilExpiry > 7 && row['Contractor Comments'].toLowerCase().includes('tk - needs permit extension')) {
-              await db.query(
-                'UPDATE Tickets SET comment7d = $1, updatedBy = $2 WHERE ticketId = $3;',
-                ['TK - LAYOUT', updatedBy, ticketId]
-              );
-              console.log(`Auto-corrected ticket ${ticketId} comment from "${row['Contractor Comments']}" to "TK - LAYOUT" (permit expires in ${daysUntilExpiry} days)`);
-            }
-            // If permit is expiring soon (≤ 7 days) but comment doesn't mention it
-            else if (daysUntilExpiry <= 7 && daysUntilExpiry >= 0 && !row['Contractor Comments'].toLowerCase().includes('tk - needs permit extension')) {
-              await db.query(
-                'UPDATE Tickets SET comment7d = $1, updatedBy = $2 WHERE ticketId = $3;',
-                ['TK - NEEDS PERMIT EXTENSION', updatedBy, ticketId]
-              );
-              console.log(`Auto-corrected ticket ${ticketId} comment to "TK - NEEDS PERMIT EXTENSION" (permit expires in ${daysUntilExpiry} days)`);
+
+            // Only auto-correct when the contractor comment is an operational status (LAYOUT/LAY OUT/ON PROGRESS)
+            const cc = (row['Contractor Comments'] || '').toLowerCase();
+            const isOperationalComment =
+              cc.includes('tk - layout') || cc.includes('tk- layout') ||
+              cc.includes('tk - lay out') || cc.includes('tk- lay out') ||
+              cc.includes('tk - on progress') || cc.includes('tk- on progress');
+
+            if (!isOperationalComment) {
+              console.log(`Skipping auto-correction for ticket ${ticketId} - non-operational comment: "${row['Contractor Comments']}"`);
+            } else {
+              // If permit is valid (more than 4 days away) but comment says it needs extension
+              if (daysUntilExpiry > 4 && cc.includes('tk - needs permit extension')) {
+                await db.query(
+                  'UPDATE Tickets SET comment7d = $1, updatedBy = $2 WHERE ticketId = $3;',
+                  ['TK - LAYOUT', updatedBy, ticketId]
+                );
+                console.log(`Auto-corrected ticket ${ticketId} comment from "${row['Contractor Comments']}" to "TK - LAYOUT" (permit expires in ${daysUntilExpiry} days)`);
+              }
+              // If permit is expiring soon (≤ 4 days) but comment doesn't mention it
+              else if (daysUntilExpiry <= 4 && daysUntilExpiry >= 0 && !cc.includes('tk - needs permit extension')) {
+                await db.query(
+                  'UPDATE Tickets SET comment7d = $1, updatedBy = $2 WHERE ticketId = $3;',
+                  ['TK - NEEDS PERMIT EXTENSION', updatedBy, ticketId]
+                );
+                console.log(`Auto-corrected ticket ${ticketId} comment to "TK - NEEDS PERMIT EXTENSION" (permit expires in ${daysUntilExpiry} days)`);
+              }
             }
           }
         }

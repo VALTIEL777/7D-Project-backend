@@ -1221,7 +1221,7 @@ class RouteOptimizationService {
                 SELECT DISTINCT 
                     t.ticketId,
                     t.ticketCode,
-                    t.contractNumber,
+                    COALESCE(NULLIF(t.contractNumber, ''), cu.name) AS contractNumber,
                     t.amountToPay,
                     t.ticketType,
                     t.daysOutstanding,
@@ -1230,10 +1230,18 @@ class RouteOptimizationService {
                     t.createdAt,
                     t.updatedAt,
                     cu.name as contractUnitName,
-                    i.name as incidentName
+                    i.name as incidentName,
+                    perm.permitExpireDate AS expireDate
                 FROM Tickets t
                 LEFT JOIN ContractUnits cu ON t.contractUnitId = cu.contractUnitId AND cu.deletedAt IS NULL
                 LEFT JOIN IncidentsMx i ON t.incidentId = i.incidentId AND i.deletedAt IS NULL
+                LEFT JOIN (
+                    SELECT pt.ticketId, MAX(p.expireDate) AS permitExpireDate
+                    FROM PermitedTickets pt
+                    JOIN Permits p ON pt.permitId = p.PermitId AND p.deletedAt IS NULL
+                    WHERE pt.deletedAt IS NULL
+                    GROUP BY pt.ticketId
+                ) perm ON perm.ticketId = t.ticketId
                 WHERE t.deletedAt IS NULL
                     AND (
                         t.comment7d IS NULL 
@@ -1314,7 +1322,7 @@ class RouteOptimizationService {
             SELECT DISTINCT 
                 t.ticketId,
                 t.ticketCode,
-                t.contractNumber,
+                COALESCE(NULLIF(t.contractNumber, ''), cu.name) AS contractNumber,
                 t.amountToPay,
                 t.ticketType,
                 t.daysOutstanding,
@@ -1323,10 +1331,18 @@ class RouteOptimizationService {
                 t.createdAt,
                 t.updatedAt,
                 cu.name as contractUnitName,
-                i.name as incidentName
+                i.name as incidentName,
+                perm.permitExpireDate AS expireDate
             FROM Tickets t
             LEFT JOIN ContractUnits cu ON t.contractUnitId = cu.contractUnitId AND cu.deletedAt IS NULL
             LEFT JOIN IncidentsMx i ON t.incidentId = i.incidentId AND i.deletedAt IS NULL
+            LEFT JOIN (
+                SELECT pt.ticketId, MAX(p.expireDate) AS permitExpireDate
+                FROM PermitedTickets pt
+                JOIN Permits p ON pt.permitId = p.PermitId AND p.deletedAt IS NULL
+                WHERE pt.deletedAt IS NULL
+                GROUP BY pt.ticketId
+            ) perm ON perm.ticketId = t.ticketId
             WHERE t.deletedAt IS NULL
             AND (
                 -- Include comment7d values with flexible matching (allows text before and after)
@@ -1448,7 +1464,7 @@ class RouteOptimizationService {
                 SELECT DISTINCT 
                     t.ticketId,
                     t.ticketCode,
-                    t.contractNumber,
+                    COALESCE(NULLIF(t.contractNumber, ''), cu.name) AS contractNumber,
                     t.amountToPay,
                     t.ticketType,
                     t.daysOutstanding,
@@ -1457,10 +1473,18 @@ class RouteOptimizationService {
                     t.createdAt,
                     t.updatedAt,
                     cu.name as contractUnitName,
-                    i.name as incidentName
+                    i.name as incidentName,
+                    perm.permitExpireDate AS expireDate
                 FROM Tickets t
                 LEFT JOIN ContractUnits cu ON t.contractUnitId = cu.contractUnitId AND cu.deletedAt IS NULL
                 LEFT JOIN IncidentsMx i ON t.incidentId = i.incidentId AND i.deletedAt IS NULL
+                LEFT JOIN (
+                    SELECT pt.ticketId, MAX(p.expireDate) AS permitExpireDate
+                    FROM PermitedTickets pt
+                    JOIN Permits p ON pt.permitId = p.PermitId AND p.deletedAt IS NULL
+                    WHERE pt.deletedAt IS NULL
+                    GROUP BY pt.ticketId
+                ) perm ON perm.ticketId = t.ticketId
                 WHERE t.deletedAt IS NULL
                 AND (
                     -- Include comment7d values with flexible matching (allows text before and after)
@@ -2049,7 +2073,6 @@ class RouteOptimizationService {
             // Filter out tickets with invalid statuses before optimization
             const validTickets = ticketsWithAddresses.filter(ticket => {
                 const comment7d = (ticket.comment7d || '').toLowerCase();
-                const currentDate = new Date();
                 
                 // Check for cancellation or hold status
                 if (comment7d.includes('tk - cancelled') || 
@@ -2059,11 +2082,12 @@ class RouteOptimizationService {
                     return false;
                 }
                 
-                // Check for expired permit
-                if (ticket.expiredate) {
-                    const permitExpireDate = new Date(ticket.expiredate);
-                    if (permitExpireDate < currentDate) {
-                        console.log(`Filtering out ticket ${ticket.ticketcode} due to expired permit: ${ticket.expiredate}`);
+                // Check for expired permit using SQL-provided days_until_expiry when available
+                const due = ticket.days_until_expire ?? ticket.days_until_expiry; // support either alias
+                if (due !== undefined && due !== null) {
+                    const n = Number(due);
+                    if (!Number.isNaN(n) && n < 0) {
+                        console.log(`Filtering out ticket ${ticket.ticketcode} due to expired permit (days_until_expire=${n})`);
                         return false;
                     }
                 }
@@ -2216,11 +2240,9 @@ class RouteOptimizationService {
         }
         
         // Check for expired permit
-        if (ticket.expiredate) {
-            const permitExpireDate = new Date(ticket.expiredate);
-            if (permitExpireDate < currentDate) {
-                return 'PERMIT_EXPIRED';
-            }
+        if (ticket.days_until_expire !== undefined && ticket.days_until_expire !== null) {
+            const n = Number(ticket.days_until_expire);
+            if (!Number.isNaN(n) && n < 0) return 'PERMIT_EXPIRED';
         }
         
         return 'UNKNOWN_REASON';
@@ -3913,13 +3935,13 @@ class RouteOptimizationService {
         }
         
         // Check for expired permit
-        if (ticketData.expiredate) {
-            const permitExpireDate = new Date(ticketData.expiredate);
-            if (permitExpireDate < currentDate) {
+        if (ticketData.days_until_expire !== undefined && ticketData.days_until_expire !== null) {
+            const n = Number(ticketData.days_until_expire);
+            if (!Number.isNaN(n) && n < 0) {
                 return {
                     shouldRemove: true,
                     reason: 'PERMIT_EXPIRED',
-                    details: `Permit expired on ${ticketData.expiredate}`
+                    details: `Permit expired (days_until_expire=${n})`
                 };
             }
         }

@@ -460,10 +460,18 @@ class Tickets {
         t.createdAt,
         t.updatedAt,
         cu.name as contractUnitName,
-        i.name as incidentName
+        i.name as incidentName,
+        perm.permitExpireDate AS expireDate
       FROM Tickets t
       LEFT JOIN ContractUnits cu ON t.contractUnitId = cu.contractUnitId AND cu.deletedAt IS NULL
       LEFT JOIN IncidentsMx i ON t.incidentId = i.incidentId AND i.deletedAt IS NULL
+      LEFT JOIN (
+          SELECT pt.ticketId, MAX(p.expireDate) AS permitExpireDate
+          FROM PermitedTickets pt
+          JOIN Permits p ON pt.permitId = p.PermitId AND p.deletedAt IS NULL
+          WHERE pt.deletedAt IS NULL
+          GROUP BY pt.ticketId
+      ) perm ON perm.ticketId = t.ticketId
       WHERE t.deletedAt IS NULL 
         AND (t.comment7d ILIKE '%tk - expired%' OR t.comment7d ILIKE '%tk - needs permit extension%')
       ORDER BY t.ticketId ASC

@@ -236,16 +236,23 @@ class ScheduledTasks {
           t.ticketId,
           t.ticketCode,
           t.comment7d,
-          p.PermitId,
-          p.permitNumber,
-          p.expireDate,
-          p.status as permitStatus
+          lp.PermitId,
+          lp.permitNumber,
+          lp.expireDate,
+          lp.status as permitStatus,
+          (lp.expireDate::date - CURRENT_DATE::date) AS days_until_expire
         FROM Tickets t
-        JOIN PermitedTickets pt ON t.ticketId = pt.ticketId
-        JOIN Permits p ON pt.permitId = p.PermitId
+        JOIN LATERAL (
+          SELECT p.PermitId, p.permitNumber, p.expireDate, p.status
+          FROM PermitedTickets pt
+          JOIN Permits p ON pt.permitId = p.PermitId AND p.deletedAt IS NULL
+          WHERE pt.ticketId = t.ticketId
+            AND pt.deletedAt IS NULL
+            AND p.status = 'ACTIVE'
+          ORDER BY p.expireDate DESC NULLS LAST
+          LIMIT 1
+        ) lp ON TRUE
         WHERE t.deletedAt IS NULL
-          AND pt.deletedAt IS NULL
-          AND p.deletedAt IS NULL
           AND (
             t.comment7d ILIKE '%TK - LAYOUT%' OR
             t.comment7d ILIKE '%TK - LAY OUT%' OR
@@ -254,7 +261,7 @@ class ScheduledTasks {
             t.comment7d ILIKE '%TK- LAY OUT%' OR
             t.comment7d ILIKE '%TK- ON PROGRESS%'
           )
-          AND p.expireDate IS NOT NULL
+          AND lp.expireDate IS NOT NULL
         ORDER BY t.ticketId;
       `;
       
@@ -279,22 +286,8 @@ class ScheduledTasks {
       // Check each ticket's permit expiration
       for (const ticket of tickets) {
         try {
-          // Fix date parsing to handle both mm/dd/yyyy and yyyy-mm-dd formats
-          let expireDate;
-          if (typeof ticket.expiredate === 'string') {
-            // Check if it's in mm/dd/yyyy format (contains slashes)
-            if (ticket.expiredate.includes('/')) {
-              const [month, day, year] = ticket.expiredate.split('/');
-              expireDate = new Date(year, month - 1, day); // month is 0-indexed
-            } else {
-              // Assume it's in yyyy-mm-dd format
-              expireDate = new Date(ticket.expiredate);
-            }
-          } else {
-            expireDate = new Date(ticket.expiredate);
-          }
-          const today = new Date();
-          const daysUntilExpiration = Math.ceil((expireDate - today) / (1000 * 60 * 60 * 24));
+          // Use SQL-calculated days_until_expire to avoid JS date parsing issues
+          const daysUntilExpiration = Number(ticket.days_until_expire);
           
           console.log(`Checking ticket ${ticket.ticketcode} (Permit: ${ticket.permitnumber}, Expires: ${ticket.expiredate})`);
           console.log(`  Days until expiration: ${daysUntilExpiration}`);
@@ -381,18 +374,25 @@ class ScheduledTasks {
           t.ticketId,
           t.ticketCode,
           t.comment7d,
-          p.PermitId,
-          p.permitNumber,
-          p.expireDate,
-          p.status as permitStatus
+          lp.PermitId,
+          lp.permitNumber,
+          lp.expireDate,
+          lp.status as permitStatus,
+          (lp.expireDate::date - CURRENT_DATE::date) AS days_until_expire
         FROM Tickets t
-        JOIN PermitedTickets pt ON t.ticketId = pt.ticketId
-        JOIN Permits p ON pt.permitId = p.PermitId
+        JOIN LATERAL (
+          SELECT p.PermitId, p.permitNumber, p.expireDate, p.status
+          FROM PermitedTickets pt
+          JOIN Permits p ON pt.permitId = p.PermitId AND p.deletedAt IS NULL
+          WHERE pt.ticketId = t.ticketId
+            AND pt.deletedAt IS NULL
+            AND p.status = 'ACTIVE'
+          ORDER BY p.expireDate DESC NULLS LAST
+          LIMIT 1
+        ) lp ON TRUE
         WHERE t.deletedAt IS NULL
-          AND pt.deletedAt IS NULL
-          AND p.deletedAt IS NULL
           AND t.comment7d ILIKE '%TK - NEEDS PERMIT EXTENSION%'
-          AND p.expireDate IS NOT NULL
+          AND lp.expireDate IS NOT NULL
         ORDER BY t.ticketId;
       `;
       
@@ -415,22 +415,8 @@ class ScheduledTasks {
         // Check each ticket for rollback
         for (const ticket of rollbackTickets) {
           try {
-            // Fix date parsing to handle both mm/dd/yyyy and yyyy-mm-dd formats
-            let expireDate;
-            if (typeof ticket.expiredate === 'string') {
-              // Check if it's in mm/dd/yyyy format (contains slashes)
-              if (ticket.expiredate.includes('/')) {
-                const [month, day, year] = ticket.expiredate.split('/');
-                expireDate = new Date(year, month - 1, day); // month is 0-indexed
-              } else {
-                // Assume it's in yyyy-mm-dd format
-                expireDate = new Date(ticket.expiredate);
-              }
-            } else {
-              expireDate = new Date(ticket.expiredate);
-            }
-            const today = new Date();
-            const daysUntilExpiration = Math.ceil((expireDate - today) / (1000 * 60 * 60 * 24));
+            // Use SQL-calculated days_until_expire to avoid JS date parsing issues
+            const daysUntilExpiration = Number(ticket.days_until_expire);
             
             console.log(`Checking rollback for ticket ${ticket.ticketcode} (Permit: ${ticket.permitnumber}, Expires: ${ticket.expiredate})`);
             console.log(`  Days until expiration: ${daysUntilExpiration}`);

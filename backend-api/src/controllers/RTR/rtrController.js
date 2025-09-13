@@ -960,6 +960,7 @@ exports.analyzeRTRData = async (req, res) => {
       newTickets: [],
       inconsistentTickets: [],
       matchingTickets: [],
+      warnings: [],
       summary: {
         total: data.length,
         new: 0,
@@ -967,6 +968,11 @@ exports.analyzeRTRData = async (req, res) => {
         matching: 0
       }
     };
+
+    // Collectors for additional warnings
+    const missingFieldWarnings = [];
+    const addressQualityWarnings = [];
+    const existingTicketIdToCode = new Map();
 
     for (const row of data) {
       const ticketCode = row.TASK_WO_NUM; // Only use TASK_WO_NUM for database lookup
@@ -1006,7 +1012,102 @@ exports.analyzeRTRData = async (req, res) => {
           analysis.summary.matching++;
         }
       }
+
+      // Ticket essentials: missing required fields
+      const requiredFieldsAnalyze = ['TASK_WO_NUM', 'RESTN_WO_NUM', 'ADDRESS', 'SAP_ITEM_NUM'];
+      for (const rf of requiredFieldsAnalyze) {
+        if (!row[rf] || row[rf] === '') {
+          missingFieldWarnings.push(`Missing required field ${rf} for ticket ${ticketCode || 'UNKNOWN'}`);
+        }
+      }
+
+      // Address quality checks
+      if (row['ADDRESS']) {
+        const parsed = parseAddress(row['ADDRESS']);
+        const ticketLabel = ticketCode || 'UNKNOWN';
+        if (!parsed.addressSuffix) {
+          addressQualityWarnings.push(`Missing addressSuffix for ticket ${ticketLabel} (ADDRESS="${row['ADDRESS']}")`);
+        }
+      } else {
+        addressQualityWarnings.push(`Missing ADDRESS value for ticket ${ticketCode || 'UNKNOWN'}`);
+      }
+
+      // Track existing tickets for phase integrity check
+      if (existingTicket && existingTicket.ticketid) {
+        existingTicketIdToCode.set(existingTicket.ticketid, ticketCode);
+      }
     }
+
+    // SAP item warnings at analyze stage
+    try {
+      const sapItemToTickets = new Map();
+      const addSapFromRow = (row) => {
+        if (!row) return;
+        const raw = row['SAP_ITEM_NUM'];
+        if (raw === null || raw === undefined) return;
+        const key = String(raw).trim();
+        if (key === '') return;
+        const normKey = key.toUpperCase();
+        const tcode = row.TASK_WO_NUM || row.RESTN_WO_NUM || 'UNKNOWN';
+        if (!sapItemToTickets.has(normKey)) sapItemToTickets.set(normKey, new Set());
+        sapItemToTickets.get(normKey).add(tcode);
+      };
+
+      for (const row of data) addSapFromRow(row);
+
+      const sapItems = Array.from(sapItemToTickets.keys());
+      if (sapItems.length > 0) {
+        const existingRes = await db.query(
+          'SELECT UPPER(itemCode) AS itemcode FROM ContractUnits WHERE itemCode = ANY($1) AND deletedAt IS NULL;',
+          [sapItems]
+        );
+        const existing = new Set(existingRes.rows.map(r => r.itemcode));
+        for (const code of sapItems) {
+          const tickets = Array.from(sapItemToTickets.get(code));
+          if (code === '800136A') {
+            analysis.warnings.push(`Warning: SAP item ${code} detected for tickets: ${tickets.join(', ')}`);
+          }
+          if (!existing.has(code)) {
+            analysis.warnings.push(`Warning: SAP item ${code} not found in ContractUnits for tickets: ${tickets.join(', ')}`);
+          }
+        }
+      }
+    } catch (sapWarnErr) {
+      console.error('SAP item analyze warning step failed:', sapWarnErr);
+    }
+
+    // Phases integrity: expected vs actual (existing tickets only)
+    try {
+      const ticketIds = Array.from(existingTicketIdToCode.keys());
+      if (ticketIds.length > 0) {
+        const missingRes = await db.query(
+          `WITH expected AS (
+             SELECT t.ticketId, cup.taskStatusId
+             FROM Tickets t
+             JOIN ContractUnitsPhases cup ON cup.contractUnitId = t.contractUnitId AND cup.deletedAt IS NULL
+             WHERE t.ticketId = ANY($1)
+           ), actual AS (
+             SELECT ticketId, taskStatusId FROM TicketStatus WHERE ticketId = ANY($1) AND deletedAt IS NULL
+           )
+           SELECT e.ticketId, ARRAY_AGG(ts.name ORDER BY ts.name) AS missing
+           FROM expected e
+           JOIN TaskStatus ts ON ts.taskStatusId = e.taskStatusId AND ts.deletedAt IS NULL
+           LEFT JOIN actual a ON a.ticketId = e.ticketId AND a.taskStatusId = e.taskStatusId
+           WHERE a.ticketId IS NULL
+           GROUP BY e.ticketId;`,
+          [ticketIds]
+        );
+        for (const row of missingRes.rows) {
+          const code = existingTicketIdToCode.get(row.ticketid) || String(row.ticketid);
+          analysis.warnings.push(`Phases missing for ticket ${code}: ${row.missing.join(', ')}`);
+        }
+      }
+    } catch (phaseWarnErr) {
+      console.error('Phase integrity warning step failed:', phaseWarnErr);
+    }
+
+    // Aggregate the other warnings
+    analysis.warnings.push(...missingFieldWarnings, ...addressQualityWarnings);
 
     return res.status(200).json({
       success: true,
@@ -1053,6 +1154,8 @@ exports.saveRTRDataWithDecisions = async (req, res) => {
       }
     }
 
+    // After processing new tickets, we'll also generate TicketStatus for both new and updated tickets later
+
     // Process inconsistent tickets with user decisions
     if (inconsistentTickets && Array.isArray(inconsistentTickets)) {
       for (const ticketData of inconsistentTickets) {
@@ -1073,6 +1176,23 @@ exports.saveRTRDataWithDecisions = async (req, res) => {
           });
         }
       }
+    }
+
+    // Generate TicketStatus records for processed tickets (new + updated)
+    try {
+      const createdIds = (results.newTicketsCreated || [])
+        .map(t => Array.isArray(t.result) ? t.result[0]?.ticketId : t.result?.ticketId)
+        .filter(Boolean);
+      const updatedIds = (results.ticketsUpdated || [])
+        .map(t => t.ticketId || t.result?.ticketId)
+        .filter(Boolean);
+      const ticketIds = Array.from(new Set([...(createdIds || []), ...(updatedIds || [])]));
+      if (ticketIds.length > 0) {
+        console.log(`Generating TicketStatus for ${ticketIds.length} processed tickets (new + updated)`);
+        await RTR.generateTicketStatusesForTickets(ticketIds, updatedBy || 1);
+      }
+    } catch (genErr) {
+      console.error('Failed to generate TicketStatus for processed tickets:', genErr);
     }
 
     return res.status(200).json({
@@ -1673,6 +1793,7 @@ exports.analyzeForStepper = async (req, res) => {
       newTickets: [],
       inconsistentTickets: [],
       matchingTickets: [],
+      warnings: [],
       missingInfo: [],
       summary: {
         total: parsedData.length,
@@ -1682,6 +1803,11 @@ exports.analyzeForStepper = async (req, res) => {
         missingInfo: 0
       }
     };
+
+    // Collectors for additional warnings
+    const missingFieldWarnings = [];
+    const addressQualityWarnings = [];
+    const existingTicketIdToCode = new Map();
 
     for (const row of parsedData) {
       const ticketCode = row.TASK_WO_NUM; // Only use TASK_WO_NUM for database lookup
@@ -1829,12 +1955,11 @@ exports.analyzeForStepper = async (req, res) => {
             console.log(`Database updated for ticket ${existingTicket.ticketid}`);
             
             // Check if permit extension is needed even for status comments
-            // Only check for TK - ON PROGRESS and TK - ON SCHEDULE (not TK - ON HOLD OFF or TK - CANCELLED)
-            if (processedRow['Contractor Comments'].toLowerCase().includes('tk - on progress') ||
-                processedRow['Contractor Comments'].toLowerCase().includes('tk - on schedule')) {
+            // Only check for TK - ON PROGRESS (not TK - ON HOLD OFF, TK - CANCELLED, or ON SCHEDULE)
+            if (processedRow['Contractor Comments'].toLowerCase().includes('tk - on progress')) {
               
-              // If permit is expiring soon (≤ 7 days), update to TK - NEEDS PERMIT EXTENSION
-              if (daysUntilExpiry <= 7 && daysUntilExpiry >= 0) {
+              // If permit is expiring soon (≤ 4 days), update to TK - NEEDS PERMIT EXTENSION
+              if (daysUntilExpiry <= 4 && daysUntilExpiry >= 0) {
                 console.log(`Auto-updating ticket ${existingTicket.ticketid} from "${processedRow['Contractor Comments']}" to "TK - NEEDS PERMIT EXTENSION" (permit expires in ${daysUntilExpiry} days)`);
                 
                 // Update the database to TK - NEEDS PERMIT EXTENSION
@@ -1846,7 +1971,7 @@ exports.analyzeForStepper = async (req, res) => {
                 // Update the existingTicket object to reflect the change
                 existingTicket.comment7d = 'TK - NEEDS PERMIT EXTENSION';
                 console.log(`Database updated for ticket ${existingTicket.ticketid} - permit extension needed`);
-              } else if (daysUntilExpiry > 7) {
+              } else if (daysUntilExpiry > 4) {
                 console.log(`Ticket ${existingTicket.ticketid} has status "${processedRow['Contractor Comments']}" but permit is valid (expires in ${daysUntilExpiry} days) - keeping status comment`);
               }
             }
@@ -1857,17 +1982,21 @@ exports.analyzeForStepper = async (req, res) => {
           }
           // Helper function to check if comment is eligible for auto-correction
           else {
-            // Check if comment is eligible for auto-correction (TK - LAYOUT, TK - LAY OUT, empty, or TK - NEEDS PERMIT EXTENSION)
+            // Check if comment is eligible for auto-correction (TK - LAYOUT, TK - LAY OUT, TK - ON PROGRESS, empty, or TK - NEEDS PERMIT EXTENSION)
             const isCommentEligibleForAutoCorrection = () => {
               const comment = existingTicket.comment7d || '';
-              const commentLower = comment.toLowerCase().trim();
-              return commentLower === '' || commentLower === 'tk - layout' || commentLower === 'tk - lay out' || commentLower === 'tk - needs permit extension';
+              const commentLower = comment.toLowerCase();
+              return commentLower.trim() === '' ||
+                     commentLower.includes('tk - layout') ||
+                     commentLower.includes('tk - lay out') ||
+                     commentLower.includes('tk - on progress') ||
+                     commentLower.includes('tk - needs permit extension');
             };
             
             // Only proceed with auto-correction if comment is eligible
             if (isCommentEligibleForAutoCorrection()) {
-              // Check if permit is valid (> 7 days) and comment is TK - NEEDS PERMIT EXTENSION
-              if (daysUntilExpiry > 7 && existingTicket.comment7d.toLowerCase().includes('tk - needs permit extension')) {
+              // Check if permit is valid (> 4 days) and comment is TK - NEEDS PERMIT EXTENSION
+              if (daysUntilExpiry > 4 && existingTicket.comment7d.toLowerCase().includes('tk - needs permit extension')) {
                 console.log(`Auto-updating database for ticket ${existingTicket.ticketid} from "${existingTicket.comment7d}" to "TK - LAYOUT" (permit expires in ${daysUntilExpiry} days)`);
                 
                 // Update the database directly
@@ -1882,59 +2011,63 @@ exports.analyzeForStepper = async (req, res) => {
                 wasAutoCorrected = true;
                 console.log(`Database updated for ticket ${existingTicket.ticketid}`);
               }
-              // Check if permit is expiring (≤ 7 days) and comment is TK - LAYOUT, TK - LAY OUT, or empty
-              else if (daysUntilExpiry <= 7 && daysUntilExpiry >= 0 && !existingTicket.comment7d.toLowerCase().includes('tk - needs permit extension')) {
-                console.log(`Auto-updating database for ticket ${existingTicket.ticketid} from "${existingTicket.comment7d}" to "TK - NEEDS PERMIT EXTENSION" (permit expires in ${daysUntilExpiry} days)`);
-                
-                // Update the database directly
-                await db.query(
-                  'UPDATE Tickets SET comment7d = $1, updatedBy = $2 WHERE ticketId = $3;',
-                  ['TK - NEEDS PERMIT EXTENSION', 1, existingTicket.ticketid]
-                );
-                
-                // Update the existingTicket object to reflect the change
-                const oldComment = existingTicket.comment7d;
-                existingTicket.comment7d = 'TK - NEEDS PERMIT EXTENSION';
-                wasAutoCorrected = true;
-                console.log(`Database updated for ticket ${existingTicket.ticketid}`);
+              // Check if permit is expiring (≤ 4 days) and comment is TK - LAYOUT, TK - LAY OUT, TK - ON PROGRESS, or empty
+              else if (daysUntilExpiry <= 4 && daysUntilExpiry >= 0 && !existingTicket.comment7d.toLowerCase().includes('tk - needs permit extension')) {
+                const commentLower = (existingTicket.comment7d || '').toLowerCase();
+                if (commentLower.trim() === '' ||
+                    commentLower.includes('tk - layout') ||
+                    commentLower.includes('tk - lay out') ||
+                    commentLower.includes('tk - on progress')) {
+                  console.log(`Auto-updating database for ticket ${existingTicket.ticketid} from "${existingTicket.comment7d}" to "TK - NEEDS PERMIT EXTENSION" (permit expires in ${daysUntilExpiry} days)`);
+                  
+                  // Update the database directly
+                  await db.query(
+                    'UPDATE Tickets SET comment7d = $1, updatedBy = $2 WHERE ticketId = $3;',
+                    ['TK - NEEDS PERMIT EXTENSION', 1, existingTicket.ticketid]
+                  );
+                  
+                  // Update the existingTicket object to reflect the change
+                  const oldComment = existingTicket.comment7d;
+                  existingTicket.comment7d = 'TK - NEEDS PERMIT EXTENSION';
+                  wasAutoCorrected = true;
+                  console.log(`Database updated for ticket ${existingTicket.ticketid}`);
+                } else {
+                  console.log(`Skipping auto-correction at ≤4 days due to non-eligible comment: "${existingTicket.comment7d}"`);
+                }
               }
-              // Check if permit is expired (< 0 days) and comment is TK - LAYOUT, TK - LAY OUT, or empty
+              // Check if permit is expired (< 0 days) and comment is TK - ON PROGRESS or TK - LAYOUT (and not already extension)
               else if (daysUntilExpiry < 0 && !existingTicket.comment7d.toLowerCase().includes('tk - needs permit extension')) {
-                console.log(`Auto-updating database for ticket ${existingTicket.ticketid} from "${existingTicket.comment7d}" to "TK - NEEDS PERMIT EXTENSION" (permit expired ${Math.abs(daysUntilExpiry)} days ago)`);
-                
-                // Update the database directly
-                await db.query(
-                  'UPDATE Tickets SET comment7d = $1, updatedBy = $2 WHERE ticketId = $3;',
-                  ['TK - NEEDS PERMIT EXTENSION', 1, existingTicket.ticketid]
-                );
-                
-                // Update the existingTicket object to reflect the change
-                const oldComment = existingTicket.comment7d;
-                existingTicket.comment7d = 'TK - NEEDS PERMIT EXTENSION';
-                wasAutoCorrected = true;
-                console.log(`Database updated for ticket ${existingTicket.ticketid}`);
+                const commentLower = (existingTicket.comment7d || '').toLowerCase();
+                if (commentLower.includes('tk - on progress') || commentLower.includes('tk - layout')) {
+                  console.log(`Auto-updating database for ticket ${existingTicket.ticketid} from "${existingTicket.comment7d}" to "TK - NEEDS PERMIT EXTENSION" (permit expired ${Math.abs(daysUntilExpiry)} days ago)`);
+                  
+                  // Update the database directly
+                  await db.query(
+                    'UPDATE Tickets SET comment7d = $1, updatedBy = $2 WHERE ticketId = $3;',
+                    ['TK - NEEDS PERMIT EXTENSION', 1, existingTicket.ticketid]
+                  );
+                  
+                  // Update the existingTicket object to reflect the change
+                  const oldComment = existingTicket.comment7d;
+                  existingTicket.comment7d = 'TK - NEEDS PERMIT EXTENSION';
+                  wasAutoCorrected = true;
+                  console.log(`Database updated for ticket ${existingTicket.ticketid}`);
+                } else {
+                  console.log(`Skipping expired-permit update due to non-eligible comment: "${existingTicket.comment7d}"`);
+                }
               } else {
                 console.log(`No auto-correction needed for ticket ${existingTicket.ticketid} - current comment: "${existingTicket.comment7d}", days until expiry: ${daysUntilExpiry}`);
               }
             } else {
-              console.log(`Skipping auto-correction for ticket ${existingTicket.ticketid} - comment "${existingTicket.comment7d}" is not eligible for auto-correction (must be "TK - LAYOUT", "TK - LAY OUT", "TK - NEEDS PERMIT EXTENSION", or empty)`);
+              console.log(`Skipping auto-correction for ticket ${existingTicket.ticketid} - comment "${existingTicket.comment7d}" is not eligible for auto-correction (must include "TK - LAYOUT", "TK - LAY OUT", "TK - ON PROGRESS", be empty, or already be extension)`);
             }
           }
         }
         
-        // Only compare data if we haven't auto-corrected the database
-        if (!wasAutoCorrected) {
-          console.log(`Comparing data for existing ticket`);
-          const dataInconsistencies = compareTicketData(processedRow, existingTicket);
-          console.log(`Found ${dataInconsistencies.length} inconsistencies:`, dataInconsistencies);
-          inconsistencies.push(...dataInconsistencies);
-        } else {
-          console.log(`Skipping data comparison for auto-corrected ticket`);
-          // For auto-corrected tickets, only compare non-comment fields
-          const dataInconsistencies = compareTicketDataExcludingComments(processedRow, existingTicket);
-          console.log(`Found ${dataInconsistencies.length} non-comment inconsistencies:`, dataInconsistencies);
-          inconsistencies.push(...dataInconsistencies);
-        }
+        console.log(`Comparing data for existing ticket`);
+        const dataInconsistencies = compareTicketData(processedRow, existingTicket);
+        console.log(`Found ${dataInconsistencies.length} inconsistencies:`, dataInconsistencies);
+        inconsistencies.push(...dataInconsistencies);
         
         if (inconsistencies.length > 0) {
           console.log(`Adding to inconsistentTickets`);
@@ -1963,7 +2096,102 @@ exports.analyzeForStepper = async (req, res) => {
           analysis.summary.matching++;
         }
       }
+
+      // Ticket essentials: missing required fields
+      const requiredFieldsAnalyze = ['TASK_WO_NUM', 'RESTN_WO_NUM', 'ADDRESS', 'SAP_ITEM_NUM'];
+      for (const rf of requiredFieldsAnalyze) {
+        if (!processedRow[rf] || processedRow[rf] === '') {
+          missingFieldWarnings.push(`Missing required field ${rf} for ticket ${ticketCode || 'UNKNOWN'}`);
+        }
+      }
+
+      // Address quality checks
+      if (processedRow['ADDRESS']) {
+        const parsed = parseAddress(processedRow['ADDRESS']);
+        const ticketLabel = ticketCode || 'UNKNOWN';
+        if (!parsed.addressSuffix) {
+          addressQualityWarnings.push(`Missing addressSuffix for ticket ${ticketLabel} (ADDRESS="${processedRow['ADDRESS']}")`);
+        }
+      } else {
+        addressQualityWarnings.push(`Missing ADDRESS value for ticket ${ticketCode || 'UNKNOWN'}`);
+      }
+
+      // Track existing tickets for phase integrity check
+      if (existingTicket && existingTicket.ticketid) {
+        existingTicketIdToCode.set(existingTicket.ticketid, ticketCode);
+      }
     }
+
+    // SAP item warnings at analyze stage
+    try {
+      const sapItemToTickets = new Map();
+      const addSapFromRow = (row) => {
+        if (!row) return;
+        const raw = row['SAP_ITEM_NUM'];
+        if (raw === null || raw === undefined) return;
+        const key = String(raw).trim();
+        if (key === '') return;
+        const normKey = key.toUpperCase();
+        const tcode = row.TASK_WO_NUM || row.RESTN_WO_NUM || 'UNKNOWN';
+        if (!sapItemToTickets.has(normKey)) sapItemToTickets.set(normKey, new Set());
+        sapItemToTickets.get(normKey).add(tcode);
+      };
+
+      for (const row of parsedData) addSapFromRow(row);
+
+      const sapItems = Array.from(sapItemToTickets.keys());
+      if (sapItems.length > 0) {
+        const existingRes = await db.query(
+          'SELECT UPPER(itemCode) AS itemcode FROM ContractUnits WHERE itemCode = ANY($1) AND deletedAt IS NULL;',
+          [sapItems]
+        );
+        const existing = new Set(existingRes.rows.map(r => r.itemcode));
+        for (const code of sapItems) {
+          const tickets = Array.from(sapItemToTickets.get(code));
+          if (code === '800136A') {
+            analysis.warnings.push(`Warning: SAP item ${code} detected for tickets: ${tickets.join(', ')}`);
+          }
+          if (!existing.has(code)) {
+            analysis.warnings.push(`Warning: SAP item ${code} not found in ContractUnits for tickets: ${tickets.join(', ')}`);
+          }
+        }
+      }
+    } catch (sapWarnErr) {
+      console.error('SAP item analyze warning step failed:', sapWarnErr);
+    }
+
+    // Phases integrity: expected vs actual (existing tickets only)
+    try {
+      const ticketIds = Array.from(existingTicketIdToCode.keys());
+      if (ticketIds.length > 0) {
+        const missingRes = await db.query(
+          `WITH expected AS (
+             SELECT t.ticketId, cup.taskStatusId
+             FROM Tickets t
+             JOIN ContractUnitsPhases cup ON cup.contractUnitId = t.contractUnitId AND cup.deletedAt IS NULL
+             WHERE t.ticketId = ANY($1)
+           ), actual AS (
+             SELECT ticketId, taskStatusId FROM TicketStatus WHERE ticketId = ANY($1) AND deletedAt IS NULL
+           )
+           SELECT e.ticketId, ARRAY_AGG(ts.name ORDER BY ts.name) AS missing
+           FROM expected e
+           JOIN TaskStatus ts ON ts.taskStatusId = e.taskStatusId AND ts.deletedAt IS NULL
+           LEFT JOIN actual a ON a.ticketId = e.ticketId AND a.taskStatusId = e.taskStatusId
+           WHERE a.ticketId IS NULL
+           GROUP BY e.ticketId;`,
+          [ticketIds]
+        );
+        for (const row of missingRes.rows) {
+          const code = existingTicketIdToCode.get(row.ticketid) || String(row.ticketid);
+          analysis.warnings.push(`Phases missing for ticket ${code}: ${row.missing.join(', ')}`);
+        }
+      }
+    } catch (phaseWarnErr) {
+      console.error('Phase integrity warning step failed:', phaseWarnErr);
+    }
+
+    // Aggregate the other warnings
+    analysis.warnings.push(...missingFieldWarnings, ...addressQualityWarnings);
 
     console.log(`\n=== Final Analysis Summary ===`);
     console.log(`New tickets: ${analysis.summary.new}`);
@@ -2134,6 +2362,68 @@ exports.validateStepperData = async (req, res) => {
         }
         validation.summary.totalTickets++;
       }
+    }
+
+    // Additional validation warnings: SAP item checks (ContractUnit codes)
+    try {
+      const sapItemToTickets = new Map();
+
+      const addSapFromRow = (row, ticketCodeLabel) => {
+        if (!row) return;
+        const raw = row['SAP_ITEM_NUM'];
+        if (raw === null || raw === undefined) return;
+        const key = String(raw).trim();
+        if (key === '') return;
+        const normKey = key.toUpperCase();
+        if (!sapItemToTickets.has(normKey)) sapItemToTickets.set(normKey, new Set());
+        if (ticketCodeLabel) sapItemToTickets.get(normKey).add(ticketCodeLabel);
+      };
+
+      // Collect SAP codes from newTickets
+      if (newTickets && Array.isArray(newTickets)) {
+        for (const t of newTickets) {
+          addSapFromRow(t.excelData, t.ticketCode || (t.excelData && t.excelData.TASK_WO_NUM) || 'UNKNOWN');
+        }
+      }
+
+      // Collect from inconsistentTickets (prefer excelData)
+      if (inconsistentTickets && Array.isArray(inconsistentTickets)) {
+        for (const t of inconsistentTickets) {
+          addSapFromRow(t.excelData, t.ticketCode || t.taskWoNum || (t.excelData && t.excelData.TASK_WO_NUM) || 'UNKNOWN');
+        }
+      }
+
+      // Collect from missingInfoFilled payload (filled data)
+      if (missingInfoFilled && Array.isArray(missingInfoFilled)) {
+        for (const f of missingInfoFilled) {
+          addSapFromRow(f.data, f.ticketCode || (f.data && (f.data.TASK_WO_NUM || f.data.RESTN_WO_NUM)) || 'UNKNOWN');
+        }
+      }
+
+      const sapItems = Array.from(sapItemToTickets.keys());
+      if (sapItems.length > 0) {
+        const existingRes = await db.query(
+          'SELECT UPPER(itemCode) AS itemcode FROM ContractUnits WHERE itemCode = ANY($1) AND deletedAt IS NULL;',
+          [sapItems]
+        );
+        const existing = new Set(existingRes.rows.map(r => r.itemcode));
+
+        for (const code of sapItems) {
+          const tickets = Array.from(sapItemToTickets.get(code));
+          if (code === '800136A') {
+            validation.warnings.push(
+              `Warning: SAP item ${code} detected for tickets: ${tickets.join(', ')}`
+            );
+          }
+          if (!existing.has(code)) {
+            validation.warnings.push(
+              `Warning: SAP item ${code} not found in ContractUnits for tickets: ${tickets.join(', ')}`
+            );
+          }
+        }
+      }
+    } catch (sapWarnErr) {
+      console.error('SAP item validation warning step failed:', sapWarnErr);
     }
 
     // Count skipped tickets
