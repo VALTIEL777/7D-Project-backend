@@ -613,6 +613,7 @@ const TicketsController = {
         ticketType: ticket.tickettype,
         daysOutstanding: ticket.daysoutstanding,
         comment7d: ticket.comment7d,
+        expireDate: ticket.expiredate,
         quantity: ticket.quantity,
         createdAt: ticket.createdat,
         updatedAt: ticket.updatedat,

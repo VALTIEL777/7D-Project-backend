@@ -2,6 +2,7 @@
 // Replace this with Mongoose/Sequelize schema if needed
 
 const db = require('../../config/db');
+const RouteOptimizationService = require('../../services/RouteOptimizationService');
 
 class ExcelItem {
   constructor(data) {
@@ -802,6 +803,12 @@ class RTR {
     
     for (const row of data) {
       try {
+        const steps = [];
+        const addStep = (label, detail = {}) => {
+          const entry = { step: label, timestamp: new Date().toISOString(), ...detail };
+          steps.push(entry);
+          try { console.log(`[RTR.save] ${label}`, detail); } catch (_) { /* noop */ }
+        };
         
         // Step 1: Create Incident
         const incidentId = await this.createIncident(
@@ -810,6 +817,7 @@ class RTR {
           createdBy,
           updatedBy
         );
+        addStep('incident_created', { incidentId, name: row.RESTN_WO_NUM, earliestRptDate: row.Earliest_Rpt_Dt });
 
         // Step 2: Create Wayfinding
         const wayfindingId = await this.createWayfinding(
@@ -828,13 +836,22 @@ class RTR {
           createdBy,
           updatedBy
         );
+        addStep('wayfinding_created', {
+          wayfindingId,
+          location: row.LOCATION2_RES,
+          from: { number: row.fromAddressNumber, cardinal: row.fromAddressCardinal, street: row.fromAddressStreet, suffix: row.fromAddressSuffix },
+          to: { number: row.toAddressNumber, cardinal: row.toAddressCardinal, street: row.toAddressStreet, suffix: row.toAddressSuffix },
+          length: row.length, width: row.width, surfaceTotal: row.surfaceTotal
+        });
 
         // Step 3: Find Quadrant (or create if doesn't exist)
         const quadrantId = await this.findQuadrantByName(row.SQ_MI);
+        addStep('quadrant_resolved', { requested: row.SQ_MI, quadrantId });
 
         // Step 4: Find ContractUnit by SAP_ITEM_NUM
         const contractUnitData = await this.findContractUnitByItemCode(row.SAP_ITEM_NUM);
         const contractUnitId = contractUnitData ? contractUnitData.contractUnitId : null;
+        addStep('contract_unit_resolved', { sapItemNum: row.SAP_ITEM_NUM, contractUnitId, costPerUnit: contractUnitData?.costPerUnit });
         
         // Step 5: Calculate amountToPay
         let amountToPay = null;
@@ -848,6 +865,7 @@ class RTR {
         if (contractUnitData && contractUnitData.costPerUnit && quantity) {
           amountToPay = contractUnitData.costPerUnit * quantity;
         }
+        addStep('amount_calculated', { quantity, amountToPay });
 
         // Step 6: Create Ticket
         const ticketId = await this.createTicket(
@@ -865,6 +883,7 @@ class RTR {
           createdBy,
           updatedBy
         );
+        addStep('ticket_created', { ticketId, ticketCode: row.TASK_WO_NUM, contractUnitId, amountToPay, quantity });
 
         // Step 6.5: Auto-correct comment7d based on permit expiration date
         if (row['Contractor Comments'] && row.EXP_DATE) {
@@ -893,33 +912,24 @@ class RTR {
             expirationDate.setHours(0, 0, 0, 0);
             
             const daysUntilExpiry = Math.ceil((expirationDate - currentDate) / (1000 * 60 * 60 * 24));
-
-            // Only auto-correct when the contractor comment is an operational status (LAYOUT/LAY OUT/ON PROGRESS)
-            const cc = (row['Contractor Comments'] || '').toLowerCase();
-            const isOperationalComment =
-              cc.includes('tk - layout') || cc.includes('tk- layout') ||
-              cc.includes('tk - lay out') || cc.includes('tk- lay out') ||
-              cc.includes('tk - on progress') || cc.includes('tk- on progress');
-
-            if (!isOperationalComment) {
-              console.log(`Skipping auto-correction for ticket ${ticketId} - non-operational comment: "${row['Contractor Comments']}"`);
-            } else {
-              // If permit is valid (more than 4 days away) but comment says it needs extension
-              if (daysUntilExpiry > 4 && cc.includes('tk - needs permit extension')) {
-                await db.query(
-                  'UPDATE Tickets SET comment7d = $1, updatedBy = $2 WHERE ticketId = $3;',
-                  ['TK - LAYOUT', updatedBy, ticketId]
-                );
-                console.log(`Auto-corrected ticket ${ticketId} comment from "${row['Contractor Comments']}" to "TK - LAYOUT" (permit expires in ${daysUntilExpiry} days)`);
-              }
-              // If permit is expiring soon (≤ 4 days) but comment doesn't mention it
-              else if (daysUntilExpiry <= 4 && daysUntilExpiry >= 0 && !cc.includes('tk - needs permit extension')) {
-                await db.query(
-                  'UPDATE Tickets SET comment7d = $1, updatedBy = $2 WHERE ticketId = $3;',
-                  ['TK - NEEDS PERMIT EXTENSION', updatedBy, ticketId]
-                );
-                console.log(`Auto-corrected ticket ${ticketId} comment to "TK - NEEDS PERMIT EXTENSION" (permit expires in ${daysUntilExpiry} days)`);
-              }
+            
+            // If permit is valid (more than 4 days away) but comment says it needs extension
+            if (daysUntilExpiry > 4 && row['Contractor Comments'].toLowerCase().includes('tk - needs permit extension')) {
+              await db.query(
+                'UPDATE Tickets SET comment7d = $1, updatedBy = $2 WHERE ticketId = $3;',
+                ['TK - LAYOUT', updatedBy, ticketId]
+              );
+              console.log(`Auto-corrected ticket ${ticketId} comment from "${row['Contractor Comments']}" to "TK - LAYOUT" (permit expires in ${daysUntilExpiry} days)`);
+              addStep('ticket_comment_autocorrected', { ticketId, from: row['Contractor Comments'], to: 'TK - LAYOUT', daysUntilExpiry });
+            }
+            // If permit is expiring soon (≤ 4 days) but comment doesn't mention it
+            else if (daysUntilExpiry <= 4 && daysUntilExpiry >= 0 && !row['Contractor Comments'].toLowerCase().includes('tk - needs permit extension')) {
+              await db.query(
+                'UPDATE Tickets SET comment7d = $1, updatedBy = $2 WHERE ticketId = $3;',
+                ['TK - NEEDS PERMIT EXTENSION', updatedBy, ticketId]
+              );
+              console.log(`Auto-corrected ticket ${ticketId} comment to "TK - NEEDS PERMIT EXTENSION" (permit expires in ${daysUntilExpiry} days)`);
+              addStep('ticket_comment_autocorrected', { ticketId, from: row['Contractor Comments'], to: 'TK - NEEDS PERMIT EXTENSION', daysUntilExpiry });
             }
           }
         }
@@ -933,6 +943,7 @@ class RTR {
           createdBy,
           updatedBy
         );
+        addStep('address_resolved', { addressId, addressNumber: row.addressNumber, addressCardinal: row.addressCardinal, addressStreet: row.addressStreet, addressSuffix: row.addressSuffix });
 
         // Step 8: Find or Create TicketAddress
         await this.findOrCreateTicketAddress(
@@ -943,6 +954,33 @@ class RTR {
           createdBy,
           updatedBy
         );
+        addStep('ticket_address_linked', { ticketId, addressId, isPartner: true, is7d: false });
+
+        // Step 8.1: Ensure address has coordinates (geocode if missing)
+        try {
+          const addrRes = await db.query(
+            'SELECT latitude, longitude, placeid FROM Addresses WHERE addressId = $1 AND deletedAt IS NULL',
+            [addressId]
+          );
+          const addr = addrRes.rows[0];
+          if (!addr || addr.latitude == null || addr.longitude == null) {
+            const addressParts = [row.addressNumber, row.addressCardinal, row.addressStreet, row.addressSuffix]
+              .filter(Boolean)
+              .join(' ');
+            if (addressParts && addressParts.trim().length > 0) {
+              const fullAddress = `${addressParts}, Chicago, Illinois`;
+              const geocode = await RouteOptimizationService.geocodeAddressSafe(fullAddress);
+              await RouteOptimizationService.saveAddressToDatabase(fullAddress, geocode);
+              addStep('address_geocoded', { addressId, fullAddress, latitude: geocode.latitude, longitude: geocode.longitude, placeId: geocode.placeId });
+            } else {
+              addStep('address_geocode_skipped', { addressId, reason: 'insufficient_components' });
+            }
+          } else {
+            addStep('address_geocode_skipped', { addressId, reason: 'coordinates_exist' });
+          }
+        } catch (geoErr) {
+          addStep('address_geocode_failed', { addressId, error: geoErr.message });
+        }
 
         // Step 9: Create Permit
         const permitStatus = this.determinePermitStatus(row.EXP_DATE);
@@ -955,9 +993,11 @@ class RTR {
           createdBy,
           updatedBy
         );
+        addStep('permit_resolved', { permitId, permitNumber: row.AGENCY_NO, startDate: row.START_DATE, expireDate: row.EXP_DATE, status: permitStatus });
 
         // Step 10: Create PermitedTicket
         await this.findOrCreatePermitedTicket(permitId, ticketId, createdBy, updatedBy);
+        addStep('permit_ticket_linked', { permitId, ticketId });
 
         const result = {
           success: true,
@@ -968,6 +1008,7 @@ class RTR {
           permitId,
           message: 'Record created successfully'
         };
+        result.steps = steps;
         
         results.push(result);
 

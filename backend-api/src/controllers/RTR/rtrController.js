@@ -456,7 +456,7 @@ exports.uploadExcel = async (req, res) => {
       });
 
       // Check for critical columns that are absolutely required
-      const criticalColumns = ['TASK_WO_NUM', 'RESTN_WO_NUM', 'ADDRESS', 'SAP_ITEM_NUM'];
+      const criticalColumns = ['TASK_WO_NUM', 'ADDRESS', 'SAP_ITEM_NUM'];
       const missingCritical = criticalColumns.filter((col) => !(col in colIndexMap));
       
       console.log(`=== Column Mapping Debug ===`);
@@ -983,6 +983,34 @@ exports.analyzeRTRData = async (req, res) => {
       }
 
       const existingTicket = await Tickets.findByTicketCode(ticketCode);
+
+      // Auto-assign ContractUnit and generate phases for specific SAP item
+      try {
+        const sapCode = (row.SAP_ITEM_NUM || '').toString().trim().toUpperCase();
+        if (existingTicket && sapCode === '800136A') {
+          const contractUnitData = await RTR.findContractUnitByItemCode(sapCode);
+          if (contractUnitData && contractUnitData.contractUnitId) {
+            await db.query(
+              'UPDATE Tickets SET contractUnitId = $1, updatedBy = $2 WHERE ticketId = $3',
+              [contractUnitData.contractUnitId, 1, existingTicket.ticketId]
+            );
+            try {
+              await RTR.generateTicketStatusesForTickets([existingTicket.ticketId], 1);
+              analysis.warnings.push(
+                `Auto-assigned ContractUnit ${sapCode} and generated phases for ticket ${existingTicket.ticketCode}`
+              );
+            } catch (genErr) {
+              analysis.warnings.push(
+                `ContractUnit ${sapCode} assigned but failed to generate phases for ticket ${existingTicket.ticketCode}: ${genErr.message}`
+              );
+            }
+          }
+        }
+      } catch (autoErr) {
+        analysis.warnings.push(
+          `Failed auto-assign for ticket ${ticketCode || 'UNKNOWN'}: ${autoErr.message}`
+        );
+      }
       
       if (!existingTicket) {
         analysis.newTickets.push({
@@ -1014,7 +1042,7 @@ exports.analyzeRTRData = async (req, res) => {
       }
 
       // Ticket essentials: missing required fields
-      const requiredFieldsAnalyze = ['TASK_WO_NUM', 'RESTN_WO_NUM', 'ADDRESS', 'SAP_ITEM_NUM'];
+      const requiredFieldsAnalyze = ['TASK_WO_NUM', 'ADDRESS', 'SAP_ITEM_NUM'];
       for (const rf of requiredFieldsAnalyze) {
         if (!row[rf] || row[rf] === '') {
           missingFieldWarnings.push(`Missing required field ${rf} for ticket ${ticketCode || 'UNKNOWN'}`);
@@ -1097,9 +1125,22 @@ exports.analyzeRTRData = async (req, res) => {
            GROUP BY e.ticketId;`,
           [ticketIds]
         );
+        const missingTicketIds = [];
         for (const row of missingRes.rows) {
           const code = existingTicketIdToCode.get(row.ticketid) || String(row.ticketid);
           analysis.warnings.push(`Phases missing for ticket ${code}: ${row.missing.join(', ')}`);
+          missingTicketIds.push(row.ticketid);
+        }
+
+        // Auto-generate missing phases for tickets lacking expected TicketStatus
+        if (missingTicketIds.length > 0) {
+          try {
+            await RTR.generateTicketStatusesForTickets(missingTicketIds, 1);
+            analysis.warnings.push(`Auto-generated phases for ${missingTicketIds.length} ticket(s).`);
+          } catch (genErr) {
+            console.error('Auto-generation of phases failed:', genErr);
+            analysis.warnings.push('Failed to auto-generate missing phases for some tickets');
+          }
         }
       }
     } catch (phaseWarnErr) {
@@ -1400,7 +1441,6 @@ function applyUserDecisions(excelData, databaseData, decisions) {
   // Define vital fields that should not be set to null/empty
   const vitalFields = [
     'TASK_WO_NUM',
-    'RESTN_WO_NUM', 
     'ADDRESS',
     'SAP_ITEM_NUM'
   ];
@@ -1490,11 +1530,24 @@ async function updateTicketWithData(ticketId, finalData, updatedBy) {
       throw new Error(`Ticket with ID ${ticketId} not found`);
     }
 
+    // Resolve contractUnitId from SAP item code if provided
+    let resolvedContractUnitId = finalData.contractUnitId || currentTicket.contractunitid;
+    try {
+      if ((!resolvedContractUnitId || resolvedContractUnitId === null) && finalData.sapItemNum) {
+        const contractUnitData = await RTR.findContractUnitByItemCode(finalData.sapItemNum);
+        if (contractUnitData && contractUnitData.contractUnitId) {
+          resolvedContractUnitId = contractUnitData.contractUnitId;
+        }
+      }
+    } catch (resolveErr) {
+      console.warn(`Failed to resolve contract unit for ticket ${ticketId} from SAP item ${finalData.sapItemNum}:`, resolveErr.message);
+    }
+
     // Update only the fields that were changed by user decisions
     const updateData = {
       incidentId: finalData.incidentId || currentTicket.incidentid,
       cuadranteId: finalData.cuadranteId || currentTicket.cuadranteid,
-      contractUnitId: finalData.contractUnitId || currentTicket.contractunitid,
+      contractUnitId: resolvedContractUnitId,
       wayfindingId: finalData.wayfindingId || currentTicket.wayfindingid,
       paymentId: finalData.paymentId || currentTicket.paymentid,
       mobilizationId: finalData.mobilizationId || currentTicket.mobilizationid,
@@ -2098,7 +2151,7 @@ exports.analyzeForStepper = async (req, res) => {
       }
 
       // Ticket essentials: missing required fields
-      const requiredFieldsAnalyze = ['TASK_WO_NUM', 'RESTN_WO_NUM', 'ADDRESS', 'SAP_ITEM_NUM'];
+      const requiredFieldsAnalyze = ['TASK_WO_NUM', 'ADDRESS', 'SAP_ITEM_NUM'];
       for (const rf of requiredFieldsAnalyze) {
         if (!processedRow[rf] || processedRow[rf] === '') {
           missingFieldWarnings.push(`Missing required field ${rf} for ticket ${ticketCode || 'UNKNOWN'}`);
@@ -2181,9 +2234,21 @@ exports.analyzeForStepper = async (req, res) => {
            GROUP BY e.ticketId;`,
           [ticketIds]
         );
+        const missingTicketIds = [];
         for (const row of missingRes.rows) {
           const code = existingTicketIdToCode.get(row.ticketid) || String(row.ticketid);
           analysis.warnings.push(`Phases missing for ticket ${code}: ${row.missing.join(', ')}`);
+          missingTicketIds.push(row.ticketid);
+        }
+
+        if (missingTicketIds.length > 0) {
+          try {
+            await RTR.generateTicketStatusesForTickets(missingTicketIds, 1);
+            analysis.warnings.push(`Auto-generated phases for ${missingTicketIds.length} ticket(s).`);
+          } catch (genErr) {
+            console.error('Auto-generation of phases failed:', genErr);
+            analysis.warnings.push('Failed to auto-generate missing phases for some tickets');
+          }
         }
       }
     } catch (phaseWarnErr) {
@@ -2842,7 +2907,7 @@ async function parseExcelData(rows, sheetName) {
     });
 
     // Check for critical columns that are absolutely required
-    const criticalColumns = ['TASK_WO_NUM', 'RESTN_WO_NUM', 'ADDRESS', 'SAP_ITEM_NUM'];
+    const criticalColumns = ['TASK_WO_NUM', 'ADDRESS', 'SAP_ITEM_NUM'];
     const missingCritical = criticalColumns.filter((col) => !(col in colIndexMap));
     
     if (missingCritical.length > 0) {
@@ -2955,7 +3020,6 @@ async function parseExcelData(rows, sheetName) {
 // Helper function to check for missing required fields
 function checkMissingRequiredFields(row) {
   const requiredFields = [
-    { field: 'RESTN_WO_NUM', name: 'Rest Number' },
     { field: 'TASK_WO_NUM', name: 'Task Number' },
     { field: 'SAP_ITEM_NUM', name: 'SAP Item Number' },
     { field: 'ADDRESS', name: 'Address' }
@@ -2984,7 +3048,6 @@ function validateTicketData(data, allowDatabaseValues = false) {
 
   // Check required fields (excluding quantity since we auto-assign it)
   const requiredFields = [
-    { field: 'RESTN_WO_NUM', name: 'Rest Number' },
     { field: 'TASK_WO_NUM', name: 'Task Number' },
     { field: 'SAP_ITEM_NUM', name: 'SAP Item Number' },
     { field: 'ADDRESS', name: 'Address' }
@@ -2993,7 +3056,7 @@ function validateTicketData(data, allowDatabaseValues = false) {
   for (const required of requiredFields) {
     if (!data[required.field] || data[required.field] === '' || data[required.field] === null) {
       // If we're allowing database values and this is a vital field, be more lenient
-      if (allowDatabaseValues && ['TASK_WO_NUM', 'RESTN_WO_NUM', 'ADDRESS', 'SAP_ITEM_NUM'].includes(required.field)) {
+      if (allowDatabaseValues && ['TASK_WO_NUM', 'ADDRESS', 'SAP_ITEM_NUM'].includes(required.field)) {
         console.log(`Validation: Allowing empty vital field "${required.field}" because database values are allowed`);
         continue; // Skip validation for this field
       }
