@@ -12,9 +12,9 @@ const LocationClusteringService = require('./LocationClusteringService');
 class RouteOptimizationService {
     constructor() {
         // Use OSRM for routing instead of Google Maps
-        this.osrmBaseUrl = process.env.OSRM_BASE_URL || 'http://osrm:5000';
+        this.osrmBaseUrl = process.env.OSRM_BASE_URL || process.env.OSRM_URL || 'http://osrm:5000';
         // Use VROOM for waypoint optimization
-        this.vroomBaseUrl = process.env.VROOM_BASE_URL || 'http://vroom:3000';
+        this.vroomBaseUrl = process.env.VROOM_BASE_URL || process.env.VROOM_URL || 'http://vroom:3000';
         // Keep Google Maps for geocoding (address to coordinates)
         this.geocodingApiUrl = 'https://maps.googleapis.com/maps/api/geocode/json';
         this.googleMapsApiKey = process.env.GOOGLE_MAPS_API_KEY;
@@ -231,9 +231,10 @@ class RouteOptimizationService {
         console.log(`Starting VROOM route optimization process for ${intermediateAddresses.length} intermediate stops.`);
 
         // --- STEP 1: Geocode all addresses safely (DB first, then Google) ---
-        // Only geocode origin and intermediates (no destination)
-        const [originGeo, ...geocodedIntermediates] = await Promise.all([
+        // Geocode origin, destination and intermediates
+        const [originGeo, destinationGeo, ...geocodedIntermediates] = await Promise.all([
             this.geocodeAddressSafe(originAddress),
+            this.geocodeAddressSafe(destinationAddress),
             ...intermediateAddresses.map(address => this.geocodeAddressSafe(address))
         ]);
 
@@ -274,13 +275,14 @@ class RouteOptimizationService {
             console.log('VROOM optimized order:', optimizedOrder);
 
             // --- STEP 3: Build coordinates string for OSRM with optimized order ---
-            // Only use origin and jobs (no destination)
+            // Use origin, jobs in optimized order, and destination
             const optimizedCoordinates = [
                 `${originGeo.longitude},${originGeo.latitude}`,
                 ...optimizedOrder.map(index => {
                     const geo = geocodedIntermediates[index];
                     return `${geo.longitude},${geo.latitude}`;
-                })
+                }),
+                `${destinationGeo.longitude},${destinationGeo.latitude}`
             ];
             const coordinatesString = optimizedCoordinates.join(';');
             console.log(`OSRM coordinates string (optimized): ${coordinatesString}`);
@@ -313,13 +315,14 @@ class RouteOptimizationService {
             // Fallback to sequential order if VROOM fails
             console.log('Falling back to sequential order due to optimization error');
             const fallbackOrder = Array.from({ length: intermediateAddresses.length }, (_, i) => i);
-            // Build coordinates string for OSRM with fallback order
+            // Build coordinates string for OSRM with fallback order (include destination)
             const fallbackCoordinates = [
                 `${originGeo.longitude},${originGeo.latitude}`,
-                ...geocodedIntermediates.map(geo => `${geo.longitude},${geo.latitude}`)
+                ...geocodedIntermediates.map(geo => `${geo.longitude},${geo.latitude}`),
+                `${destinationGeo.longitude},${destinationGeo.latitude}`
             ];
             const coordinatesString = fallbackCoordinates.join(';');
-            const osrmUrl = `${this.osrmBaseUrl}/route/v1/driving/${coordinatesString}?overview=full&steps=true&annotations=true`;
+            const osrmUrl = `${this.osrmBaseUrl}/route/v1/driving/${coordinatesString}?overview=full&steps=true&annotations=true&geometries=polyline`;
             const osrmResponse = await axios.get(osrmUrl);
             const route = osrmResponse.data.routes[0];
             return {
@@ -331,6 +334,37 @@ class RouteOptimizationService {
                 optimizationNote: 'Used fallback sequential order due to VROOM error'
             };
         }
+    }
+
+    /**
+     * Get route polyline, distance, and duration for a fixed order (no optimization)
+     * Includes origin and destination explicitly.
+     * @param {string} originAddress
+     * @param {string} destinationAddress
+     * @param {Array<string>} addresses - ordered intermediate addresses
+     * @returns {Promise<{encodedPolyline: string, totalDistance: number, totalDuration: number}>}
+     */
+    async getRouteForFixedOrder(originAddress, destinationAddress, addresses) {
+        const [originGeo, destinationGeo, ...geocodedIntermediates] = await Promise.all([
+            this.geocodeAddressSafe(originAddress),
+            this.geocodeAddressSafe(destinationAddress),
+            ...addresses.map(address => this.geocodeAddressSafe(address))
+        ]);
+
+        const coordinates = [
+            `${originGeo.longitude},${originGeo.latitude}`,
+            ...geocodedIntermediates.map(geo => `${geo.longitude},${geo.latitude}`),
+            `${destinationGeo.longitude},${destinationGeo.latitude}`
+        ];
+        const coordinatesString = coordinates.join(';');
+        const osrmUrl = `${this.osrmBaseUrl}/route/v1/driving/${coordinatesString}?overview=full&steps=true&annotations=true&geometries=polyline`;
+        const osrmResponse = await axios.get(osrmUrl);
+        const route = osrmResponse.data.routes[0];
+        return {
+            encodedPolyline: route.geometry,
+            totalDistance: route.distance,
+            totalDuration: route.duration
+        };
     }
 
     /**
@@ -1587,7 +1621,8 @@ class RouteOptimizationService {
                     t.createdAt,
                     t.updatedAt,
                     cu.name,
-                    i.name
+                    i.name,
+                    perm.permitExpireDate
                 ORDER BY t.ticketId ASC
             `);
             
@@ -2979,37 +3014,18 @@ class RouteOptimizationService {
             try {
                 await client.query('BEGIN');
 
-                // 1. Reset SPOTTING status endingDate to NULL for all tickets
-                const spottingStatusResult = await client.query(`
-                    UPDATE TicketStatus 
-                    SET endingDate = NULL, 
+                // 1. Soft delete all RouteTickets associations (unassign tickets from route)
+                const routeTicketsResult = await client.query(`
+                    UPDATE RouteTickets 
+                    SET deletedAt = CURRENT_TIMESTAMP, 
                         updatedAt = CURRENT_TIMESTAMP, 
                         updatedBy = $1 
-                    WHERE ticketId = ANY($2) 
-                        AND taskStatusId = (SELECT taskStatusId FROM TaskStatus WHERE name = 'Spotting' AND deletedAt IS NULL)
+                    WHERE routeId = $2 
                         AND deletedAt IS NULL
-                    RETURNING taskStatusId, ticketId, endingDate
-                `, [updatedBy, ticketIds]);
+                    RETURNING routeId, ticketId, deletedAt
+                `, [updatedBy, routeId]);
 
-                const updatedSpottingStatuses = spottingStatusResult.rows.length;
-
-                // 2. Update comment7d to 'TK - LAYOUT' for tickets that don't have 'TK - ON SCHEDULE' or 'TK - ON PROGRESS'
-                const commentUpdateResult = await client.query(`
-                    UPDATE Tickets 
-                    SET comment7d = 'TK - LAYOUT',
-                        updatedAt = CURRENT_TIMESTAMP, 
-                        updatedBy = $1 
-                    WHERE ticketId = ANY($2) 
-                        AND deletedAt IS NULL
-                        AND (comment7d IS NULL 
-                             OR comment7d = '' 
-                             OR comment7d NOT IN ('TK - ON SCHEDULE', 'TK - ON PROGRESS'))
-                    RETURNING ticketId, comment7d
-                `, [updatedBy, ticketIds]);
-
-                const updatedComments = commentUpdateResult.rows.length;
-
-                // 3. Soft delete the route
+                // 2. Soft delete the route
                 const routeResult = await client.query(`
                     UPDATE Routes 
                     SET deletedAt = CURRENT_TIMESTAMP, 
@@ -3021,26 +3037,15 @@ class RouteOptimizationService {
                     RETURNING routeId, deletedAt
                 `, [updatedBy, routeId]);
 
-                // 4. Soft delete all RouteTickets associations
-                const routeTicketsResult = await client.query(`
-                    UPDATE RouteTickets 
-                    SET deletedAt = CURRENT_TIMESTAMP, 
-                        updatedAt = CURRENT_TIMESTAMP, 
-                        updatedBy = $1 
-                    WHERE routeId = $2 
-                        AND deletedAt IS NULL
-                    RETURNING routeId, ticketId, deletedAt
-                `, [updatedBy, routeId]);
-
                 await client.query('COMMIT');
 
-                console.log(`Canceled spotting route ${routeId}: ${updatedSpottingStatuses} SPOTTING statuses reset, ${updatedComments} comments updated, route soft deleted`);
+                console.log(`Canceled spotting route ${routeId}: tickets unassigned (RouteTickets soft-deleted) and route soft-deleted. No status or comment changes.`);
 
                 return {
                     routeId: routeId,
-                    message: `Spotting route canceled successfully. Reset ${updatedSpottingStatuses} SPOTTING statuses, updated ${updatedComments} ticket comments to 'TK - LAYOUT', and soft deleted route.`,
-                    updatedSpottingStatuses: updatedSpottingStatuses,
-                    updatedComments: updatedComments,
+                    message: `Spotting route canceled: tickets unassigned and route soft-deleted. No status or comment changes.`,
+                    updatedSpottingStatuses: 0,
+                    updatedComments: 0,
                     totalTickets: ticketIds.length,
                     routeSoftDeleted: routeResult.rows.length > 0,
                     routeTicketsSoftDeleted: routeTicketsResult.rows.length,
@@ -3077,37 +3082,18 @@ class RouteOptimizationService {
             try {
                 await client.query('BEGIN');
 
-                // 1. Reset SAWCUT status endingDate to NULL for all tickets
-                const sawcutStatusResult = await client.query(`
-                    UPDATE TicketStatus 
-                    SET endingDate = NULL, 
+                // 1. Soft delete all RouteTickets associations (unassign tickets from route)
+                const routeTicketsResult = await client.query(`
+                    UPDATE RouteTickets 
+                    SET deletedAt = CURRENT_TIMESTAMP, 
                         updatedAt = CURRENT_TIMESTAMP, 
                         updatedBy = $1 
-                    WHERE ticketId = ANY($2) 
-                        AND taskStatusId = (SELECT taskStatusId FROM TaskStatus WHERE name = 'Sawcut' AND deletedAt IS NULL)
+                    WHERE routeId = $2 
                         AND deletedAt IS NULL
-                    RETURNING taskStatusId, ticketId, endingDate
-                `, [updatedBy, ticketIds]);
+                    RETURNING routeId, ticketId, deletedAt
+                `, [updatedBy, routeId]);
 
-                const updatedSawcutStatuses = sawcutStatusResult.rows.length;
-
-                // 2. Update comment7d to 'TK - LAYOUT' for tickets that don't have 'TK - ON SCHEDULE' or 'TK - ON PROGRESS'
-                const commentUpdateResult = await client.query(`
-                    UPDATE Tickets 
-                    SET comment7d = 'TK - LAYOUT',
-                        updatedAt = CURRENT_TIMESTAMP, 
-                        updatedBy = $1 
-                    WHERE ticketId = ANY($2) 
-                        AND deletedAt IS NULL
-                        AND (comment7d IS NULL 
-                             OR comment7d = '' 
-                             OR comment7d NOT IN ('TK - ON SCHEDULE', 'TK - ON PROGRESS'))
-                    RETURNING ticketId, comment7d
-                `, [updatedBy, ticketIds]);
-
-                const updatedComments = commentUpdateResult.rows.length;
-
-                // 3. Soft delete the route
+                // 2. Soft delete the route
                 const routeResult = await client.query(`
                     UPDATE Routes 
                     SET deletedAt = CURRENT_TIMESTAMP, 
@@ -3119,26 +3105,15 @@ class RouteOptimizationService {
                     RETURNING routeId, deletedAt
                 `, [updatedBy, routeId]);
 
-                // 4. Soft delete all RouteTickets associations
-                const routeTicketsResult = await client.query(`
-                    UPDATE RouteTickets 
-                    SET deletedAt = CURRENT_TIMESTAMP, 
-                        updatedAt = CURRENT_TIMESTAMP, 
-                        updatedBy = $1 
-                    WHERE routeId = $2 
-                        AND deletedAt IS NULL
-                    RETURNING routeId, ticketId, deletedAt
-                `, [updatedBy, routeId]);
-
                 await client.query('COMMIT');
 
-                console.log(`Canceled concrete route ${routeId}: ${updatedSawcutStatuses} SAWCUT statuses reset, ${updatedComments} comments updated, route soft deleted`);
+                console.log(`Canceled concrete route ${routeId}: tickets unassigned (RouteTickets soft-deleted) and route soft-deleted. No status or comment changes.`);
 
                 return {
                     routeId: routeId,
-                    message: `Concrete route canceled successfully. Reset ${updatedSawcutStatuses} SAWCUT statuses, updated ${updatedComments} ticket comments to 'TK - LAYOUT', and soft deleted route.`,
-                    updatedSawcutStatuses: updatedSawcutStatuses,
-                    updatedComments: updatedComments,
+                    message: `Concrete route canceled: tickets unassigned and route soft-deleted. No status or comment changes.`,
+                    updatedSawcutStatuses: 0,
+                    updatedComments: 0,
                     totalTickets: ticketIds.length,
                     routeSoftDeleted: routeResult.rows.length > 0,
                     routeTicketsSoftDeleted: routeTicketsResult.rows.length,
@@ -3175,37 +3150,18 @@ class RouteOptimizationService {
             try {
                 await client.query('BEGIN');
 
-                // 1. Reset FRAMING status endingDate to NULL for all tickets
-                const framingStatusResult = await client.query(`
-                    UPDATE TicketStatus 
-                    SET endingDate = NULL, 
+                // 1. Soft delete all RouteTickets associations (unassign tickets from route)
+                const routeTicketsResult = await client.query(`
+                    UPDATE RouteTickets 
+                    SET deletedAt = CURRENT_TIMESTAMP, 
                         updatedAt = CURRENT_TIMESTAMP, 
                         updatedBy = $1 
-                    WHERE ticketId = ANY($2) 
-                        AND taskStatusId = (SELECT taskStatusId FROM TaskStatus WHERE name = 'Framing' AND deletedAt IS NULL)
+                    WHERE routeId = $2 
                         AND deletedAt IS NULL
-                    RETURNING taskStatusId, ticketId, endingDate
-                `, [updatedBy, ticketIds]);
+                    RETURNING routeId, ticketId, deletedAt
+                `, [updatedBy, routeId]);
 
-                const updatedFramingStatuses = framingStatusResult.rows.length;
-
-                // 2. Update comment7d to 'TK - LAYOUT' for tickets that don't have 'TK - ON SCHEDULE' or 'TK - ON PROGRESS'
-                const commentUpdateResult = await client.query(`
-                    UPDATE Tickets 
-                    SET comment7d = 'TK - LAYOUT',
-                        updatedAt = CURRENT_TIMESTAMP, 
-                        updatedBy = $1 
-                    WHERE ticketId = ANY($2) 
-                        AND deletedAt IS NULL
-                        AND (comment7d IS NULL 
-                             OR comment7d = '' 
-                             OR comment7d NOT IN ('TK - ON SCHEDULE', 'TK - ON PROGRESS'))
-                    RETURNING ticketId, comment7d
-                `, [updatedBy, ticketIds]);
-
-                const updatedComments = commentUpdateResult.rows.length;
-
-                // 3. Soft delete the route
+                // 2. Soft delete the route
                 const routeResult = await client.query(`
                     UPDATE Routes 
                     SET deletedAt = CURRENT_TIMESTAMP, 
@@ -3217,26 +3173,15 @@ class RouteOptimizationService {
                     RETURNING routeId, deletedAt
                 `, [updatedBy, routeId]);
 
-                // 4. Soft delete all RouteTickets associations
-                const routeTicketsResult = await client.query(`
-                    UPDATE RouteTickets 
-                    SET deletedAt = CURRENT_TIMESTAMP, 
-                        updatedAt = CURRENT_TIMESTAMP, 
-                        updatedBy = $1 
-                    WHERE routeId = $2 
-                        AND deletedAt IS NULL
-                    RETURNING routeId, ticketId, deletedAt
-                `, [updatedBy, routeId]);
-
                 await client.query('COMMIT');
 
-                console.log(`Canceled asphalt route ${routeId}: ${updatedFramingStatuses} FRAMING statuses reset, ${updatedComments} comments updated, route soft deleted`);
+                console.log(`Canceled asphalt route ${routeId}: tickets unassigned (RouteTickets soft-deleted) and route soft-deleted. No status or comment changes.`);
 
                 return {
                     routeId: routeId,
-                    message: `Asphalt route canceled successfully. Reset ${updatedFramingStatuses} FRAMING statuses, updated ${updatedComments} ticket comments to 'TK - LAYOUT', and soft deleted route.`,
-                    updatedFramingStatuses: updatedFramingStatuses,
-                    updatedComments: updatedComments,
+                    message: `Asphalt route canceled: tickets unassigned and route soft-deleted. No status or comment changes.`,
+                    updatedFramingStatuses: 0,
+                    updatedComments: 0,
                     totalTickets: ticketIds.length,
                     routeSoftDeleted: routeResult.rows.length > 0,
                     routeTicketsSoftDeleted: routeTicketsResult.rows.length,
@@ -3616,6 +3561,17 @@ class RouteOptimizationService {
 
                 const totalPhasesCompleted = phasesCompletedResult.rows.length;
 
+                // Update ticket comments to TK - COMPLETED
+                const commentsResult = await client.query(`
+                    UPDATE Tickets
+                    SET comment7d = 'TK - COMPLETED',
+                        updatedAt = CURRENT_TIMESTAMP,
+                        updatedBy = $1
+                    WHERE ticketId = ANY($2)
+                        AND deletedAt IS NULL
+                    RETURNING ticketId
+                `, [updatedBy, ticketIds]);
+
                 // Update the route's endDate to current timestamp (mark as completed)
                 const routeResult = await client.query(`
                     UPDATE Routes 
@@ -3635,6 +3591,7 @@ class RouteOptimizationService {
                     routeId: routeId,
                     message: `Concrete route completed successfully. Completed ${totalPhasesCompleted} phases for all tickets.`,
                     totalPhasesCompleted: totalPhasesCompleted,
+                    updatedComments: commentsResult.rows.length,
                     totalTickets: ticketIds.length,
                     routeUpdated: routeResult.rows.length > 0,
                     completionTimestamp: new Date().toISOString()
@@ -3774,6 +3731,17 @@ class RouteOptimizationService {
 
                 const updatedAsphaltStatuses = asphaltStatusResult.rows.length;
 
+                // Update ticket comments to TK - COMPLETED
+                const commentsResult = await client.query(`
+                    UPDATE Tickets
+                    SET comment7d = 'TK - COMPLETED',
+                        updatedAt = CURRENT_TIMESTAMP,
+                        updatedBy = $1
+                    WHERE ticketId = ANY($2)
+                        AND deletedAt IS NULL
+                    RETURNING ticketId
+                `, [updatedBy, ticketIds]);
+
                 // Update the route's endDate to current timestamp (mark as completed)
                 const routeResult = await client.query(`
                     UPDATE Routes 
@@ -3793,6 +3761,7 @@ class RouteOptimizationService {
                     routeId: routeId,
                     message: `Asphalt route completed successfully. Completed ${updatedAsphaltStatuses} asphalt statuses.`,
                     updatedAsphaltStatuses: updatedAsphaltStatuses,
+                    updatedComments: commentsResult.rows.length,
                     totalTickets: ticketIds.length,
                     routeUpdated: routeResult.rows.length > 0,
                     completionTimestamp: new Date().toISOString()

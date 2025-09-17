@@ -1,10 +1,12 @@
 const db = require('../config/db');
+const axios = require('axios');
 
 class LocationClusteringService {
     constructor() {
         this.maxDistance = 30000; // Increased to 30km for much better clustering in Chicago
         this.maxLocationsPerCluster = 95; // Default max locations per cluster (VROOM/OSRM safe limit)
         this.minLocationsPerCluster = 1; // Minimum locations per cluster - allow single locations
+        this.osrmBaseUrl = process.env.OSRM_BASE_URL || process.env.OSRM_URL || 'http://osrm:5000';
     }
 
     /**
