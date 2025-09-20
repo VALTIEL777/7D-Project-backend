@@ -1,5 +1,6 @@
 const express = require('express');
 const RoutesController = require('../../controllers/route/RoutesController');
+const RouteDiagnosticsController = require('../../controllers/route/RouteDiagnosticsController');
 
 const router = express.Router();
 
@@ -1402,6 +1403,9 @@ router.get('/test', RoutesController.testRoutesTable);
 // Specific routes must come before parameterized routes
 router.get('/all-with-polylines', RoutesController.getAllRoutesWithPolylinesAndAddresses);
 
+// Diagnostics routes should come before parameterized routes
+router.get('/diagnostics/tickets-progress-layout', RouteDiagnosticsController.getProgressLayoutDiagnostics);
+
 router.get('/:routeId', RoutesController.getRouteById);
 
 /**
@@ -2236,5 +2240,19 @@ router.get('/:routeId/tickets', RoutesController.getRouteTickets);
  *         description: Server error
  */
 router.put('/:routeId/tickets/:ticketId/queue', RoutesController.updateTicketQueue);
+
+/**
+ * @swagger
+ * /routes/diagnostics/tickets-progress-layout:
+ *   get:
+ *     summary: Diagnostics for tickets with TK - ON PROGRESS or TK - (ON) LAYOUT
+ *     tags: [Routes]
+ *     description: Returns tickets that have layout/progress comments but are not eligible for SPOTTER/CONCRETE/ASPHALT routes, with reasons per route type.
+ *     responses:
+ *       200:
+ *         description: Diagnostics retrieved successfully
+ *       500:
+ *         description: Server error
+ */
 
 module.exports = router; 

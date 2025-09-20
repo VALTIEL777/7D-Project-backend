@@ -1,0 +1,218 @@
+SELECT
+cu.name AS contract_unit_name,
+ARRAY_AGG(ph.taskstatusid ORDER BY ph.taskstatusid) AS phase_ids,
+ARRAY_AGG(ph.name ORDER BY ph.name) AS phase_names
+FROM contractunits cu
+LEFT JOIN (
+SELECT DISTINCT cup.contractunitid, ts.taskstatusid, ts.name
+FROM contractunitsphases cup
+JOIN taskstatus ts
+ON ts.taskstatusid = cup.taskstatusid
+AND ts.deletedat IS NULL
+WHERE cup.deletedat IS NULL
+) ph ON ph.contractunitid = cu.contractunitid
+WHERE cu.deletedat IS NULL
+GROUP BY cu.name
+ORDER BY cu.name;
+
+
+-------------------------------------------------------------------------------------------
+SELECT
+  s.taskstatusid,
+  s.name AS phase_name,
+  MAX(ts.endingdate) AS latest_ending_date
+FROM tickets t
+JOIN ticketstatus ts
+  ON ts.ticketid = t.ticketid
+  AND ts.deletedat IS NULL
+JOIN taskstatus s
+  ON s.taskstatusid = ts.taskstatusid
+  AND s.deletedat IS NULL
+WHERE t.ticketcode = 'TK6739599'
+  AND t.deletedat IS NULL
+GROUP BY s.taskstatusid, s.name
+ORDER BY latest_ending_date NULLS LAST, s.name;
+
+--------------------------------------------------------------------------------
+WITH permit AS (
+  SELECT pt.ticketid, MAX(p.expiredate) AS permit_expire_date
+  FROM permitedtickets pt
+  JOIN permits p ON p.permitid = pt.permitid AND p.deletedat IS NULL
+  WHERE pt.deletedat IS NULL
+  GROUP BY pt.ticketid
+)
+SELECT
+  t.ticketid,
+  t.ticketcode,
+  t.comment7d,
+  perm.permit_expire_date,
+
+  -- 1) Comment inclusion set
+  CASE
+    WHEN t.comment7d IS NULL
+      OR t.comment7d = ''
+      OR t.comment7d ILIKE '%TK - PERMIT EXTENDED%'
+      OR t.comment7d ILIKE '%TK - LAYOUT%'
+      OR t.comment7d ILIKE '%TK - LAY OUT%'
+      OR t.comment7d ILIKE '%TK - ON PROGRESS%'
+      OR t.comment7d ILIKE '%TK- ON PROGRESS%'
+    THEN true ELSE false END AS comment_ok,
+
+  -- 2) Comment exclusion terms
+  CASE
+    WHEN COALESCE(t.comment7d,'') ILIKE '%TK - CANCELLED%'
+      OR COALESCE(t.comment7d,'') ILIKE '%TK - HOLD OFF%'
+      OR COALESCE(t.comment7d,'') ILIKE '%TK- ON HOLD OFF%'
+      OR COALESCE(t.comment7d,'') ILIKE '%TK - ON HOLD OFF%'
+      OR COALESCE(t.comment7d,'') ILIKE '%TK - COMPLETED%'
+      OR COALESCE(t.comment7d,'') ILIKE '%TK - COMPLETE%'
+      OR COALESCE(t.comment7d,'') ILIKE '%COMPLETED%'
+      OR COALESCE(t.comment7d,'') ILIKE '%COMPLETE%'
+      OR COALESCE(t.comment7d,'') ILIKE '%TK - EXPIRED%'
+      OR COALESCE(t.comment7d,'') ILIKE '%TK - NEEDS PERMIT EXTENSION%'
+    THEN true ELSE false END AS comment_excluded,
+
+  -- 3) Spotting completed
+  EXISTS (
+    SELECT 1
+    FROM ticketstatus tks
+    JOIN taskstatus ts ON ts.taskstatusid = tks.taskstatusid
+    WHERE tks.ticketid = t.ticketid
+      AND ts.name = 'Spotting'
+      AND tks.endingdate IS NOT NULL
+      AND tks.deletedat IS NULL
+      AND ts.deletedat IS NULL
+  ) AS spotting_completed,
+
+  -- 4) First-incomplete phase gate (any of the allowed paths)
+  (
+    EXISTS (SELECT 1 FROM ticketstatus tks JOIN taskstatus ts ON ts.taskstatusid=tks.taskstatusid WHERE tks.ticketid=t.ticketid AND ts.name='Sawcut'  AND tks.endingdate IS NULL  AND tks.deletedat IS NULL AND ts.deletedat IS NULL)
+    OR (
+      EXISTS (SELECT 1 FROM ticketstatus tks JOIN taskstatus ts ON ts.taskstatusid=tks.taskstatusid WHERE tks.ticketid=t.ticketid AND ts.name='Removal' AND tks.endingdate IS NULL  AND tks.deletedat IS NULL AND ts.deletedat IS NULL)
+      AND EXISTS (SELECT 1 FROM ticketstatus tks JOIN taskstatus ts ON ts.taskstatusid=tks.taskstatusid WHERE tks.ticketid=t.ticketid AND ts.name='Sawcut'  AND tks.endingdate IS NOT NULL AND tks.deletedat IS NULL AND ts.deletedat IS NULL)
+    )
+    OR (
+      EXISTS (SELECT 1 FROM ticketstatus tks JOIN taskstatus ts ON ts.taskstatusid=tks.taskstatusid WHERE tks.ticketid=t.ticketid AND ts.name='Framing' AND tks.endingdate IS NULL  AND tks.deletedat IS NULL AND ts.deletedat IS NULL)
+      AND EXISTS (SELECT 1 FROM ticketstatus tks JOIN taskstatus ts ON ts.taskstatusid=tks.taskstatusid WHERE tks.ticketid=t.ticketid AND ts.name='Sawcut'  AND tks.endingdate IS NOT NULL AND tks.deletedat IS NULL AND ts.deletedat IS NULL)
+      AND EXISTS (SELECT 1 FROM ticketstatus tks JOIN taskstatus ts ON ts.taskstatusid=tks.taskstatusid WHERE tks.ticketid=t.ticketid AND ts.name='Removal' AND tks.endingdate IS NOT NULL AND tks.deletedat IS NULL AND ts.deletedat IS NULL)
+    )
+    OR (
+      EXISTS (SELECT 1 FROM ticketstatus tks JOIN taskstatus ts ON ts.taskstatusid=tks.taskstatusid WHERE tks.ticketid=t.ticketid AND ts.name='Pour'   AND tks.endingdate IS NULL  AND tks.deletedat IS NULL AND ts.deletedat IS NULL)
+      AND EXISTS (SELECT 1 FROM ticketstatus tks JOIN taskstatus ts ON ts.taskstatusid=tks.taskstatusid WHERE tks.ticketid=t.ticketid AND ts.name='Sawcut'  AND tks.endingdate IS NOT NULL AND tks.deletedat IS NULL AND ts.deletedat IS NULL)
+      AND EXISTS (SELECT 1 FROM ticketstatus tks JOIN taskstatus ts ON ts.taskstatusid=tks.taskstatusid WHERE tks.ticketid=t.ticketid AND ts.name='Removal' AND tks.endingdate IS NOT NULL AND tks.deletedat IS NULL AND ts.deletedat IS NULL)
+      AND EXISTS (SELECT 1 FROM ticketstatus tks JOIN taskstatus ts ON ts.taskstatusid=tks.taskstatusid WHERE tks.ticketid=t.ticketid AND ts.name='Framing' AND tks.endingdate IS NOT NULL AND tks.deletedat IS NULL AND ts.deletedat IS NULL)
+    )
+    OR (
+      EXISTS (SELECT 1 FROM ticketstatus tks JOIN taskstatus ts ON ts.taskstatusid=tks.taskstatusid WHERE tks.ticketid=t.ticketid AND ts.name='Clean'  AND tks.endingdate IS NULL  AND tks.deletedat IS NULL AND ts.deletedat IS NULL)
+      AND EXISTS (SELECT 1 FROM ticketstatus tks JOIN taskstatus ts ON ts.taskstatusid=tks.taskstatusid WHERE tks.ticketid=t.ticketid AND ts.name='Sawcut'  AND tks.endingdate IS NOT NULL AND tks.deletedat IS NULL AND ts.deletedat IS NULL)
+      AND EXISTS (SELECT 1 FROM ticketstatus tks JOIN taskstatus ts ON ts.taskstatusid=tks.taskstatusid WHERE tks.ticketid=t.ticketid AND ts.name='Removal' AND tks.endingdate IS NOT NULL AND tks.deletedat IS NULL AND ts.deletedat IS NULL)
+      AND EXISTS (SELECT 1 FROM ticketstatus tks JOIN taskstatus ts ON ts.taskstatusid=tks.taskstatusid WHERE tks.ticketid=t.ticketid AND ts.name='Framing' AND tks.endingdate IS NOT NULL AND tks.deletedat IS NULL AND ts.deletedat IS NULL)
+      AND EXISTS (SELECT 1 FROM ticketstatus tks JOIN taskstatus ts ON ts.taskstatusid=tks.taskstatusid WHERE tks.ticketid=t.ticketid AND ts.name='Pour'   AND tks.endingdate IS NOT NULL AND tks.deletedat IS NULL AND ts.deletedat IS NULL)
+    )
+  ) AS phase_gate_ok,
+
+  -- 5) Already in active CONCRETE route
+  EXISTS (
+    SELECT 1
+    FROM routetickets rt
+    JOIN routes r ON r.routeid = rt.routeid
+    WHERE rt.ticketid = t.ticketid
+      AND r.type = 'CONCRETE'
+      AND r.deletedat IS NULL
+      AND rt.deletedat IS NULL
+  ) AS in_active_concrete_route,
+
+  -- 6) Permit expiring in < 4 days
+  EXISTS (
+    SELECT 1
+    FROM permitedtickets pt
+    JOIN permits p ON p.permitid = pt.permitid
+    WHERE pt.ticketid = t.ticketid
+      AND pt.deletedat IS NULL
+      AND p.deletedat IS NULL
+      AND p.expiredate IS NOT NULL
+      AND p.expiredate > CURRENT_DATE
+      AND (p.expiredate::date - CURRENT_DATE::date) < 4
+  ) AS permit_expiring_soon
+
+FROM tickets t
+LEFT JOIN permit perm ON perm.ticketid = t.ticketid
+WHERE t.ticketcode = 'TK6724773' AND t.deletedat IS NULL;
+
+--------------------------------------------------------------------------------
+
+
+WITH incident_name AS (
+  SELECT i.name
+  FROM tickets t
+  JOIN incidentsmx i ON i.incidentid = t.incidentid AND i.deletedat IS NULL
+  WHERE t.ticketcode = 'TK6679874' AND t.deletedat IS NULL
+)
+SELECT
+  EXISTS (
+    SELECT 1
+    FROM tickets t2
+    JOIN ticketstatus tks2 ON t2.ticketid = tks2.ticketid
+    JOIN taskstatus ts2 ON ts2.taskstatusid = tks2.taskstatusid
+    JOIN incidentsmx i2 ON i2.incidentid = t2.incidentid AND i2.deletedat IS NULL
+    JOIN incident_name inx ON inx.name = i2.name
+    WHERE t2.deletedat IS NULL
+      AND ts2.name = 'Pour'
+      AND tks2.endingdate IS NULL
+      AND tks2.deletedat IS NULL
+      AND ts2.deletedat IS NULL
+  ) AS concrete_pour_incomplete_same_incident_name,
+  ARRAY(
+    SELECT DISTINCT t2.ticketcode
+    FROM tickets t2
+    JOIN ticketstatus tks2 ON t2.ticketid = tks2.ticketid
+    JOIN taskstatus ts2 ON ts2.taskstatusid = tks2.taskstatusid
+    JOIN incidentsmx i2 ON i2.incidentid = t2.incidentid AND i2.deletedat IS NULL
+    JOIN incident_name inx ON inx.name = i2.name
+    WHERE t2.deletedat IS NULL
+      AND ts2.name = 'Pour'
+      AND tks2.endingdate IS NULL
+      AND tks2.deletedat IS NULL
+      AND ts2.deletedat IS NULL
+    ORDER BY t2.ticketcode
+  ) AS offending_tickets;
+
+------------------------------------------
+change pour startDate
+WITH pour_status AS (
+  SELECT taskstatusid
+  FROM taskstatus
+  WHERE name = 'Pour' AND deletedat IS NULL
+),
+target_tickets AS (
+  SELECT ticketid
+  FROM tickets
+  WHERE ticketcode IN ('TK6679875') AND deletedat IS NULL
+)
+UPDATE ticketstatus tks
+SET
+  startingdate = COALESCE(tks.startingdate, CURRENT_TIMESTAMP),
+  endingdate   = CURRENT_TIMESTAMP,
+  updatedat    = CURRENT_TIMESTAMP,
+  observation  = COALESCE(tks.observation,'') || ' [auto-completed for asphalt readiness]'
+FROM pour_status ps, target_tickets tt
+WHERE tks.taskstatusid = ps.taskstatusid
+  AND tks.ticketid = tt.ticketid
+  AND tks.deletedat IS NULL
+  AND tks.endingdate IS NULL
+RETURNING tks.ticketid, tks.startingdate, tks.endingdate;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
