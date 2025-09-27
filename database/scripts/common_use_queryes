@@ -1,3 +1,12 @@
+-- Common-use SQL snippets for reporting, gating, and maintenance
+-- How to use:
+-- - Replace hard-coded ticket codes (e.g., 'TK6739599', 'tk6658992', 'TK6679875') with your targets
+-- - Run blocks independently; they are separated by dashed rulers
+-- - All queries assume deletedAt IS NULL where relevant
+-- 1) Contract Units → Available Phases (ids and names)
+-- Purpose: For each contract unit, list the phases that apply to it.
+-- Inputs: none
+-- Output: one row per contract unit with phase id/name arrays, sorted by name
 SELECT
 cu.name AS contract_unit_name,
 ARRAY_AGG(ph.taskstatusid ORDER BY ph.taskstatusid) AS phase_ids,
@@ -17,6 +26,10 @@ ORDER BY cu.name;
 
 
 -------------------------------------------------------------------------------------------
+-- 2) Ticket phase completion summary (by ticket code)
+-- Purpose: For a given ticket code, show each phase and the latest ending date.
+-- Inputs: t.ticketcode (replace 'TK6739599')
+-- Output: one row per phase with latest_ending_date, ordered by date then name
 SELECT
   s.taskstatusid,
   s.name AS phase_name,
@@ -33,7 +46,7 @@ WHERE t.ticketcode = 'TK6739599'
 GROUP BY s.taskstatusid, s.name
 ORDER BY latest_ending_date NULLS LAST, s.name;
 
---------------------------------------------------------------------------------
+
 WITH permit AS (
   SELECT pt.ticketid, MAX(p.expiredate) AS permit_expire_date
   FROM permitedtickets pt
@@ -41,6 +54,13 @@ WITH permit AS (
   WHERE pt.deletedat IS NULL
   GROUP BY pt.ticketid
 )
+---------------------------------------------------------------------
+-- 3) Concrete route eligibility/gating checks (by ticket code)
+-- Purpose: Evaluate booleans to decide if a ticket is eligible for a concrete route.
+--          Checks include comment rules, phase gate, active route, permit window.
+-- Inputs: t.ticketcode (replace 'tk6658992')
+-- Output: flags: comment_ok, comment_excluded, spotting_completed, phase_gate_ok,
+--         in_active_concrete_route, permit_expiring_soon, plus metadata
 SELECT
   t.ticketid,
   t.ticketcode,
@@ -137,16 +157,20 @@ SELECT
 
 FROM tickets t
 LEFT JOIN permit perm ON perm.ticketid = t.ticketid
-WHERE t.ticketcode = 'TK6724773' AND t.deletedat IS NULL;
+WHERE t.ticketcode = 'tk6658992' AND t.deletedat IS NULL;
 
 --------------------------------------------------------------------------------
 
 
+-- 4) Guard: Any other ticket with same incident name has an incomplete 'Pour'?
+-- Purpose: Prevent scheduling conflicts by detecting open 'Pour' in the same incident.
+-- Inputs: reference ticket code (replace 'tk6658992')
+-- Output: boolean flag and an array of offending ticket codes
 WITH incident_name AS (
   SELECT i.name
   FROM tickets t
   JOIN incidentsmx i ON i.incidentid = t.incidentid AND i.deletedat IS NULL
-  WHERE t.ticketcode = 'TK6679874' AND t.deletedat IS NULL
+  WHERE t.ticketcode = 'TK6658992' AND t.deletedat IS NULL
 )
 SELECT
   EXISTS (
@@ -178,7 +202,51 @@ SELECT
   ) AS offending_tickets;
 
 ------------------------------------------
-change pour startDate
+-- 4b) IDs of tickets with incomplete 'Pour' in same incident (by ticket code)
+-- Purpose: Return offending ticketId(s) and ticketCode(s) to act on
+-- Inputs: reference ticket code (replace 'tk6658992')
+-- Output: arrays of offending_ticket_ids and offending_ticket_codes
+WITH incident_name AS (
+  SELECT i.name
+  FROM tickets t
+  JOIN incidentsmx i ON i.incidentid = t.incidentid AND i.deletedat IS NULL
+  WHERE t.ticketcode = 'TK6658992' AND t.deletedat IS NULL
+)
+SELECT
+  ARRAY(
+    SELECT DISTINCT t2.ticketid
+    FROM tickets t2
+    JOIN ticketstatus tks2 ON t2.ticketid = tks2.ticketid
+    JOIN taskstatus ts2 ON ts2.taskstatusid = tks2.taskstatusid
+    JOIN incidentsmx i2 ON i2.incidentid = t2.incidentid AND i2.deletedat IS NULL
+    JOIN incident_name inx ON inx.name = i2.name
+    WHERE t2.deletedat IS NULL
+      AND ts2.name = 'Pour'
+      AND tks2.endingdate IS NULL
+      AND tks2.deletedat IS NULL
+      AND ts2.deletedat IS NULL
+    ORDER BY t2.ticketid
+  ) AS offending_ticket_ids,
+  ARRAY(
+    SELECT DISTINCT t2.ticketcode
+    FROM tickets t2
+    JOIN ticketstatus tks2 ON t2.ticketid = tks2.ticketid
+    JOIN taskstatus ts2 ON ts2.taskstatusid = tks2.taskstatusid
+    JOIN incidentsmx i2 ON i2.incidentid = t2.incidentid AND i2.deletedat IS NULL
+    JOIN incident_name inx ON inx.name = i2.name
+    WHERE t2.deletedat IS NULL
+      AND ts2.name = 'Pour'
+      AND tks2.endingdate IS NULL
+      AND tks2.deletedat IS NULL
+      AND ts2.deletedat IS NULL
+    ORDER BY t2.ticketcode
+  ) AS offending_ticket_codes;
+
+------------------------------------------
+-- 5) Maintenance: Auto-complete 'Pour' status for specific tickets
+-- Purpose: Backfill starting/ending timestamps for 'Pour' when left open.
+-- Inputs: list of ticket codes in target_tickets (replace 'TK6679875')
+-- Effect: sets startingdate if null, sets endingdate to now, appends observation note
 WITH pour_status AS (
   SELECT taskstatusid
   FROM taskstatus
@@ -187,7 +255,7 @@ WITH pour_status AS (
 target_tickets AS (
   SELECT ticketid
   FROM tickets
-  WHERE ticketcode IN ('TK6679875') AND deletedat IS NULL
+  WHERE ticketcode IN ('TK6658997') AND deletedat IS NULL
 )
 UPDATE ticketstatus tks
 SET
@@ -202,17 +270,219 @@ WHERE tks.taskstatusid = ps.taskstatusid
   AND tks.endingdate IS NULL
 RETURNING tks.ticketid, tks.startingdate, tks.endingdate;
 
+------------------------------------------
+-- 5b) Maintenance: Complete 'Pour' for all tickets in same incident (by ticket code)
+-- Purpose: Auto-complete 'Pour' phase for every ticket that shares the same incident name
+-- Inputs: reference ticket code (replace 'TK6658992')
+-- Effect: sets startingdate if null, sets endingdate to now, appends observation note
+WITH incident_name AS (
+  SELECT i.name
+  FROM tickets t
+  JOIN incidentsmx i ON i.incidentid = t.incidentid AND i.deletedat IS NULL
+  WHERE t.ticketcode = 'TK6658992' AND t.deletedat IS NULL
+),
+pour_status AS (
+  SELECT taskstatusid
+  FROM taskstatus
+  WHERE name = 'Pour' AND deletedat IS NULL
+),
+target_tickets AS (
+  SELECT t2.ticketid
+  FROM tickets t2
+  JOIN incidentsmx i2 ON i2.incidentid = t2.incidentid AND i2.deletedat IS NULL
+  JOIN incident_name inx ON inx.name = i2.name
+  WHERE t2.deletedat IS NULL
+)
+UPDATE ticketstatus tks
+SET
+  startingdate = COALESCE(tks.startingdate, CURRENT_TIMESTAMP),
+  endingdate   = CURRENT_TIMESTAMP,
+  updatedat    = CURRENT_TIMESTAMP,
+  observation  = COALESCE(tks.observation,'') || ' [auto-completed POUR (same incident)]'
+FROM pour_status ps, target_tickets tt
+WHERE tks.taskstatusid = ps.taskstatusid
+  AND tks.ticketid = tt.ticketid
+  AND tks.deletedat IS NULL
+  AND tks.endingdate IS NULL
+RETURNING tks.ticketid, tks.startingdate, tks.endingdate;
 
+--------------------------------------------------------------------------------
+-- 6) Asphalt readiness validation (by ticket code)
+-- Purpose: Validate if a ticket is ready for asphalt routes based on:
+--          comment rules, SPOTTING completion, has an incomplete asphalt phase
+--          (Grind/Asphalt/Crack Seal), not all asphalt phases completed,
+--          not already in an active ASPHALT route, no conflicting concrete 'Pour'
+--          open in same incident name, and permit not expiring in < 4 days.
+-- Inputs: t.ticketcode (replace 'TK0000000')
+-- Output: flags plus a combined asphalt_ready boolean
+WITH permit AS (
+  SELECT pt.ticketid, MAX(p.expiredate) AS permit_expire_date
+  FROM permitedtickets pt
+  JOIN permits p ON pt.permitid = p.permitid AND p.deletedat IS NULL
+  WHERE pt.deletedat IS NULL
+  GROUP BY pt.ticketid
+)
+SELECT
+  t.ticketid,
+  t.ticketcode,
+  t.comment7d,
+  perm.permit_expire_date,
 
+  -- Allowed comments (asphalt)
+  (
+    COALESCE(t.comment7d,'') ILIKE '%TK - ON PROGRESS%'
+    OR COALESCE(t.comment7d,'') ILIKE '%TK - ON LAYOUT%'
+    OR COALESCE(t.comment7d,'') ILIKE '%TK - LAYOUT%'
+    OR COALESCE(t.comment7d,'') ILIKE '%TK - LAY OUT%'
+    OR COALESCE(t.comment7d,'') ILIKE '%TK- ON PROGRESS%'
+    OR COALESCE(t.comment7d,'') ILIKE '%TK- ON LAYOUT%'
+    OR COALESCE(t.comment7d,'') ILIKE '%TK- LAYOUT%'
+  ) AS comment_ok_asphalt,
 
+  -- Exclusion comments
+  (
+    COALESCE(t.comment7d,'') ILIKE '%TK - CANCELLED%'
+    OR COALESCE(t.comment7d,'') ILIKE '%TK - HOLD OFF%'
+    OR COALESCE(t.comment7d,'') ILIKE '%TK- ON HOLD OFF%'
+    OR COALESCE(t.comment7d,'') ILIKE '%TK - ON HOLD OFF%'
+    OR COALESCE(t.comment7d,'') ILIKE '%TK - COMPLETED%'
+    OR COALESCE(t.comment7d,'') ILIKE '%TK - COMPLETE%'
+    OR COALESCE(t.comment7d,'') ILIKE '%COMPLETED%'
+    OR COALESCE(t.comment7d,'') ILIKE '%COMPLETE%'
+    OR COALESCE(t.comment7d,'') ILIKE '%TK - EXPIRED%'
+    OR COALESCE(t.comment7d,'') ILIKE '%TK - NEEDS PERMIT EXTENSION%'
+  ) AS comment_excluded,
 
+  -- SPOTTING completed
+  EXISTS (
+    SELECT 1
+    FROM ticketstatus tks1
+    JOIN taskstatus ts1 ON tks1.taskstatusid = ts1.taskstatusid
+    WHERE tks1.ticketid = t.ticketid
+      AND ts1.name = 'Spotting'
+      AND tks1.endingdate IS NOT NULL
+      AND tks1.deletedat IS NULL
+      AND ts1.deletedat IS NULL
+  ) AS spotting_completed,
 
+  -- Has at least one incomplete asphalt phase
+  EXISTS (
+    SELECT 1
+    FROM ticketstatus tks_as
+    JOIN taskstatus ts_as ON tks_as.taskstatusid = ts_as.taskstatusid
+    WHERE tks_as.ticketid = t.ticketid
+      AND ts_as.name IN ('Grind', 'Asphalt', 'Crack Seal')
+      AND tks_as.endingdate IS NULL
+      AND tks_as.deletedat IS NULL
+      AND ts_as.deletedat IS NULL
+  ) AS has_incomplete_asphalt_phase,
 
+  -- All asphalt phases completed (exclude if true)
+  EXISTS (
+    SELECT 1
+    FROM ticketstatus tks11
+    JOIN taskstatus ts11 ON tks11.taskstatusid = ts11.taskstatusid
+    WHERE tks11.ticketid = t.ticketid
+      AND ts11.name = 'Crack Seal'
+      AND tks11.endingdate IS NOT NULL
+      AND tks11.deletedat IS NULL
+      AND ts11.deletedat IS NULL
+  ) AS asphalt_all_completed,
 
+  -- Already in an active ASPHALT route
+  EXISTS (
+    SELECT 1
+    FROM routetickets rt
+    JOIN routes r ON rt.routeid = r.routeid
+    WHERE rt.ticketid = t.ticketid
+      AND r.type = 'ASPHALT'
+      AND r.deletedat IS NULL
+      AND rt.deletedat IS NULL
+  ) AS in_active_asphalt_route,
 
+  -- Any ticket in same incident name has incomplete 'Pour' (conflict)
+  EXISTS (
+    SELECT 1
+    FROM tickets t2
+    JOIN ticketstatus tks2 ON t2.ticketid = tks2.ticketid
+    JOIN taskstatus ts2 ON ts2.taskstatusid = tks2.taskstatusid
+    JOIN incidentsmx i2 ON i2.incidentid = t2.incidentid AND i2.deletedat IS NULL
+    JOIN incidentsmx ic ON ic.incidentid = t.incidentid AND ic.deletedat IS NULL
+    WHERE i2.name = ic.name
+      AND t2.deletedat IS NULL
+      AND ts2.name = 'Pour'
+      AND tks2.endingdate IS NULL
+      AND tks2.deletedat IS NULL
+      AND ts2.deletedat IS NULL
+  ) AS concrete_pour_incomplete_same_incident_name,
 
+  -- Permit expiring in < 4 days
+  EXISTS (
+    SELECT 1
+    FROM permitedtickets pt
+    JOIN permits p ON pt.permitid = p.permitid
+    WHERE pt.ticketid = t.ticketid
+      AND pt.deletedat IS NULL
+      AND p.deletedat IS NULL
+      AND p.expiredate IS NOT NULL
+      AND p.expiredate > CURRENT_DATE
+      AND (p.expiredate::date - CURRENT_DATE::date) < 4
+  ) AS permit_expiring_soon,
 
+  -- Combined asphalt readiness
+  (
+    (
+      COALESCE(t.comment7d,'') ILIKE '%TK - ON PROGRESS%'
+      OR COALESCE(t.comment7d,'') ILIKE '%TK - ON LAYOUT%'
+      OR COALESCE(t.comment7d,'') ILIKE '%TK - LAYOUT%'
+      OR COALESCE(t.comment7d,'') ILIKE '%TK - LAY OUT%'
+      OR COALESCE(t.comment7d,'') ILIKE '%TK- ON PROGRESS%'
+      OR COALESCE(t.comment7d,'') ILIKE '%TK- ON LAYOUT%'
+      OR COALESCE(t.comment7d,'') ILIKE '%TK- LAYOUT%'
+    )
+    AND NOT (
+      COALESCE(t.comment7d,'') ILIKE '%TK - CANCELLED%'
+      OR COALESCE(t.comment7d,'') ILIKE '%TK - HOLD OFF%'
+      OR COALESCE(t.comment7d,'') ILIKE '%TK- ON HOLD OFF%'
+      OR COALESCE(t.comment7d,'') ILIKE '%TK - ON HOLD OFF%'
+      OR COALESCE(t.comment7d,'') ILIKE '%TK - COMPLETED%'
+      OR COALESCE(t.comment7d,'') ILIKE '%TK - COMPLETE%'
+      OR COALESCE(t.comment7d,'') ILIKE '%COMPLETED%'
+      OR COALESCE(t.comment7d,'') ILIKE '%COMPLETE%'
+      OR COALESCE(t.comment7d,'') ILIKE '%TK - EXPIRED%'
+      OR COALESCE(t.comment7d,'') ILIKE '%TK - NEEDS PERMIT EXTENSION%'
+    )
+    AND EXISTS (
+      SELECT 1 FROM ticketstatus tks1
+      JOIN taskstatus ts1 ON tks1.taskstatusid = ts1.taskstatusid
+      WHERE tks1.ticketid = t.ticketid AND ts1.name = 'Spotting' AND tks1.endingdate IS NOT NULL AND tks1.deletedat IS NULL AND ts1.deletedat IS NULL
+    )
+    AND EXISTS (
+      SELECT 1 FROM ticketstatus tks_as
+      JOIN taskstatus ts_as ON tks_as.taskstatusid = ts_as.taskstatusid
+      WHERE tks_as.ticketid = t.ticketid AND ts_as.name IN ('Grind', 'Asphalt', 'Crack Seal') AND tks_as.endingdate IS NULL AND tks_as.deletedat IS NULL AND ts_as.deletedat IS NULL
+    )
+    AND NOT EXISTS (
+      SELECT 1 FROM ticketstatus tks11
+      JOIN taskstatus ts11 ON tks11.taskstatusid = ts11.taskstatusid
+      WHERE tks11.ticketid = t.ticketid AND ts11.name = 'Crack Seal' AND tks11.endingdate IS NOT NULL AND tks11.deletedat IS NULL AND ts11.deletedat IS NULL
+    )
+    AND NOT EXISTS (
+      SELECT 1 FROM routetickets rt JOIN routes r ON rt.routeid = r.routeid WHERE rt.ticketid = t.ticketid AND r.type = 'ASPHALT' AND r.deletedat IS NULL AND rt.deletedat IS NULL
+    )
+    AND NOT EXISTS (
+      SELECT 1 FROM tickets t2
+      JOIN ticketstatus tks2 ON t2.ticketid = tks2.ticketid
+      JOIN taskstatus ts2 ON ts2.taskstatusid = tks2.taskstatusid
+      JOIN incidentsmx i2 ON i2.incidentid = t2.incidentid AND i2.deletedat IS NULL
+      JOIN incidentsmx ic ON ic.incidentid = t.incidentid AND ic.deletedat IS NULL
+      WHERE i2.name = ic.name AND t2.deletedat IS NULL AND ts2.name = 'Pour' AND tks2.endingdate IS NULL AND tks2.deletedat IS NULL AND ts2.deletedat IS NULL
+    )
+    AND NOT EXISTS (
+      SELECT 1 FROM permitedtickets pt JOIN permits p ON pt.permitid = p.permitid WHERE pt.ticketid = t.ticketid AND pt.deletedat IS NULL AND p.deletedat IS NULL AND p.expiredate IS NOT NULL AND p.expiredate > CURRENT_DATE AND (p.expiredate::date - CURRENT_DATE::date) < 4
+    )
+  ) AS asphalt_ready
 
-
-
-
+FROM tickets t
+LEFT JOIN permit perm ON perm.ticketid = t.ticketid
+WHERE t.ticketcode = 'TK6749338' AND t.deletedat IS NULL;

@@ -1,0 +1,2 @@
+ALTER TABLE PhotoEvidence
+ADD COLUMN thumbnailURL TEXT;
