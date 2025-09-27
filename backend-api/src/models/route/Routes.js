@@ -116,6 +116,13 @@ class Routes {
           t.ticketCode,
           t.quantity,
           t.amountToPay,
+          -- Contract unit name
+          cu.name AS contractUnitName,
+          -- Permit latest expire date for ticket
+          perm.permitExpireDate AS permitExpireDate,
+          -- Latest phase by ending date
+          last_phase.latest_phase_name AS latestPhaseName,
+          last_phase.latest_phase_end AS latestPhaseEnd,
           -- Get coordinates from Addresses table
           a.latitude,
           a.longitude,
@@ -123,6 +130,25 @@ class Routes {
         FROM Routes r
         LEFT JOIN RouteTickets rt ON r.routeId = rt.routeId AND rt.deletedAt IS NULL
         LEFT JOIN Tickets t ON rt.ticketId = t.ticketId AND t.deletedAt IS NULL
+        LEFT JOIN ContractUnits cu ON t.contractUnitId = cu.contractUnitId AND cu.deletedAt IS NULL
+        LEFT JOIN (
+          SELECT pt.ticketId, MAX(p.expireDate) AS permitExpireDate
+          FROM PermitedTickets pt
+          JOIN Permits p ON pt.permitId = p.PermitId AND p.deletedAt IS NULL
+          WHERE pt.deletedAt IS NULL
+          GROUP BY pt.ticketId
+        ) perm ON perm.ticketId = t.ticketId
+        LEFT JOIN LATERAL (
+          SELECT
+            ts.name AS latest_phase_name,
+            MAX(tks.endingdate) AS latest_phase_end
+          FROM TicketStatus tks
+          JOIN TaskStatus ts ON ts.taskStatusId = tks.taskStatusId AND ts.deletedAt IS NULL
+          WHERE tks.ticketId = t.ticketId AND tks.deletedAt IS NULL
+          GROUP BY ts.name
+          ORDER BY MAX(tks.endingdate) DESC NULLS LAST, ts.name
+          LIMIT 1
+        ) last_phase ON TRUE
         LEFT JOIN TicketAddresses ta ON t.ticketId = ta.ticketId AND ta.deletedAt IS NULL
         LEFT JOIN Addresses a ON ta.addressId = a.addressId AND a.deletedAt IS NULL
         WHERE r.type = $1 
@@ -204,6 +230,9 @@ class Routes {
             queue: row.queue,
             quantity: row.quantity,
             amountToPay: row.amounttopay,
+            contractUnitName: row.contractunitname,
+            permitExpireDate: row.permitexpiredate,
+            latestPhase: row.latestphasename ? { name: row.latestphasename, endedAt: row.latestphaseend } : null,
             // Add coordinates for Leaflet marker placement
             coordinates: {
               latitude: row.latitude,

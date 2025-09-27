@@ -1997,6 +1997,7 @@ class RouteOptimizationService {
             const geocodedAddresses = await this.batchGeocodeWithAddresses(newAddresses);
 
             // Add new tickets to route with sequential queue numbers
+            // Determine next queue based on current max (ignores soft-deleted rows already filtered in findByRouteId)
             const nextQueueNumber = existingRouteTickets.length;
             const routeTicketsToAdd = ticketsToAdd.map((ticket, index) => ({
                 routeId: routeId,

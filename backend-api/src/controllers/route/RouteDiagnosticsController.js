@@ -14,7 +14,8 @@ const RouteDiagnosticsController = {
             t.ticketId,
             t.ticketCode,
             t.comment7d,
-            t.incidentId
+            t.incidentId,
+            cu.name AS contract_unit_name
           FROM Tickets t
           LEFT JOIN ContractUnits cu ON cu.contractUnitId = t.contractUnitId AND cu.deletedAt IS NULL
           WHERE t.deletedAt IS NULL
@@ -64,6 +65,7 @@ const RouteDiagnosticsController = {
           b.ticketId,
           b.ticketCode,
           b.comment7d,
+          b.contract_unit_name,
           COALESCE(perm.permit_expire_date, NULL) AS permit_expire_date,
           -- aggregated phase info
           p.spotting_end,
@@ -239,6 +241,7 @@ const RouteDiagnosticsController = {
           ticketId: row.ticketid,
           ticketCode: row.ticketcode,
           comment7d: row.comment7d,
+          contractUnitName: row.contract_unit_name,
           permitExpireDate: row.permit_expire_date,
           ineligibleType,
           reasons,
@@ -251,6 +254,7 @@ const RouteDiagnosticsController = {
         ticketId: t.ticketId,
         ticketCode: t.ticketCode,
         comment7d: t.comment7d,
+        contractUnitName: t.contractUnitName,
         permitExpireDate: t.permitExpireDate,
         ineligibleType: t.ineligibleType,
         reasons: t.reasons

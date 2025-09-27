@@ -25,6 +25,7 @@ class RouteTickets {
            DO UPDATE SET 
              address = EXCLUDED.address,
              queue = EXCLUDED.queue,
+             deletedAt = NULL,
              updatedAt = CURRENT_TIMESTAMP,
              updatedBy = EXCLUDED.updatedBy
            RETURNING *;`,
