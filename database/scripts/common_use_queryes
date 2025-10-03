@@ -279,7 +279,7 @@ WITH incident_name AS (
   SELECT i.name
   FROM tickets t
   JOIN incidentsmx i ON i.incidentid = t.incidentid AND i.deletedat IS NULL
-  WHERE t.ticketcode = 'TK6658992' AND t.deletedat IS NULL
+  WHERE t.ticketcode = 'TK6679802' AND t.deletedat IS NULL
 ),
 pour_status AS (
   SELECT taskstatusid
@@ -485,4 +485,22 @@ SELECT
 
 FROM tickets t
 LEFT JOIN permit perm ON perm.ticketid = t.ticketid
-WHERE t.ticketcode = 'TK6749338' AND t.deletedat IS NULL;
+WHERE t.ticketcode = 'TK6752221' AND t.deletedat IS NULL;
+
+--------------------------------------------------------------------------------
+-- Update the latest active permit linked to TK6661939 to 10 days from today
+WITH target_permit AS (
+  SELECT p.permitid
+  FROM tickets t
+  JOIN permitedtickets pt ON pt.ticketid = t.ticketid AND pt.deletedAt IS NULL
+  JOIN permits p ON p.permitid = pt.permitid AND p.deletedAt IS NULL
+  WHERE t.ticketcode = 'TK6717367' AND t.deletedAt IS NULL
+  ORDER BY p.expireDate DESC NULLS LAST
+  LIMIT 1
+)
+UPDATE permits p
+SET expireDate = CURRENT_DATE + INTERVAL '10 days',
+    updatedAt  = CURRENT_TIMESTAMP
+FROM target_permit tp
+WHERE p.permitid = tp.permitid
+RETURNING p.permitid, p.permitNumber, p.expireDate;

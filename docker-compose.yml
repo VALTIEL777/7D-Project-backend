@@ -23,8 +23,6 @@ services:
     image: christba/7d-backend:latest
     expose:
       - "3000"  
-    volumes:
-      - /usr/src/app/node_modules
     environment:
       - NODE_ENV=${NODE_ENV}
       - DB_HOST=postgres

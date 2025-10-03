@@ -363,6 +363,7 @@ CREATE TABLE photoEvidence(
     date TIMESTAMP,
     comment TEXT,
     photoURL TEXT,
+    thumbnailURL TEXT,
     FOREIGN KEY (ticketStatusId, ticketId) REFERENCES TicketStatus(taskStatusId, ticketId),
     createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
