@@ -27,6 +27,14 @@ class Wayfinding {
     return res.rows[0];
   }
 
+  static async updateDimensions(wayfindingId, width, length, surfaceTotal, updatedBy) {
+    const res = await db.query(
+      'UPDATE wayfinding SET width = $1, length = $2, surfaceTotal = $3, updatedAt = CURRENT_TIMESTAMP, updatedBy = $4 WHERE wayfindingId = $5 AND deletedAt IS NULL RETURNING *;',
+      [width, length, surfaceTotal, updatedBy, wayfindingId]
+    );
+    return res.rows[0];
+  }
+
   static async delete(wayfindingId) {
     const res = await db.query('UPDATE wayfinding SET deletedAt = CURRENT_TIMESTAMP WHERE wayfindingId = $1 AND deletedAt IS NULL RETURNING *;', [wayfindingId]);
     return res.rows[0];

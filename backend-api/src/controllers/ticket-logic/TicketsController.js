@@ -64,6 +64,49 @@ const TicketsController = {
     }
   },
 
+  // Update only wayfinding dimensions using the ticketId
+  async updateTicketWayfindingDimensions(req, res) {
+    try {
+      const { ticketId } = req.params;
+      const { width, length, updatedBy } = req.body;
+
+      if (width == null && length == null) {
+        return res.status(400).json({ message: 'At least one of width or length is required' });
+      }
+
+      // Fetch the ticket to get its wayfindingId
+      const ticket = await Tickets.findById(ticketId);
+      if (!ticket) {
+        return res.status(404).json({ message: 'Ticket not found' });
+      }
+      const wayfindingId = ticket.wayfindingid;
+      if (!wayfindingId) {
+        return res.status(400).json({ message: 'Ticket has no associated wayfindingId' });
+      }
+
+      // Get current dimensions from wayfinding
+      const Wayfinding = require('../../models/location/Wayfinding');
+      const current = await Wayfinding.findById(wayfindingId);
+      if (!current) {
+        return res.status(404).json({ message: 'Associated wayfinding not found' });
+      }
+
+      const newWidth = width != null ? width : current.width;
+      const newLength = length != null ? length : current.length;
+      const surfaceTotal = (newWidth != null && newLength != null) ? Number(newWidth) * Number(newLength) : null;
+
+      const updated = await Wayfinding.updateDimensions(wayfindingId, newWidth, newLength, surfaceTotal, updatedBy || ticket.updatedby || 1);
+      return res.status(200).json({
+        success: true,
+        message: 'Wayfinding dimensions updated successfully',
+        wayfinding: updated
+      });
+    } catch (error) {
+      console.error('Error updating ticket wayfinding dimensions:', error);
+      res.status(500).json({ message: 'Error updating ticket wayfinding dimensions', error: error.message });
+    }
+  },
+
   async getAllTickets(req, res) {
     try {
       const allTicketsWithAddresses = await Tickets.findAllWithAddresses();

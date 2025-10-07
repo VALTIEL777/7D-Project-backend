@@ -249,6 +249,52 @@ router.put('/:wayfindingId', WayfindingController.updateWayfinding);
 
 /**
  * @swagger
+ * /wayfinding/{wayfindingId}/dimensions:
+ *   patch:
+ *     summary: Update only width/length (and surfaceTotal) of a wayfinding entry
+ *     tags: [Wayfinding]
+ *     parameters:
+ *       - in: path
+ *         name: wayfindingId
+ *         schema:
+ *           type: integer
+ *         required: true
+ *         description: The ID of the wayfinding entry.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               width:
+ *                 type: number
+ *                 format: float
+ *                 description: New width value. If omitted, keeps current.
+ *                 example: 8.0
+ *               length:
+ *                 type: number
+ *                 format: float
+ *                 description: New length value. If omitted, keeps current.
+ *                 example: 75.0
+ *               updatedBy:
+ *                 type: integer
+ *                 description: The ID of the user performing the update.
+ *                 example: 2
+ *     responses:
+ *       200:
+ *         description: The wayfinding dimensions were successfully updated.
+ *       400:
+ *         description: Missing width and length.
+ *       404:
+ *         description: Wayfinding entry not found
+ *       500:
+ *         description: Server error
+ */
+router.patch('/:wayfindingId/dimensions', WayfindingController.updateWayfindingDimensions);
+
+/**
+ * @swagger
  * /wayfinding/{wayfindingId}:
  *   delete:
  *     summary: Delete a wayfinding entry by ID

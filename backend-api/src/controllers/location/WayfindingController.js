@@ -51,6 +51,36 @@ const WayfindingController = {
     }
   },
 
+  async updateWayfindingDimensions(req, res) {
+    try {
+      const { wayfindingId } = req.params;
+      const { width, length, updatedBy } = req.body;
+
+      if (width == null && length == null) {
+        return res.status(400).json({ message: 'At least one of width or length is required' });
+      }
+
+      // Fetch current values to preserve the other dimension and compute surfaceTotal
+      const current = await Wayfinding.findById(wayfindingId);
+      if (!current) {
+        return res.status(404).json({ message: 'Wayfinding not found' });
+      }
+
+      const newWidth = width != null ? width : current.width;
+      const newLength = length != null ? length : current.length;
+      const surfaceTotal = (newWidth != null && newLength != null) ? Number(newWidth) * Number(newLength) : null;
+
+      const updated = await Wayfinding.updateDimensions(wayfindingId, newWidth, newLength, surfaceTotal, updatedBy);
+      if (!updated) {
+        return res.status(404).json({ message: 'Wayfinding not found' });
+      }
+      res.status(200).json(updated);
+    } catch (error) {
+      console.error('Error updating Wayfinding dimensions:', error);
+      res.status(500).json({ message: 'Error updating Wayfinding dimensions', error: error.message });
+    }
+  },
+
   async deleteWayfinding(req, res) {
     try {
       const { wayfindingId } = req.params;

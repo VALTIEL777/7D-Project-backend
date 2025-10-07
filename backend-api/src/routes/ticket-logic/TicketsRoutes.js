@@ -1425,6 +1425,52 @@ router.get('/:ticketId', TicketsController.getTicketById);
 
 /**
  * @swagger
+ * /tickets/{ticketId}/wayfinding/dimensions:
+ *   patch:
+ *     summary: Update only the wayfinding width/length for a ticket
+ *     tags: [Tickets]
+ *     parameters:
+ *       - in: path
+ *         name: ticketId
+ *         schema:
+ *           type: integer
+ *         required: true
+ *         description: The ID of the ticket whose wayfinding to update
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               width:
+ *                 type: number
+ *                 format: float
+ *                 description: New width value. If omitted, keeps current.
+ *                 example: 8.0
+ *               length:
+ *                 type: number
+ *                 format: float
+ *                 description: New length value. If omitted, keeps current.
+ *                 example: 75.0
+ *               updatedBy:
+ *                 type: integer
+ *                 description: The ID of the user performing the update
+ *                 example: 2
+ *     responses:
+ *       200:
+ *         description: Wayfinding dimensions updated for the ticket
+ *       400:
+ *         description: Missing width and length or ticket has no wayfinding
+ *       404:
+ *         description: Ticket or wayfinding not found
+ *       500:
+ *         description: Server error
+ */
+router.patch('/:ticketId/wayfinding/dimensions', TicketsController.updateTicketWayfindingDimensions);
+
+/**
+ * @swagger
  * /tickets/code/{ticketCode}:
  *   get:
  *     summary: Get a ticket by ticket code
