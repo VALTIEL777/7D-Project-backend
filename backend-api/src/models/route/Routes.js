@@ -123,6 +123,8 @@ class Routes {
           -- Latest phase by ending date
           last_phase.latest_phase_name AS latestPhaseName,
           last_phase.latest_phase_end AS latestPhaseEnd,
+          -- Phases that still have no photo evidence (filtered by route type)
+          missing_photos.missing_photo_phases AS missingPhotoPhases,
           -- Get coordinates from Addresses table
           a.latitude,
           a.longitude,
@@ -149,6 +151,35 @@ class Routes {
           ORDER BY MAX(tks.endingdate) DESC NULLS LAST, ts.name
           LIMIT 1
         ) last_phase ON TRUE
+        LEFT JOIN LATERAL (
+          WITH expected AS (
+            SELECT ts.taskStatusId, ts.name
+            FROM ContractUnitsPhases cup
+            JOIN TaskStatus ts ON ts.taskStatusId = cup.taskStatusId AND ts.deletedAt IS NULL
+            WHERE cup.contractUnitId = t.contractUnitId
+              AND cup.deletedAt IS NULL
+              AND (
+                (r.type = 'SPOTTER' AND ts.name IN ('Spotting')) OR
+                (r.type = 'CONCRETE' AND ts.name IN ('Sawcut','Removal','Framing','Pour','Clean')) OR
+                (r.type = 'ASPHALT' AND ts.name IN ('Grind','Asphalt','Crack Seal','Install Signs','Steel Plate Pick Up')) OR
+                (r.type NOT IN ('SPOTTER','CONCRETE','ASPHALT'))
+              )
+          ), photos_by_phase AS (
+            SELECT tks.taskStatusId
+            FROM TicketStatus tks
+            LEFT JOIN PhotoEvidence pe ON pe.ticketStatusId = tks.taskStatusId AND pe.ticketId = tks.ticketId AND pe.deletedAt IS NULL
+            WHERE tks.ticketId = t.ticketId AND tks.deletedAt IS NULL
+            GROUP BY tks.taskStatusId
+            HAVING COUNT(pe.photoId) > 0
+          )
+          SELECT ARRAY(
+            SELECT e.name
+            FROM expected e
+            LEFT JOIN photos_by_phase pbp ON pbp.taskStatusId = e.taskStatusId
+            WHERE pbp.taskStatusId IS NULL
+            ORDER BY e.name
+          ) AS missing_photo_phases
+        ) missing_photos ON TRUE
         LEFT JOIN TicketAddresses ta ON t.ticketId = ta.ticketId AND ta.deletedAt IS NULL
         LEFT JOIN Addresses a ON ta.addressId = a.addressId AND a.deletedAt IS NULL
         WHERE r.type = $1 
@@ -233,6 +264,7 @@ class Routes {
             contractUnitName: row.contractunitname,
             permitExpireDate: row.permitexpiredate,
             latestPhase: row.latestphasename ? { name: row.latestphasename, endedAt: row.latestphaseend } : null,
+            missingPhotoPhases: Array.isArray(row.missingphotophases) ? row.missingphotophases : (row.missingphotophases ? [row.missingphotophases] : []),
             // Add coordinates for Leaflet marker placement
             coordinates: {
               latitude: row.latitude,
