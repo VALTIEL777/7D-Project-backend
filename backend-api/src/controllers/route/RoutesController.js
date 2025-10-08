@@ -505,6 +505,36 @@ const RoutesController = {
     }
   },
 
+  // Get active routes for SPOTTER, CONCRETE, and ASPHALT combined
+  async getActiveRoutesAggregated(req, res) {
+    try {
+      const [spotter, concrete, asphalt] = await Promise.all([
+        Routes.findByTypeWithTickets('SPOTTER'),
+        Routes.findByTypeWithTickets('CONCRETE'),
+        Routes.findByTypeWithTickets('ASPHALT')
+      ]);
+
+      const routes = [...spotter, ...concrete, ...asphalt];
+
+      res.status(200).json({
+        message: 'Active routes (SPOTTER, CONCRETE, ASPHALT) retrieved successfully',
+        count: routes.length,
+        breakdown: {
+          SPOTTER: spotter.length,
+          CONCRETE: concrete.length,
+          ASPHALT: asphalt.length
+        },
+        routes: routes
+      });
+    } catch (error) {
+      console.error('Error getting aggregated active routes:', error);
+      res.status(500).json({ 
+        error: 'Failed to get aggregated active routes', 
+        details: error.message 
+      });
+    }
+  },
+
   // Get completed spotting routes
   async getCompletedSpottingRoutes(req, res) {
     try {

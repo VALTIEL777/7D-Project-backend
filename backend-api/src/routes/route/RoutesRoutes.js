@@ -147,6 +147,97 @@ router.get('/', RoutesController.getAllActiveRoutes);
 
 /**
  * @swagger
+ * /routes/active:
+ *   get:
+ *     summary: Get active routes across SPOTTER, CONCRETE, and ASPHALT
+ *     tags: [Routes]
+ *     description: Retrieves all active routes for SPOTTER, CONCRETE, and ASPHALT combined, including tickets and coordinates when available.
+ *     responses:
+ *       200:
+ *         description: Active routes across types retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Active routes (SPOTTER, CONCRETE, ASPHALT) retrieved successfully"
+ *                 count:
+ *                   type: integer
+ *                   description: Total number of routes returned
+ *                   example: 20
+ *                 breakdown:
+ *                   type: object
+ *                   properties:
+ *                     SPOTTER:
+ *                       type: integer
+ *                       example: 7
+ *                     CONCRETE:
+ *                       type: integer
+ *                       example: 6
+ *                     ASPHALT:
+ *                       type: integer
+ *                       example: 7
+ *                 routes:
+ *                   type: array
+ *                   description: Array of route objects from all three types
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       routeId:
+ *                         type: integer
+ *                         example: 1
+ *                       routeCode:
+ *                         type: string
+ *                         example: "SPOTTER-2024-001"
+ *                       type:
+ *                         type: string
+ *                         example: "SPOTTER"
+ *                       startDate:
+ *                         type: string
+ *                         format: date
+ *                         example: "2024-06-01"
+ *                       endDate:
+ *                         type: string
+ *                         format: date
+ *                         example: "2024-06-02"
+ *                       tickets:
+ *                         type: array
+ *                         items:
+ *                           type: object
+ *                           properties:
+ *                             ticketId:
+ *                               type: integer
+ *                               example: 101
+ *                             ticketCode:
+ *                               type: string
+ *                               example: "TK6514243"
+ *                             address:
+ *                               type: string
+ *                               example: "123 N Main St, Chicago, IL"
+ *                             queue:
+ *                               type: integer
+ *                               example: 0
+ *                             coordinates:
+ *                               type: object
+ *                               properties:
+ *                                 latitude:
+ *                                   type: number
+ *                                   example: 41.8781
+ *                                 longitude:
+ *                                   type: number
+ *                                   example: -87.6298
+ *                                 placeid:
+ *                                   type: string
+ *                                   example: "ChIJN1t_tDeuEmsRUsoyG83frY4"
+ *       500:
+ *         description: Server error
+ */
+router.get('/active', RoutesController.getActiveRoutesAggregated);
+
+/**
+ * @swagger
  * /routes/all-with-polylines:
  *   get:
  *     summary: Get all routes with polylines and addresses for map display
