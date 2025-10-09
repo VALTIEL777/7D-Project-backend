@@ -19,6 +19,13 @@ class PhotoEvidence {
     return res.rows;
   }
 
+  static async findByIds(photoIds) {
+    if (!Array.isArray(photoIds) || photoIds.length === 0) return [];
+    const params = photoIds.map((_, idx) => `$${idx + 1}`).join(',');
+    const res = await db.query(`SELECT * FROM PhotoEvidence WHERE photoId IN (${params});`, photoIds);
+    return res.rows;
+  }
+
   static async update(photoId, ticketStatusId, ticketId, name, latitude, longitude, photo, date, comment, photoURL, updatedBy) {
     const res = await db.query(
       'UPDATE PhotoEvidence SET ticketStatusId = $1, ticketId = $2, name = $3, latitude = $4, longitude = $5, photo = $6, date = $7, comment = $8, photoURL = $9, updatedAt = CURRENT_TIMESTAMP, updatedBy = $10 WHERE photoId = $11 RETURNING *;',

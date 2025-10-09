@@ -485,7 +485,7 @@ SELECT
 
 FROM tickets t
 LEFT JOIN permit perm ON perm.ticketid = t.ticketid
-WHERE t.ticketcode = 'TK6752221' AND t.deletedat IS NULL;
+WHERE t.ticketcode = 'TK6762032' AND t.deletedat IS NULL;
 
 --------------------------------------------------------------------------------
 -- Update the latest active permit linked to TK6661939 to 10 days from today

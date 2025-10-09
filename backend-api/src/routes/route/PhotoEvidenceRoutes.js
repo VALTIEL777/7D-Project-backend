@@ -16,6 +16,63 @@ router.get('/:photoId/file', PhotoEvidenceController.downloadPhotoFile);
 
 /**
  * @swagger
+ * /photoevidence/files:
+ *   post:
+ *     summary: Get download URLs for multiple photo evidence files
+ *     tags: [Photo Evidence]
+ *     parameters:
+ *       - in: query
+ *         name: zip
+ *         schema:
+ *           type: boolean
+ *         required: false
+ *         description: If true, request a ZIP stream of files (not implemented by default)
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - photoIds
+ *             properties:
+ *               photoIds:
+ *                 type: array
+ *                 items:
+ *                   type: integer
+ *                 example: [1, 2, 3]
+ *     responses:
+ *       200:
+ *         description: List of file endpoints for each requested photoId
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 results:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       photoId:
+ *                         type: integer
+ *                       exists:
+ *                         type: boolean
+ *                       url:
+ *                         type: string
+ *                       error:
+ *                         type: string
+ *                 notFoundIds:
+ *                   type: array
+ *                   items:
+ *                     type: integer
+ *       400:
+ *         description: Invalid request body
+ */
+router.post('/files', PhotoEvidenceController.getPhotoFilesBatch);
+
+/**
+ * @swagger
  * /photoevidence:
  *   post:
  *     summary: Upload a photo evidence image (png, jpg, jpeg) and save its URL in MinIO
