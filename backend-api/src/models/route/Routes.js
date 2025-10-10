@@ -254,6 +254,32 @@ class Routes {
         
         // Add ticket if it exists
         if (row.ticketid) {
+          // Determine phase order based on route type
+          const phaseOrderMap = {
+            SPOTTER: ['Spotting'],
+            CONCRETE: ['Sawcut', 'Removal', 'Framing', 'Pour', 'Clean'],
+            ASPHALT: ['Grind', 'Asphalt', 'Crack Seal', 'Install Signs', 'Steel Plate Pick Up']
+          };
+          const routeType = (row.type || '').toUpperCase();
+          const orderedPhases = phaseOrderMap[routeType] || [];
+
+          // Normalize missing photo phases array from SQL
+          const rawMissing = Array.isArray(row.missingphotophases)
+            ? row.missingphotophases
+            : (row.missingphotophases ? [row.missingphotophases] : []);
+
+          // Compute current active phase index: next after the latest completed phase
+          const latestCompletedName = row.latestphasename || null;
+          const latestIdx = latestCompletedName ? orderedPhases.indexOf(latestCompletedName) : -1;
+
+          // Filter missing photos to include only phases up to the latest completed phase (exclude next/upcoming)
+          const filteredMissing = latestIdx >= 0
+            ? rawMissing.filter(p => {
+                const idx = orderedPhases.indexOf(p);
+                return idx !== -1 && idx <= latestIdx;
+              })
+            : [];
+
           const ticket = {
             ticketId: row.ticketid,
             ticketCode: row.ticketcode,
@@ -264,7 +290,7 @@ class Routes {
             contractUnitName: row.contractunitname,
             permitExpireDate: row.permitexpiredate,
             latestPhase: row.latestphasename ? { name: row.latestphasename, endedAt: row.latestphaseend } : null,
-            missingPhotoPhases: Array.isArray(row.missingphotophases) ? row.missingphotophases : (row.missingphotophases ? [row.missingphotophases] : []),
+            missingPhotoPhases: filteredMissing,
             // Add coordinates for Leaflet marker placement
             coordinates: {
               latitude: row.latitude,
