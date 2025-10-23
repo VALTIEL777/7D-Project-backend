@@ -70,7 +70,15 @@ const PhotoEvidenceController = {
       for (const file of files) {
         const originalName = file.originalname;
         const timestamp = Date.now();
-        const objectName = `${folder}/${timestamp}-${originalName}`;
+        // Sanitize filename to avoid spaces and unsafe characters in object keys/URLs
+        const ext = path.extname(originalName).toLowerCase();
+        const base = path.basename(originalName, ext);
+        const safeBase = base
+          .replace(/[^a-zA-Z0-9._-]+/g, '_')
+          .replace(/_+/g, '_')
+          .slice(0, 100);
+        const safeName = `${safeBase}${ext}`;
+        const objectName = `${folder}/${timestamp}-${safeName}`;
   
         // Verificar bucket (puedes mover esto fuera del loop si quieres)
         let bucketExists = false;
@@ -100,7 +108,11 @@ const PhotoEvidenceController = {
         // Construir URL pública usando env o el host de la request
         const minioPublicPrefix = process.env.MINIO_PUBLIC_PREFIX || '/minio';
         const baseUrl = buildPublicBaseUrl(req);
-        const fileUrl = `${baseUrl}${minioPublicPrefix}/${bucket}/${objectName}`;
+        const encodedObjectName = objectName
+          .split('/')
+          .map((segment) => encodeURIComponent(segment))
+          .join('/');
+        const fileUrl = `${baseUrl}${minioPublicPrefix}/${bucket}/${encodedObjectName}`;
   
         // Extraer EXIF (opcional)
         let latitude = req.body.latitude;
@@ -202,8 +214,14 @@ const PhotoEvidenceController = {
         const folder = 'photo-evidence';
         const originalName = req.file.originalname;
         const timestamp = Date.now();
-        const ext = path.extname(originalName);
-        const objectName = `${folder}/${timestamp}-${originalName}`;
+        const ext = path.extname(originalName).toLowerCase();
+        const base = path.basename(originalName, ext);
+        const safeBase = base
+          .replace(/[^a-zA-Z0-9._-]+/g, '_')
+          .replace(/_+/g, '_')
+          .slice(0, 100);
+        const safeName = `${safeBase}${ext}`;
+        const objectName = `${folder}/${timestamp}-${safeName}`;
 
         // Ensure bucket exists
         const bucketExists = await minioClient.bucketExists(bucket).catch(() => false);
@@ -214,7 +232,11 @@ const PhotoEvidenceController = {
         // Construir URL pública usando env o el host de la request
         const minioPublicPrefix = process.env.MINIO_PUBLIC_PREFIX || '/minio';
         const baseUrl = buildPublicBaseUrl(req);
-        fileUrl = `${baseUrl}${minioPublicPrefix}/${bucket}/${objectName}`;
+        const encodedObjectName = objectName
+          .split('/')
+          .map((segment) => encodeURIComponent(segment))
+          .join('/');
+        fileUrl = `${baseUrl}${minioPublicPrefix}/${bucket}/${encodedObjectName}`;
 
         // Extract EXIF metadata
         try {
@@ -339,7 +361,7 @@ const PhotoEvidenceController = {
           return res.status(400).json({ message: 'Invalid photo URL format' });
         }
         
-        objectName = pathParts.slice(uploadsIndex + 1).join('/');
+        objectName = decodeURIComponent(pathParts.slice(uploadsIndex + 1).join('/'));
       } catch (urlError) {
         // Fallback para URLs malformadas
         const urlParts = photoEvidence.photourl.split('/');
@@ -349,7 +371,7 @@ const PhotoEvidenceController = {
           return res.status(400).json({ message: 'Invalid photo URL format' });
         }
         
-        objectName = urlParts.slice(uploadsIndex + 1).join('/');
+        objectName = decodeURIComponent(urlParts.slice(uploadsIndex + 1).join('/'));
       }
   
       console.log('🔍 Downloading file from MinIO:');
