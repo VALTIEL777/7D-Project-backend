@@ -165,6 +165,17 @@ function parseAddress(address) {
   };
 }
 
+// Build a canonical uppercase address string from a free-form address
+// Example output: "123 W MAIN ST"
+function canonicalizeAddressString(address) {
+  if (!address || typeof address !== 'string') return '';
+  const { addressNumber, addressCardinal, addressStreet, addressSuffix } = parseAddress(address);
+  const parts = [addressNumber, addressCardinal, addressStreet, addressSuffix]
+    .filter(Boolean)
+    .map((p) => String(p).trim().toUpperCase());
+  return parts.join(' ').replace(/\s+/g, ' ').trim();
+}
+
 function parseRangeAddress(address) {
   if (typeof address !== "string") {
     return {
@@ -1582,6 +1593,50 @@ async function updateTicketWithData(ticketId, finalData, updatedBy) {
       updatedBy
     );
 
+    // If ADDRESS was chosen from Excel decisions, update the ticket's address link
+    try {
+      if (finalData.address && typeof finalData.address === 'string' && finalData.address.trim().length > 0) {
+        const { addressNumber, addressCardinal, addressStreet, addressSuffix } = parseAddress(finalData.address);
+
+        // Find or create normalized address
+        const newAddressId = await RTR.findOrCreateAddress(
+          addressNumber,
+          addressCardinal,
+          addressStreet,
+          addressSuffix,
+          updatedBy,
+          updatedBy
+        );
+
+        // Soft-delete existing active partner TicketAddresses for this ticket
+        await db.query(
+          'UPDATE TicketAddresses SET deletedAt = CURRENT_TIMESTAMP, updatedAt = CURRENT_TIMESTAMP, updatedBy = $2 WHERE ticketId = $1 AND ispartner = true AND deletedAt IS NULL;',
+          [ticketId, updatedBy]
+        );
+
+        // Try to revive a previously soft-deleted relation for the same address
+        const reviveRes = await db.query(
+          'UPDATE TicketAddresses SET deletedAt = NULL, updatedAt = CURRENT_TIMESTAMP, updatedBy = $3 WHERE ticketId = $1 AND addressId = $2 AND ispartner = true AND deletedAt IS NOT NULL RETURNING *;',
+          [ticketId, newAddressId, updatedBy]
+        );
+
+        // If nothing was revived, create a new link
+        if (!reviveRes.rows || reviveRes.rows.length === 0) {
+          await RTR.findOrCreateTicketAddress(
+            ticketId,
+            newAddressId,
+            true,  // isPartner
+            false, // is7d
+            updatedBy,
+            updatedBy
+          );
+        }
+      }
+    } catch (addressUpdateError) {
+      console.error(`Error updating address for ticket ${ticketId}:`, addressUpdateError);
+      // Continue without failing the whole update
+    }
+
     // Handle permit updates for existing tickets
     // Check if we have permit-related data to update
     const hasPermitData = finalData.agencyNo || finalData.startDate || finalData.expDate;
@@ -2118,7 +2173,46 @@ exports.analyzeForStepper = async (req, res) => {
         }
         
         console.log(`Comparing data for existing ticket`);
+        // Enrich existing ticket with canonical DB address for comparison
+        try {
+          const dbAddrRes = await db.query(
+            `SELECT a.addressNumber, a.addressCardinal, a.addressStreet, a.addressSuffix
+             FROM TicketAddresses ta
+             JOIN Addresses a ON a.addressId = ta.addressId
+             WHERE ta.ticketId = $1 AND ta.ispartner = TRUE AND ta.deletedAt IS NULL
+             LIMIT 1;`,
+            [existingTicket.ticketid]
+          );
+          if (dbAddrRes.rows[0]) {
+            const row = dbAddrRes.rows[0];
+            const dbAddrParts = [row.addressnumber, row.addresscardinal, row.addressstreet, row.addresssuffix]
+              .filter(Boolean)
+              .map((p) => String(p).trim().toUpperCase());
+            existingTicket.address = dbAddrParts.join(' ');
+          }
+        } catch (addrErr) {
+          // Non-fatal if address fetch fails
+        }
+
         const dataInconsistencies = compareTicketData(processedRow, existingTicket);
+
+        // Explicitly add ADDRESS inconsistency if different
+        try {
+          const excelAddr = canonicalizeAddressString(processedRow.ADDRESS);
+          const dbAddr = (existingTicket.address || '').toUpperCase();
+          if (excelAddr && dbAddr && excelAddr !== dbAddr) {
+            dataInconsistencies.push({
+              field: 'ADDRESS',
+              databaseField: 'address',
+              excelValue: excelAddr,
+              databaseValue: dbAddr,
+              type: 'text',
+              taskWoNum: processedRow.TASK_WO_NUM || existingTicket.ticketcode,
+              address: excelAddr,
+              restWoNum: processedRow.RESTN_WO_NUM || 'N/A'
+            });
+          }
+        } catch (_) {}
         console.log(`Found ${dataInconsistencies.length} inconsistencies:`, dataInconsistencies);
         inconsistencies.push(...dataInconsistencies);
         
