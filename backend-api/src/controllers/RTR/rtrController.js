@@ -471,6 +471,32 @@ exports.uploadExcel = async (req, res) => {
         }
       });
 
+      // Enforce strict, non-colliding mapping for STREET_FROM_RES and STREET_TO_RES
+      try {
+        const headersNorm = headers.map(h => normalizeHeaderKey(h));
+        const strictFromIdx = headersNorm.findIndex(h => h === 'STREETFROMRES' || (h.includes('STREET') && h.includes('FROM') && h.includes('RES')));
+        const strictToIdx = headersNorm.findIndex(h => h === 'STREETTORES' || (h.includes('STREET') && h.includes('TO') && h.includes('RES')));
+
+        if (strictFromIdx !== -1) {
+          colIndexMap['STREET_FROM_RES'] = strictFromIdx;
+        }
+        if (strictToIdx !== -1) {
+          colIndexMap['STREET_TO_RES'] = strictToIdx;
+        }
+
+        if (
+          colIndexMap['STREET_FROM_RES'] !== undefined &&
+          colIndexMap['STREET_TO_RES'] !== undefined &&
+          colIndexMap['STREET_FROM_RES'] === colIndexMap['STREET_TO_RES']
+        ) {
+          // Remove TO mapping to avoid duplicating FROM
+          delete colIndexMap['STREET_TO_RES'];
+          console.warn('Removed STREET_TO_RES mapping due to collision with STREET_FROM_RES');
+        }
+      } catch (e) {
+        console.warn('Failed to enforce strict FROM/TO mapping:', e);
+      }
+
       // Check for critical columns that are absolutely required
       const criticalColumns = ['TASK_WO_NUM', 'ADDRESS', 'SAP_ITEM_NUM'];
       const missingCritical = criticalColumns.filter((col) => !(col in colIndexMap));
