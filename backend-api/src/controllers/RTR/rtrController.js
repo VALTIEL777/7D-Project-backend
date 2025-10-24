@@ -39,6 +39,11 @@ function normalize(str) {
     : "";
 }
 
+// Normalize header keys by removing underscores/spaces and uppercasing for strict matching
+function normalizeHeaderKey(str) {
+  return typeof str === 'string' ? str.replace(/[_\s]+/g, '').toUpperCase() : '';
+}
+
 function isRowEmpty(row) {
   return row.every(
     (cell) => cell === null || cell === undefined || cell === ""
