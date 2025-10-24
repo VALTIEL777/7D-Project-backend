@@ -289,7 +289,9 @@ class Routes {
             amountToPay: row.amounttopay,
             contractUnitName: row.contractunitname,
             permitExpireDate: row.permitexpiredate,
-            latestPhase: row.latestphasename ? { name: row.latestphasename, endedAt: row.latestphaseend } : null,
+            latestPhase: row.latestphasename
+              ? { name: row.latestphasename, endedAt: row.latestphaseend }
+              : (routeType === 'SPOTTER' ? { name: 'Spotting', endedAt: null } : null),
             missingPhotoPhases: filteredMissing,
             // Add coordinates for Leaflet marker placement
             coordinates: {
