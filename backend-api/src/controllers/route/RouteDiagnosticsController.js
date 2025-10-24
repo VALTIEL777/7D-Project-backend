@@ -69,10 +69,22 @@ const RouteDiagnosticsController = {
           COALESCE(perm.permit_expire_date, NULL) AS permit_expire_date,
           -- aggregated phase info
           p.spotting_end,
+          (p.spotting_end IS NOT NULL) AS spotting_completed,
           p.has_pour_phase,
           p.pour_end,
           p.has_asphalt_phase,
           (p.asphalt_any_incomplete = 1) AS asphalt_incomplete,
+          -- asphalt all completed if Crack Seal completed
+          EXISTS (
+            SELECT 1
+            FROM TicketStatus tks11
+            JOIN TaskStatus ts11 ON tks11.taskStatusId = ts11.taskStatusId
+            WHERE tks11.ticketId = b.ticketId
+              AND ts11.name = 'Crack Seal'
+              AND tks11.endingdate IS NOT NULL
+              AND tks11.deletedAt IS NULL
+              AND ts11.deletedAt IS NULL
+          ) AS asphalt_all_completed,
           -- comments inclusion/exclusion
           (
             b.comment7d ILIKE '%TK - ON PROGRESS%'
@@ -171,7 +183,7 @@ const RouteDiagnosticsController = {
         const eligibleSpotting = spottingRelevant && row.comment_ok_spotting && !row.comment_excluded && !row.permit_expiring_soon;
 
         // Stage 2/3 only if spotting completed
-        const proceedToNext = !spottingRelevant && row.spotting_completed;
+        const proceedToNext = !spottingRelevant && !!row.spotting_completed;
 
         // Determine relevance
         const concreteRelevant = proceedToNext && !!row.has_pour_phase && !row.pour_end;
@@ -222,6 +234,22 @@ const RouteDiagnosticsController = {
             }
             reasons.asphalt = r;
             ineligibleType = 'ASPHALT';
+          }
+          // If asphalt is not relevant but we are past spotting, provide reasons why
+          if (!ineligibleType && !asphaltRelevant) {
+            const r = [];
+            if (!row.has_asphalt_phase) r.push('no_asphalt_phase');
+            if (row.has_asphalt_phase && !row.asphalt_incomplete) {
+              if (row.asphalt_all_completed) {
+                r.push('asphalt_all_completed');
+              } else {
+                r.push('no_incomplete_asphalt_phase');
+              }
+            }
+            if (r.length > 0) {
+              reasons.asphalt = r;
+              ineligibleType = 'ASPHALT';
+            }
           }
         }
 
