@@ -146,9 +146,11 @@ class Routes {
             MAX(tks.endingdate) AS latest_phase_end
           FROM TicketStatus tks
           JOIN TaskStatus ts ON ts.taskStatusId = tks.taskStatusId AND ts.deletedAt IS NULL
-          WHERE tks.ticketId = t.ticketId AND tks.deletedAt IS NULL
+          WHERE tks.ticketId = t.ticketId 
+            AND tks.deletedAt IS NULL
+            AND tks.endingdate IS NOT NULL -- only consider completed phases
           GROUP BY ts.name
-          ORDER BY MAX(tks.endingdate) DESC NULLS LAST, ts.name
+          ORDER BY MAX(tks.endingdate) DESC, ts.name
           LIMIT 1
         ) last_phase ON TRUE
         LEFT JOIN LATERAL (
