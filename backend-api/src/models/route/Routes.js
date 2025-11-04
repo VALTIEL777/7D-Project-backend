@@ -141,6 +141,15 @@ class Routes {
           GROUP BY pt.ticketId
         ) perm ON perm.ticketId = t.ticketId
         LEFT JOIN LATERAL (
+          SELECT d.watchnProtect
+          FROM Diggers d
+          JOIN Permits p ON d.permitId = p.PermitId AND p.deletedAt IS NULL
+          JOIN PermitedTickets pt ON p.PermitId = pt.permitId AND pt.deletedAt IS NULL
+          WHERE pt.ticketId = t.ticketId
+            AND d.deletedAt IS NULL
+          LIMIT 1
+        ) digger ON TRUE
+        LEFT JOIN LATERAL (
           SELECT
             ts.name AS latest_phase_name,
             MAX(tks.endingdate) AS latest_phase_end
