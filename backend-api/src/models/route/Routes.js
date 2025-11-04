@@ -302,6 +302,7 @@ class Routes {
             amountToPay: row.amounttopay,
             contractUnitName: row.contractunitname,
             permitExpireDate: row.permitexpiredate,
+            watchAndProtect: row.watchandprotect,
             latestPhase: row.latestphasename
               ? { name: row.latestphasename, endedAt: row.latestphaseend }
               : (routeType === 'SPOTTER' ? { name: 'Spotting', endedAt: null } : null),
