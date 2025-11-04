@@ -1,6 +1,6 @@
 const PhotoEvidence = require('../../models/route/PhotoEvidence');
 const Tickets = require('../../models/ticket-logic/Tickets');
-const { getMinioClient } = require('../../config/minio');  // <-- Cambio aquí
+const { getMinioClient, STORAGE_BUCKET, STORAGE_DRIVER } = require('../../config/minio');
 const path = require('path');
 const exif = require('exif-parser');
 
@@ -56,7 +56,7 @@ const PhotoEvidenceController = {
   async createPhotoEvidence(req, res) {
     try {
       const minioClient = getMinioClient();
-      const bucket = 'uploads';
+      const bucket = STORAGE_BUCKET;
       const folder = 'photo-evidence';
   
       // Cambia aquí: usa req.files (array)
@@ -78,7 +78,10 @@ const PhotoEvidenceController = {
           .replace(/_+/g, '_')
           .slice(0, 100);
         const safeName = `${safeBase}${ext}`;
-        const objectName = `${folder}/${timestamp}-${safeName}`;
+        // For S3, prepend 'uploads/' prefix since files are stored in uploads/ folder
+        const objectName = STORAGE_DRIVER === 's3' 
+          ? `uploads/${folder}/${timestamp}-${safeName}`
+          : `${folder}/${timestamp}-${safeName}`;
   
         // Verificar bucket (puedes mover esto fuera del loop si quieres)
         let bucketExists = false;
@@ -108,7 +111,9 @@ const PhotoEvidenceController = {
         // Construir URL pública usando env o el host de la request
         const minioPublicPrefix = process.env.MINIO_PUBLIC_PREFIX || '/minio';
         const baseUrl = buildPublicBaseUrl(req);
-        const encodedObjectName = objectName
+        // Ensure objectName doesn't have trailing slash before encoding
+        const cleanObjectName = objectName.replace(/\/$/, '');
+        const encodedObjectName = cleanObjectName
           .split('/')
           .map((segment) => encodeURIComponent(segment))
           .join('/');
@@ -208,10 +213,10 @@ const PhotoEvidenceController = {
       let date = req.body.date;
 
       // If a new file is uploaded, save to MinIO and extract EXIF
-      if (req.file) {
-        const minioClient = getMinioClient();
-        const bucket = 'uploads';
-        const folder = 'photo-evidence';
+        if (req.file) {
+          const minioClient = getMinioClient();
+          const bucket = STORAGE_BUCKET;
+          const folder = 'photo-evidence';
         const originalName = req.file.originalname;
         const timestamp = Date.now();
         const ext = path.extname(originalName).toLowerCase();
@@ -221,7 +226,10 @@ const PhotoEvidenceController = {
           .replace(/_+/g, '_')
           .slice(0, 100);
         const safeName = `${safeBase}${ext}`;
-        const objectName = `${folder}/${timestamp}-${safeName}`;
+        // For S3, prepend 'uploads/' prefix since files are stored in uploads/ folder
+        const objectName = STORAGE_DRIVER === 's3' 
+          ? `uploads/${folder}/${timestamp}-${safeName}`
+          : `${folder}/${timestamp}-${safeName}`;
 
         // Ensure bucket exists
         const bucketExists = await minioClient.bucketExists(bucket).catch(() => false);
@@ -232,7 +240,9 @@ const PhotoEvidenceController = {
         // Construir URL pública usando env o el host de la request
         const minioPublicPrefix = process.env.MINIO_PUBLIC_PREFIX || '/minio';
         const baseUrl = buildPublicBaseUrl(req);
-        const encodedObjectName = objectName
+        // Ensure objectName doesn't have trailing slash before encoding
+        const cleanObjectName = objectName.replace(/\/$/, '');
+        const encodedObjectName = cleanObjectName
           .split('/')
           .map((segment) => encodeURIComponent(segment))
           .join('/');
