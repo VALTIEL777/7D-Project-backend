@@ -128,7 +128,9 @@ class Routes {
           -- Get coordinates from Addresses table
           a.latitude,
           a.longitude,
-          a.placeid
+          a.placeid,
+          -- Get watchAndProtect status from Diggers
+          digger.watchnProtect AS watchAndProtect
         FROM Routes r
         LEFT JOIN RouteTickets rt ON r.routeId = rt.routeId AND rt.deletedAt IS NULL
         LEFT JOIN Tickets t ON rt.ticketId = t.ticketId AND t.deletedAt IS NULL
