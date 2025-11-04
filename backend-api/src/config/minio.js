@@ -602,22 +602,33 @@ async function initializeMinioClient() {
       console.log('Política pública asignada correctamente al bucket:', bucketName);
     } catch (err) {
       console.error('Error asignando política pública al bucket:', err.message);
+      }
     }
 
-    console.log('MinIO client initialized successfully');
+    console.log(`${STORAGE_DRIVER.toUpperCase()} client initialized successfully`);
     return true;
   } catch (error) {
-    console.error('=== MinIO Connection Error ===');
-    console.error('Error connecting to MinIO:', error.message);
+    console.error(`=== ${STORAGE_DRIVER.toUpperCase()} Connection Error ===`);
+    console.error('Error connecting to storage:', error.message);
     return false;
   }
 }
 
-// ✅ Convert to public URL (sin cambios)
+// Convert to public URL
 function convertToPublicUrl(internalUrl, req = null) {
   if (!internalUrl) return internalUrl;
 
-  const internalHost = `http://${endPoint}:${port}`;
+  if (STORAGE_DRIVER === 's3') {
+    // For S3, URLs are already public or presigned
+    return internalUrl;
+  }
+
+  // Only process MinIO URLs if we're using MinIO
+  if (!minioConfig) {
+    return internalUrl;
+  }
+
+  const internalHost = `http://${minioConfig.endPoint}:${minioConfig.port}`;
   let publicHost;
   if (req) {
     const protocol = req.protocol;
@@ -630,30 +641,58 @@ function convertToPublicUrl(internalUrl, req = null) {
   return internalUrl.replace(internalHost, publicHost);
 }
 
-// ✅ Generate presigned URL
+// Generate presigned URL (legacy wrapper)
 async function generatePublicPresignedUrl(bucket, objectName, expirySeconds = 3600, req = null) {
-  if (!minioClient) {
-    console.log('MinIO client not initialized, attempting to initialize...');
+  if (!storageClient) {
+    console.log('Storage client not initialized, attempting to initialize...');
     const initialized = await initializeMinioClient();
-    if (!initialized) throw new Error('Failed to initialize MinIO client');
+    if (!initialized) throw new Error('Failed to initialize storage client');
   }
 
-  const internalUrl = await minioClient.presignedGetObject(bucket, objectName, expirySeconds);
+  // Remove trailing slash from objectName before generating URL
+  const cleanObjectName = objectName.replace(/\/$/, '');
+  const internalUrl = await getPresignedUrl(bucket, cleanObjectName, expirySeconds);
   return convertToPublicUrl(internalUrl, req);
 }
 
-// ✅ Always return a valid instance
+// Always return a valid instance (backward compatibility)
 function getMinioClient() {
-  if (!minioClient) {
-    console.warn('MinIO client not initialized, creating new instance...');
-    minioClient = new Minio.Client(minioConfig);
+  if (!storageClient) {
+    console.warn('Storage client not initialized, creating new instance...');
+    if (STORAGE_DRIVER === 's3') {
+      if (!AWS) {
+        throw new Error('AWS SDK is required for S3 storage driver');
+      }
+      storageClient = new AWS.S3({
+        ...s3Config,
+        signatureVersion: 'v4',
+      });
+      minioClient = createS3Adapter(storageClient);
+    } else {
+      if (!Minio) {
+        throw new Error('MinIO library is required but not loaded. Please ensure STORAGE_DRIVER is set correctly.');
+      }
+      if (!minioConfig) {
+        throw new Error('MinIO configuration is missing. Please set MINIO_ENDPOINT and other MinIO environment variables.');
+      }
+      storageClient = new Minio.Client(minioConfig);
+      minioClient = storageClient;
+    }
   }
   return minioClient;
 }
 
 module.exports = {
+  // Legacy exports (backward compatibility)
   getMinioClient,
   convertToPublicUrl,
   generatePublicPresignedUrl,
   initializeMinioClient,
+  // New unified exports
+  storageClient: () => storageClient,
+  ensureBucket,
+  uploadFile,
+  getPresignedUrl,
+  STORAGE_DRIVER,
+  STORAGE_BUCKET, // Export bucket name
 };
