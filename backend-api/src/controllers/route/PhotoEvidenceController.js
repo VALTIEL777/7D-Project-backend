@@ -358,79 +358,356 @@ const PhotoEvidenceController = {
       }
   
       const minioClient = getMinioClient();
-      const bucket = 'uploads';
+      const bucket = STORAGE_BUCKET;
   
       // Extraer objectName de la URL de manera más robusta
+      // Supports both MinIO URLs (http://host:port/bucket/key) and S3 URLs (https://bucket.s3.region.amazonaws.com/key)
       let objectName;
+      
+      console.log('🔍 [URL PARSING] Starting URL parsing:');
+      console.log('  Original Photo URL:', photoEvidence.photourl);
+      console.log('  URL Type Check:', {
+        includesS3: photoEvidence.photourl.includes('s3.amazonaws.com') || photoEvidence.photourl.includes('amazonaws.com'),
+        includesMinio: photoEvidence.photourl.includes('minio') || photoEvidence.photourl.includes('christba.com'),
+        isHttp: photoEvidence.photourl.startsWith('http://'),
+        isHttps: photoEvidence.photourl.startsWith('https://')
+      });
+      
       try {
         const url = new URL(photoEvidence.photourl);
-        const pathParts = url.pathname.split('/');
-        const uploadsIndex = pathParts.findIndex(part => part === 'uploads');
         
-        if (uploadsIndex === -1) {
-          return res.status(400).json({ message: 'Invalid photo URL format' });
+        console.log('🔍 [URL PARSING] Parsed URL:');
+        console.log('  Protocol:', url.protocol);
+        console.log('  Hostname:', url.hostname);
+        console.log('  Pathname:', url.pathname);
+        console.log('  Full URL:', url.href);
+        
+        // Check if it's an S3 URL (bucket.s3.region.amazonaws.com or s3.amazonaws.com/bucket/key)
+        if (url.hostname.includes('s3.amazonaws.com') || url.hostname.includes('amazonaws.com')) {
+          console.log('📌 [URL PARSING] Detected S3 URL format');
+          // S3 URL format: https://bucket.s3.region.amazonaws.com/key or https://s3.region.amazonaws.com/bucket/key
+          // Extract bucket name from hostname if present (format: bucket.s3.region.amazonaws.com)
+          const hostParts = url.hostname.split('.');
+          let s3BucketFromHost = null;
+          
+          // Check if bucket is in hostname (bucket.s3.region.amazonaws.com)
+          if (hostParts.length >= 4 && hostParts[1] === 's3') {
+            s3BucketFromHost = hostParts[0];
+            console.log('  Bucket from hostname:', s3BucketFromHost);
+          }
+          
+          const pathParts = url.pathname.split('/').filter(p => p);
+          console.log('  Path parts:', pathParts);
+          
+          // If bucket is in hostname, pathname is the object key
+          if (s3BucketFromHost) {
+            objectName = decodeURIComponent(url.pathname.substring(1)); // Remove leading /
+            console.log('  Object name (from pathname):', objectName);
+          } else if (pathParts.length > 0) {
+            // Bucket might be first part of pathname (format: s3.region.amazonaws.com/bucket/key)
+            // Check if first part matches our bucket name
+            if (pathParts[0] === STORAGE_BUCKET || pathParts[0] === 'uploads') {
+              objectName = decodeURIComponent(pathParts.slice(1).join('/'));
+              console.log('  Object name (bucket in path):', objectName);
+            } else {
+              // Assume bucket is first part, rest is key
+              objectName = decodeURIComponent(pathParts.slice(1).join('/'));
+              console.log('  Object name (assumed bucket in path):', objectName);
+            }
+          }
+          
+          // If objectName is still empty, try to extract from pathname directly
+          if (!objectName || objectName.length === 0) {
+            objectName = decodeURIComponent(url.pathname.substring(1));
+            console.log('  Object name (fallback from pathname):', objectName);
+          }
+        } else {
+          console.log('📌 [URL PARSING] Detected MinIO URL format');
+          // MinIO URL format: http://host:port/bucket/key or http://host/minio/bucket/key
+          const pathParts = url.pathname.split('/').filter(p => p);
+          console.log('  Path parts:', pathParts);
+          
+          // Remove 'minio' prefix if present (e.g., /minio/uploads/photo-evidence/...)
+          const minioIndex = pathParts.findIndex(part => part === 'minio');
+          if (minioIndex !== -1) {
+            console.log('  Found "minio" at index:', minioIndex);
+            pathParts.splice(minioIndex, 1); // Remove 'minio' from path
+            console.log('  Path parts after removing minio:', pathParts);
+          }
+          
+          const bucketIndex = pathParts.findIndex(part => part === STORAGE_BUCKET || part === 'uploads');
+          console.log('  Bucket index:', bucketIndex, 'STORAGE_BUCKET:', STORAGE_BUCKET);
+          
+          if (bucketIndex === -1) {
+            console.error('❌ [URL PARSING] Bucket not found in path');
+            console.error('  Path parts:', pathParts);
+            console.error('  Looking for:', STORAGE_BUCKET, 'or', 'uploads');
+            return res.status(400).json({ 
+              message: `Invalid photo URL format: bucket "${STORAGE_BUCKET}" not found`,
+              debug: {
+                pathParts,
+                storageBucket: STORAGE_BUCKET,
+                originalUrl: photoEvidence.photourl
+              }
+            });
+          }
+          
+          objectName = decodeURIComponent(pathParts.slice(bucketIndex + 1).join('/'));
+          console.log('  Object name (MinIO format):', objectName);
         }
         
-        objectName = decodeURIComponent(pathParts.slice(uploadsIndex + 1).join('/'));
+        // If objectName is still empty or invalid, try fallback
+        if (!objectName || objectName.length === 0) {
+          console.error('❌ [URL PARSING] Could not extract object name from URL');
+          throw new Error('Could not extract object name from URL');
+        }
+        
+        console.log('✅ [URL PARSING] Final object name:', objectName);
       } catch (urlError) {
-        // Fallback para URLs malformadas
-        const urlParts = photoEvidence.photourl.split('/');
-        const uploadsIndex = urlParts.findIndex(part => part === 'uploads');
+        // Fallback: try to extract from URL string directly
+        console.warn('Error parsing URL, trying fallback:', urlError.message);
+        console.warn('Photo URL:', photoEvidence.photourl);
         
-        if (uploadsIndex === -1) {
-          return res.status(400).json({ message: 'Invalid photo URL format' });
+        // Check if photourl might be just the object key (without URL)
+        if (!photoEvidence.photourl.includes('://') && !photoEvidence.photourl.startsWith('http')) {
+          // It's likely just the object key
+          objectName = photoEvidence.photourl;
+          console.log('Treating photourl as object key:', objectName);
+        } else {
+          // Try parsing as URL string
+          const urlParts = photoEvidence.photourl.split('/');
+          const bucketIndex = urlParts.findIndex(part => part === STORAGE_BUCKET || part === 'uploads');
+          
+          if (bucketIndex === -1) {
+            // Try S3 format: look for bucket name or key pattern
+            const s3Match = photoEvidence.photourl.match(/s3[.\-]([^.]+)\.amazonaws\.com\/(.+)$/);
+            if (s3Match) {
+              objectName = decodeURIComponent(s3Match[2]);
+            } else {
+              // Last resort: if photourl looks like it might be just the key after some prefix
+              if (photoEvidence.photourl.includes('photo-evidence')) {
+                // Try to extract photo-evidence/... part
+                const match = photoEvidence.photourl.match(/photo-evidence\/.+$/);
+                if (match) {
+                  objectName = match[0];
+                } else {
+                  return res.status(400).json({ 
+                    message: 'Invalid photo URL format: could not extract object name',
+                    url: photoEvidence.photourl 
+                  });
+                }
+              } else {
+                return res.status(400).json({ 
+                  message: 'Invalid photo URL format: could not extract object name',
+                  url: photoEvidence.photourl 
+                });
+              }
+            }
+          } else {
+            objectName = decodeURIComponent(urlParts.slice(bucketIndex + 1).join('/'));
+          }
         }
-        
-        objectName = decodeURIComponent(urlParts.slice(uploadsIndex + 1).join('/'));
       }
+      
+      // Final validation and ensure uploads/ prefix for S3
+      if (!objectName || objectName.length === 0) {
+        return res.status(400).json({ 
+          message: 'Could not determine object name from photo URL',
+          url: photoEvidence.photourl 
+        });
+      }
+      
+      // Remove trailing slash if present (S3 objects don't have trailing slashes)
+      objectName = objectName.replace(/\/$/, '');
+      
+      // For S3 storage, ensure objectName has 'uploads/' prefix if it doesn't already
+      if (STORAGE_DRIVER === 's3' && !objectName.startsWith('uploads/')) {
+        // Check if it starts with a folder name that should be inside uploads/
+        if (objectName.startsWith('photo-evidence/') || objectName.startsWith('rtr/') || objectName.startsWith('unified/')) {
+          objectName = `uploads/${objectName}`;
+          console.log('📝 Prepended uploads/ prefix for S3. New objectName:', objectName);
+        }
+      }
+      
+      // Remove trailing slash again after prefix adjustment
+      objectName = objectName.replace(/\/$/, '');
   
-      console.log('🔍 Downloading file from MinIO:');
-      console.log('  Bucket:', bucket);
-      console.log('  Object Name:', objectName);
-      console.log('  Original URL:', photoEvidence.photourl);
-  
+      // Comprehensive logging for S3 debugging
+      const logDetails = {
+        photoId,
+        bucket,
+        objectName,
+        originalPhotoUrl: photoEvidence.photourl,
+        storageDriver: process.env.STORAGE_DRIVER || 'minio',
+        awsRegion: process.env.AWS_REGION,
+        awsBucketName: process.env.AWS_BUCKET_NAME,
+        awsEndpoint: process.env.AWS_S3_ENDPOINT,
+        hasAwsAccessKey: !!process.env.AWS_ACCESS_KEY_ID,
+        awsAccessKeyPrefix: process.env.AWS_ACCESS_KEY_ID ? process.env.AWS_ACCESS_KEY_ID.substring(0, 8) + '...' : 'not set',
+        timestamp: new Date().toISOString()
+      };
+
+      console.log('🔍 [S3 DEBUG] Downloading file from storage:');
+      console.log('  Photo ID:', logDetails.photoId);
+      console.log('  Bucket:', logDetails.bucket);
+      console.log('  Object Name:', logDetails.objectName);
+      console.log('  Original Photo URL:', logDetails.originalPhotoUrl);
+      console.log('  Storage Driver:', logDetails.storageDriver);
+      console.log('  AWS Region:', logDetails.awsRegion || 'not set');
+      console.log('  AWS Bucket Name (env):', logDetails.awsBucketName || 'not set');
+      console.log('  AWS Endpoint:', logDetails.awsEndpoint || 'not set');
+      console.log('  AWS Access Key ID:', logDetails.awsAccessKeyPrefix);
+      console.log('  Timestamp:', logDetails.timestamp);
+
       // Verificar que el objeto existe
       try {
-        await minioClient.statObject(bucket, objectName);
+        console.log('📡 [S3 DEBUG] Attempting statObject operation...');
+        console.log('  Bucket:', bucket);
+        console.log('  Object Name:', objectName);
+        console.log('  Storage Driver:', logDetails.storageDriver);
+        
+        const statResult = await minioClient.statObject(bucket, objectName);
+        
+        console.log('✅ [S3 DEBUG] Object found in storage:');
+        console.log('  Size:', statResult.size, 'bytes');
+        console.log('  Content Type:', statResult.contentType);
+        console.log('  Last Modified:', statResult.lastModified);
+        console.log('  ETag:', statResult.etag);
+        
+        logDetails.statResult = {
+          size: statResult.size,
+          contentType: statResult.contentType,
+          lastModified: statResult.lastModified,
+          etag: statResult.etag
+        };
+        
+        // If statObject found a file inside a folder prefix, update objectName
+        if (statResult.actualKey) {
+          console.log('📁 [S3 DEBUG] File was found inside folder prefix');
+          console.log('  Original objectName:', objectName);
+          console.log('  Actual key:', statResult.actualKey);
+          objectName = statResult.actualKey;
+          logDetails.actualKey = statResult.actualKey;
+          logDetails.wasFolderPrefix = true;
+        }
       } catch (statError) {
-        console.error('❌ Object not found in MinIO:', statError);
-        return res.status(404).json({ message: 'Photo file not found in storage' });
+        console.error('❌ [S3 DEBUG] Object not found in storage:');
+        console.error('  Error Message:', statError.message);
+        console.error('  Error Code:', statError.code);
+        console.error('  Status Code:', statError.statusCode);
+        console.error('  Error Name:', statError.name);
+        console.error('  Bucket:', bucket);
+        console.error('  Object Name:', objectName);
+        console.error('  Original Photo URL:', photoEvidence.photourl);
+        console.error('  Storage Driver:', logDetails.storageDriver);
+        console.error('  AWS Region:', logDetails.awsRegion);
+        console.error('  Stack Trace:', statError.stack);
+        
+        logDetails.error = {
+          message: statError.message,
+          code: statError.code,
+          statusCode: statError.statusCode,
+          name: statError.name,
+          stack: statError.stack
+        };
+        
+        // Handle S3-specific errors
+        if (statError.code === 'Forbidden' || statError.statusCode === 403) {
+          return res.status(403).json({ 
+            message: 'Access denied to photo file in storage',
+            debug: logDetails,
+            suggestion: 'Verify AWS credentials have read permissions for bucket: ' + bucket
+          });
+        }
+        
+        return res.status(404).json({ 
+          message: 'Photo file not found in storage',
+          debug: logDetails
+        });
       }
   
       // Descargar el archivo
-      const dataStream = await minioClient.getObject(bucket, objectName);
-      
-      // Configurar headers
-      const ext = path.extname(objectName).toLowerCase();
-      const contentTypeMap = {
-        '.jpg': 'image/jpeg',
-        '.jpeg': 'image/jpeg',
-        '.png': 'image/png',
-        '.gif': 'image/gif',
-        '.webp': 'image/webp',
-        '.pdf': 'application/pdf',
-        '.heic': 'image/heic',
-        '.heif': 'image/heif'
-      };
-      
-      const contentType = contentTypeMap[ext] || 'image/jpeg';
-  
-      res.set({
-        'Content-Type': contentType,
-        'Cache-Control': 'public, max-age=3600',
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET',
-        'Access-Control-Allow-Headers': 'Content-Type'
-      });
-  
-      // Pipe el stream directamente a la respuesta (más eficiente)
-      dataStream.pipe(res);
-  
+      try {
+        console.log('📥 [S3 DEBUG] Attempting getObject operation...');
+        console.log('  Bucket:', bucket);
+        console.log('  Object Name:', objectName);
+        console.log('  Storage Driver:', logDetails.storageDriver);
+        
+        const dataStream = minioClient.getObject(bucket, objectName);
+        
+        console.log('✅ [S3 DEBUG] Stream created successfully');
+        
+        // Set response headers
+        res.setHeader('Content-Type', logDetails.statResult?.contentType || 'application/octet-stream');
+        res.setHeader('Content-Length', logDetails.statResult?.size || '');
+        res.setHeader('X-Photo-ID', photoId);
+        res.setHeader('X-Bucket', bucket);
+        res.setHeader('X-Object-Name', objectName);
+        res.setHeader('X-Storage-Driver', logDetails.storageDriver);
+        res.setHeader('Cache-Control', 'public, max-age=3600');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Methods', 'GET');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+        
+        // Pipe the stream to response
+        dataStream.pipe(res);
+        
+        dataStream.on('error', (streamError) => {
+          console.error('❌ [S3 DEBUG] Stream error:');
+          console.error('  Error:', streamError.message);
+          console.error('  Code:', streamError.code);
+          console.error('  Bucket:', bucket);
+          console.error('  Object Name:', objectName);
+          
+          if (!res.headersSent) {
+            res.status(500).json({
+              message: 'Error streaming file from storage',
+              debug: {
+                ...logDetails,
+                streamError: {
+                  message: streamError.message,
+                  code: streamError.code
+                }
+              }
+            });
+          }
+        });
+        
+        dataStream.on('end', () => {
+          console.log('✅ [S3 DEBUG] Stream completed successfully');
+        });
+        
+        return; // Don't send response again
+      } catch (streamError) {
+        console.error('❌ [S3 DEBUG] Error creating stream:');
+        console.error('  Error:', streamError.message);
+        console.error('  Code:', streamError.code);
+        console.error('  Stack:', streamError.stack);
+        
+        return res.status(500).json({
+          message: 'Error accessing file stream',
+          debug: {
+            ...logDetails,
+            streamError: {
+              message: streamError.message,
+              code: streamError.code
+            }
+          }
+        });
+      }
     } catch (error) {
-      console.error('❌ Error in downloadPhotoFile:', error);
-      res.status(500).json({ 
-        message: 'Error downloading photo file', 
-        error: error.message 
+      console.error('❌ [S3 DEBUG] Unexpected error in downloadPhotoFile:');
+      console.error('  Photo ID:', photoId);
+      console.error('  Error:', error.message);
+      console.error('  Stack:', error.stack);
+      return res.status(500).json({
+        message: 'Unexpected error downloading file',
+        debug: {
+          error: {
+            message: error.message,
+            stack: error.stack
+          }
+        }
       });
     }
   },
