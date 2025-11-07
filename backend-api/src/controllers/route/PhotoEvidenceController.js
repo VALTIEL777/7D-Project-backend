@@ -633,11 +633,7 @@ const PhotoEvidenceController = {
         console.log('  Object Name:', objectName);
         console.log('  Storage Driver:', logDetails.storageDriver);
         
-        const dataStream = minioClient.getObject(bucket, objectName);
-        
-        console.log('✅ [S3 DEBUG] Stream created successfully');
-        
-        // Set response headers
+        // Set response headers before streaming
         res.setHeader('Content-Type', logDetails.statResult?.contentType || 'application/octet-stream');
         res.setHeader('Content-Length', logDetails.statResult?.size || '');
         res.setHeader('X-Photo-ID', photoId);
@@ -649,33 +645,74 @@ const PhotoEvidenceController = {
         res.setHeader('Access-Control-Allow-Methods', 'GET');
         res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
         
-        // Pipe the stream to response
-        dataStream.pipe(res);
-        
-        dataStream.on('error', (streamError) => {
-          console.error('❌ [S3 DEBUG] Stream error:');
-          console.error('  Error:', streamError.message);
-          console.error('  Code:', streamError.code);
-          console.error('  Bucket:', bucket);
-          console.error('  Object Name:', objectName);
+        // Handle S3 vs MinIO differently
+        // For S3: getObject returns a Promise that resolves to a stream
+        // For MinIO: getObject returns a stream directly
+        if (logDetails.storageDriver === 's3') {
+          // S3 adapter returns a Promise
+          const dataStream = await minioClient.getObject(bucket, objectName);
+          console.log('✅ [S3 DEBUG] Stream created successfully');
           
-          if (!res.headersSent) {
-            res.status(500).json({
-              message: 'Error streaming file from storage',
-              debug: {
-                ...logDetails,
-                streamError: {
-                  message: streamError.message,
-                  code: streamError.code
+          // Pipe the stream to response
+          dataStream.pipe(res);
+          
+          dataStream.on('error', (streamError) => {
+            console.error('❌ [S3 DEBUG] Stream error:');
+            console.error('  Error:', streamError.message);
+            console.error('  Code:', streamError.code);
+            console.error('  Bucket:', bucket);
+            console.error('  Object Name:', objectName);
+            
+            if (!res.headersSent) {
+              res.status(500).json({
+                message: 'Error streaming file from storage',
+                debug: {
+                  ...logDetails,
+                  streamError: {
+                    message: streamError.message,
+                    code: streamError.code
+                  }
                 }
-              }
-            });
-          }
-        });
-        
-        dataStream.on('end', () => {
-          console.log('✅ [S3 DEBUG] Stream completed successfully');
-        });
+              });
+            }
+          });
+          
+          dataStream.on('end', () => {
+            console.log('✅ [S3 DEBUG] Stream completed successfully');
+          });
+        } else {
+          // MinIO: getObject returns a stream directly
+          const dataStream = minioClient.getObject(bucket, objectName);
+          console.log('✅ [S3 DEBUG] Stream created successfully');
+          
+          // Pipe the stream to response
+          dataStream.pipe(res);
+          
+          dataStream.on('error', (streamError) => {
+            console.error('❌ [S3 DEBUG] Stream error:');
+            console.error('  Error:', streamError.message);
+            console.error('  Code:', streamError.code);
+            console.error('  Bucket:', bucket);
+            console.error('  Object Name:', objectName);
+            
+            if (!res.headersSent) {
+              res.status(500).json({
+                message: 'Error streaming file from storage',
+                debug: {
+                  ...logDetails,
+                  streamError: {
+                    message: streamError.message,
+                    code: streamError.code
+                  }
+                }
+              });
+            }
+          });
+          
+          dataStream.on('end', () => {
+            console.log('✅ [S3 DEBUG] Stream completed successfully');
+          });
+        }
         
         return; // Don't send response again
       } catch (streamError) {

@@ -61,9 +61,9 @@ router.get("/download/:rtrId", downloadRTRExcel);
 // Download a file directly by bucket and object key
 router.get("/download-file/:bucket/:objectKey", downloadFileByKey);
 
-// Download a file from default bucket (uploads) by object key
+// Download a file from default bucket by object key
 router.get("/download-file/:objectKey", (req, res) => {
-  req.params.bucket = 'uploads';
+  // Use STORAGE_BUCKET from config, will be set in controller
   downloadFileByKey(req, res);
 });
 

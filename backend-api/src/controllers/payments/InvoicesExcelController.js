@@ -1,6 +1,6 @@
 const XLSX = require('xlsx');
 const path = require('path');
-const { getMinioClient } = require('../../config/minio');
+const { getMinioClient, STORAGE_BUCKET } = require('../../config/minio');
 const Tickets = require('../../models/ticket-logic/Tickets');
 const Invoices = require('../../models/payments/Invoices');
 const ContractUnits = require('../../models/ticket-logic/ContractUnits');
@@ -453,10 +453,10 @@ exports.uploadExcel = async (req, res) => {
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
-    // Step 1: Save file to MinIO
-    console.log('Step 1: Saving file to MinIO...');
-    const bucket = 'uploads';
-    const folder = 'invoices/uploaded';
+    // Step 1: Save file to storage
+    console.log('Step 1: Saving file to storage...');
+    const bucket = STORAGE_BUCKET;
+    const folder = 'uploads/invoices/uploaded'; // Path includes uploads/ prefix for S3 structure
     const originalName = req.file.originalname || 'invoices-upload.xlsx';
     const objectName = `${folder}/${Date.now()}_${originalName}`;
     

@@ -1096,11 +1096,26 @@ class RouteOptimizationService {
                         NOT (
                             t.comment7d IS NULL 
                             OR t.comment7d = '' 
-                            OR t.comment7d = 'TK - PERMIT EXTENDED'
-                            OR t.comment7d = 'TK - LAYOUT'
-                            OR t.comment7d = 'TK - LAY OUT'
+                            OR t.comment7d ILIKE '%TK - PERMIT EXTENDED%'
+                            OR t.comment7d ILIKE '%TK - LAYOUT%'
+                            OR t.comment7d ILIKE '%TK - LAY OUT%'
                         )
-                        OR t.comment7d IN ('TK - CANCELLED', 'TK - HOLD OFF', 'TK- ON HOLD OFF', 'TK - COMPLETED', 'TK - COMPLETE', 'COMPLETED', 'COMPLETE')
+                        OR (
+                            t.comment7d IS NOT NULL
+                            AND t.comment7d != ''
+                            AND (
+                                t.comment7d ILIKE '%TK - CANCELLED%'
+                                OR t.comment7d ILIKE '%TK - HOLD OFF%'
+                                OR t.comment7d ILIKE '%TK- ON HOLD OFF%'
+                                OR t.comment7d ILIKE '%TK - ON HOLD OFF%'
+                                OR t.comment7d ILIKE '%TK - COMPLETED%'
+                                OR t.comment7d ILIKE '%TK - COMPLETE%'
+                                OR t.comment7d ILIKE '%COMPLETED%'
+                                OR t.comment7d ILIKE '%COMPLETE%'
+                                OR t.comment7d ILIKE '%TK - EXPIRED%'
+                                OR t.comment7d ILIKE '%TK - NEEDS PERMIT EXTENSION%'
+                            )
+                        )
                     )
                 ORDER BY t.ticketId ASC
             `);
@@ -1121,9 +1136,9 @@ class RouteOptimizationService {
                     AND (
                         t.comment7d IS NULL 
                         OR t.comment7d = '' 
-                        OR t.comment7d = 'TK - PERMIT EXTENDED'
-                        OR t.comment7d = 'TK - LAYOUT'
-                        OR t.comment7d = 'TK - LAY OUT'
+                        OR t.comment7d ILIKE '%TK - PERMIT EXTENDED%'
+                        OR t.comment7d ILIKE '%TK - LAYOUT%'
+                        OR t.comment7d ILIKE '%TK - LAY OUT%'
                     )
                     AND NOT EXISTS (
                         SELECT 1 FROM TicketStatus tks2 
@@ -1155,11 +1170,24 @@ class RouteOptimizationService {
                     AND (
                         t.comment7d IS NULL 
                         OR t.comment7d = '' 
-                        OR t.comment7d = 'TK - PERMIT EXTENDED'
-                        OR t.comment7d = 'TK - LAYOUT'
-                        OR t.comment7d = 'TK - LAY OUT'
+                        OR t.comment7d ILIKE '%TK - PERMIT EXTENDED%'
+                        OR t.comment7d ILIKE '%TK - LAYOUT%'
+                        OR t.comment7d ILIKE '%TK - LAY OUT%'
                     )
-                    AND t.comment7d NOT IN ('TK - CANCELLED', 'TK - HOLD OFF', 'TK- ON HOLD OFF', 'TK - COMPLETED', 'TK - COMPLETE', 'COMPLETED', 'COMPLETE')
+                    AND (
+                        t.comment7d IS NULL
+                        OR t.comment7d = ''
+                        OR (
+                            COALESCE(t.comment7d, '') NOT ILIKE '%TK - CANCELLED%'
+                            AND COALESCE(t.comment7d, '') NOT ILIKE '%TK - HOLD OFF%'
+                            AND COALESCE(t.comment7d, '') NOT ILIKE '%TK- ON HOLD OFF%'
+                            AND COALESCE(t.comment7d, '') NOT ILIKE '%TK - ON HOLD OFF%'
+                            AND COALESCE(t.comment7d, '') NOT ILIKE '%TK - COMPLETED%'
+                            AND COALESCE(t.comment7d, '') NOT ILIKE '%TK - COMPLETE%'
+                            AND COALESCE(t.comment7d, '') NOT ILIKE '%COMPLETED%'
+                            AND COALESCE(t.comment7d, '') NOT ILIKE '%COMPLETE%'
+                        )
+                    )
                     AND ts2.name = 'Spotting'
                     AND tks2.endingdate IS NOT NULL
                     AND tks2.deletedAt IS NULL
@@ -1187,9 +1215,9 @@ class RouteOptimizationService {
                     AND (
                         t.comment7d IS NULL 
                         OR t.comment7d = '' 
-                        OR t.comment7d = 'TK - PERMIT EXTENDED'
-                        OR t.comment7d = 'TK - LAYOUT'
-                        OR t.comment7d = 'TK - LAY OUT'
+                        OR t.comment7d ILIKE '%TK - PERMIT EXTENDED%'
+                        OR t.comment7d ILIKE '%TK - LAYOUT%'
+                        OR t.comment7d ILIKE '%TK - LAY OUT%'
                     )
                     AND r.type = 'SPOTTER'
                     AND r.deletedAt IS NULL
@@ -1217,11 +1245,24 @@ class RouteOptimizationService {
                     AND (
                         t.comment7d IS NULL 
                         OR t.comment7d = '' 
-                        OR t.comment7d = 'TK - PERMIT EXTENDED'
-                        OR t.comment7d = 'TK - LAYOUT'
-                        OR t.comment7d = 'TK - LAY OUT'
+                        OR t.comment7d ILIKE '%TK - PERMIT EXTENDED%'
+                        OR t.comment7d ILIKE '%TK - LAYOUT%'
+                        OR t.comment7d ILIKE '%TK - LAY OUT%'
                     )
-                    AND t.comment7d NOT IN ('TK - CANCELLED', 'TK - HOLD OFF', 'TK- ON HOLD OFF', 'TK - COMPLETED', 'TK - COMPLETE', 'COMPLETED', 'COMPLETE')
+                    AND (
+                        t.comment7d IS NULL
+                        OR t.comment7d = ''
+                        OR (
+                            COALESCE(t.comment7d, '') NOT ILIKE '%TK - CANCELLED%'
+                            AND COALESCE(t.comment7d, '') NOT ILIKE '%TK - HOLD OFF%'
+                            AND COALESCE(t.comment7d, '') NOT ILIKE '%TK- ON HOLD OFF%'
+                            AND COALESCE(t.comment7d, '') NOT ILIKE '%TK - ON HOLD OFF%'
+                            AND COALESCE(t.comment7d, '') NOT ILIKE '%TK - COMPLETED%'
+                            AND COALESCE(t.comment7d, '') NOT ILIKE '%TK - COMPLETE%'
+                            AND COALESCE(t.comment7d, '') NOT ILIKE '%COMPLETED%'
+                            AND COALESCE(t.comment7d, '') NOT ILIKE '%COMPLETE%'
+                        )
+                    )
                     AND EXISTS (
                         SELECT 1 FROM TicketStatus tks2 
                         JOIN TaskStatus ts2 ON tks2.taskStatusId = ts2.taskStatusId 
@@ -1285,16 +1326,20 @@ class RouteOptimizationService {
                         OR t.comment7d ILIKE '%TK - LAY OUT%'
                     )
                     AND (
-                        t.comment7d NOT ILIKE '%TK - CANCELLED%' 
-                        AND t.comment7d NOT ILIKE '%TK - HOLD OFF%' 
-                        AND t.comment7d NOT ILIKE '%TK- ON HOLD OFF%' 
-                        AND t.comment7d NOT ILIKE '%TK - ON HOLD OFF%' 
-                        AND t.comment7d NOT ILIKE '%TK - COMPLETED%' 
-                        AND t.comment7d NOT ILIKE '%TK - COMPLETE%' 
-                        AND t.comment7d NOT ILIKE '%COMPLETED%' 
-                        AND t.comment7d NOT ILIKE '%COMPLETE%'
-                        AND t.comment7d NOT ILIKE '%TK - EXPIRED%'
-                        AND t.comment7d NOT ILIKE '%TK - NEEDS PERMIT EXTENSION%'
+                        t.comment7d IS NULL
+                        OR t.comment7d = ''
+                        OR (
+                            COALESCE(t.comment7d, '') NOT ILIKE '%TK - CANCELLED%' 
+                            AND COALESCE(t.comment7d, '') NOT ILIKE '%TK - HOLD OFF%' 
+                            AND COALESCE(t.comment7d, '') NOT ILIKE '%TK- ON HOLD OFF%' 
+                            AND COALESCE(t.comment7d, '') NOT ILIKE '%TK - ON HOLD OFF%' 
+                            AND COALESCE(t.comment7d, '') NOT ILIKE '%TK - COMPLETED%' 
+                            AND COALESCE(t.comment7d, '') NOT ILIKE '%TK - COMPLETE%' 
+                            AND COALESCE(t.comment7d, '') NOT ILIKE '%COMPLETED%' 
+                            AND COALESCE(t.comment7d, '') NOT ILIKE '%COMPLETE%'
+                            AND COALESCE(t.comment7d, '') NOT ILIKE '%TK - EXPIRED%'
+                            AND COALESCE(t.comment7d, '') NOT ILIKE '%TK - NEEDS PERMIT EXTENSION%'
+                        )
                     )
                     AND EXISTS (
                         SELECT 1 FROM TicketStatus tks2 

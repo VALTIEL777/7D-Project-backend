@@ -1,7 +1,7 @@
 const XLSX = require("xlsx");
 const { RTR } = require("../../models/RTR/rtr");
 // const NotificationService = require("../../services/NotificationService");
-const { getMinioClient, generatePublicPresignedUrl } = require('../../config/minio');
+const { getMinioClient, generatePublicPresignedUrl, STORAGE_BUCKET, STORAGE_DRIVER } = require('../../config/minio');
 const path = require('path');
 const Tickets = require("../../models/ticket-logic/Tickets");
 const db = require("../../config/db");
@@ -216,42 +216,30 @@ function parseRangeAddress(address) {
 
 exports.uploadExcel = async (req, res) => {
   try {
-    // 1. Save file to MinIO in 'uploaded' folder
-    const bucket = 'uploads'; // or your bucket name
-    const folder = 'rtr/uploaded'; // Changed to uploaded folder
+    // 1. Save file to storage in 'uploaded' folder
+    const bucket = STORAGE_BUCKET;
+    const folder = 'rtr/uploaded';
     const originalName = req.file.originalname || 'rtr-upload.xlsx';
     
-    // Function to generate unique filename
-    const generateUniqueFilename = async (baseName) => {
-      let counter = 0;
-      let finalName = baseName;
-      
-      while (true) {
-        const objectName = `${folder}/${finalName}`;
-        try {
-          // Check if file exists
-          await getMinioClient().statObject(bucket, objectName);
-          // File exists, try with counter
-          counter++;
-          const nameWithoutExt = baseName.replace(/\.[^/.]+$/, ''); // Remove extension
-          const ext = baseName.split('.').pop(); // Get extension
-          finalName = `${nameWithoutExt}_${counter}.${ext}`;
-        } catch (err) {
-          if (err.code === 'NotFound') {
-            // File doesn't exist, we can use this name
-            return finalName;
-          }
-          throw err;
-        }
-      }
-    };
+    // Sanitize filename to avoid spaces and unsafe characters (same as PhotoEvidence)
+    const timestamp = Date.now();
+    const ext = path.extname(originalName).toLowerCase();
+    const base = path.basename(originalName, ext);
+    const safeBase = base
+      .replace(/[^a-zA-Z0-9._-]+/g, '_')
+      .replace(/_+/g, '_')
+      .slice(0, 100);
+    const safeName = `${safeBase}${ext}`;
     
-    // Generate unique filename
-    const uniqueFilename = await generateUniqueFilename(originalName);
-    const objectName = `${folder}/${uniqueFilename}`;
+    // For S3, prepend 'uploads/' prefix since files are stored in uploads/ folder
+    const objectName = STORAGE_DRIVER === 's3' 
+      ? `uploads/${folder}/${timestamp}-${safeName}`
+      : `${folder}/${timestamp}-${safeName}`;
     
     console.log(`Original filename: ${originalName}`);
+    console.log(`Sanitized filename: ${safeName}`);
     console.log(`Final object name: ${objectName}`);
+    console.log(`Storage driver: ${STORAGE_DRIVER}`);
 
     // Ensure bucket exists
     const bucketExists = await getMinioClient().bucketExists(bucket).catch(() => false);
@@ -276,6 +264,7 @@ exports.uploadExcel = async (req, res) => {
     }
 
     await getMinioClient().putObject(bucket, objectName, req.file.buffer);
+    console.log(`✅ File saved successfully to ${bucket}/${objectName}`);
 
     // 2. Store the object key instead of constructing a URL
     // This makes file retrieval more reliable
@@ -711,9 +700,10 @@ exports.listRTRExcels = async (req, res) => {
 
 exports.listRTRFiles = async (req, res) => {
   try {
-    const bucket = 'uploads';
-    const uploadedFolder = 'rtr/uploaded';
-    const generatedFolder = 'rtr/generated';
+    const bucket = STORAGE_BUCKET;
+    // Use the same folder structure as PhotoEvidence (conditional uploads/ prefix)
+    const uploadedFolder = STORAGE_DRIVER === 's3' ? 'uploads/rtr/uploaded' : 'rtr/uploaded';
+    const generatedFolder = STORAGE_DRIVER === 's3' ? 'uploads/rtr/generated' : 'rtr/generated';
     
     // Check if bucket exists first, create it if it doesn't
     const bucketExists = await getMinioClient().bucketExists(bucket).catch((err) => {
@@ -757,59 +747,145 @@ exports.listRTRFiles = async (req, res) => {
     }
     
     // Helper function to list files from a folder
-    const listFilesFromFolder = async (folderPath) => {
+    const listFilesFromFolder = async (folderPath, fileType) => {
       const files = [];
       return new Promise((resolve, reject) => {
         try {
-          const stream = getMinioClient().listObjects(bucket, folderPath, true);
+          // Ensure prefix ends with / for S3 folder listing
+          const prefix = folderPath.endsWith('/') ? folderPath : folderPath + '/';
+          console.log(`📋 [LIST FILES] Listing files with prefix: ${prefix} (type: ${fileType})`);
+          console.log(`📋 [LIST FILES] Bucket: ${bucket}`);
+          
+          const stream = getMinioClient().listObjects(bucket, prefix, true);
+          
+          let filesFound = 0;
+          let errorsOccurred = 0;
           
           stream.on('data', async (obj) => {
             try {
+              filesFound++;
+              
+              // Skip if it's a folder marker (size 0 and ends with /)
+              if (obj.size === 0 && obj.name.endsWith('/')) {
+                console.log(`📁 [LIST FILES] Skipping folder marker: ${obj.name}`);
+                return;
+              }
+              
+              const relativeName = obj.name.startsWith(prefix)
+                ? obj.name.slice(prefix.length)
+                : obj.name;
+              
+              // Skip nested objects (e.g., extracted XLSX internals)
+              if (relativeName.includes('/')) {
+                console.log(`📂 [LIST FILES] Skipping nested object inside file: ${relativeName}`);
+                return;
+              }
+              
+              console.log(`📄 [LIST FILES] Found file #${filesFound}: ${obj.name} (${obj.size} bytes)`);
+              
               // Generate presigned URL for download (valid for 1 hour) with public hostname
               const presignedUrl = await generatePublicPresignedUrl(bucket, obj.name, 3600, req);
               
               files.push({
-                name: obj.name.replace(folderPath + '/', ''),
-          size: obj.size,
-          lastModified: obj.lastModified,
-                type: folderPath === uploadedFolder ? 'uploaded' : 'generated',
+                name: relativeName,
+                size: obj.size,
+                lastModified: obj.lastModified,
+                type: fileType,
                 url: presignedUrl,
-                objectKey: obj.name
+                objectKey: obj.name,
+                prefixUsed: prefix
               });
             } catch (urlError) {
-              console.error(`Failed to generate presigned URL for ${obj.name}:`, urlError);
+              errorsOccurred++;
+              const relativeName = obj.name.startsWith(prefix)
+                ? obj.name.slice(prefix.length)
+                : obj.name;
+              
+              console.error(`❌ [LIST FILES] Failed to generate presigned URL for ${obj.name}:`, urlError);
               files.push({
-                name: obj.name.replace(folderPath + '/', ''),
-          size: obj.size,
-          lastModified: obj.lastModified,
-                type: folderPath === uploadedFolder ? 'uploaded' : 'generated',
+                name: relativeName,
+                size: obj.size,
+                lastModified: obj.lastModified,
+                type: fileType,
                 url: null,
                 objectKey: obj.name,
-                error: 'Failed to generate download URL'
+                error: 'Failed to generate download URL',
+                prefixUsed: prefix
               });
-          }
+            }
           });
         
           stream.on('end', () => {
+            console.log(`✅ [LIST FILES] Stream ended. Found ${filesFound} objects, ${files.length} files added, ${errorsOccurred} errors`);
+            console.log(`✅ [LIST FILES] Finished listing ${files.length} files from ${prefix}`);
             resolve(files);
           });
           
           stream.on('error', (err) => {
-            console.error(`Stream error for ${folderPath}:`, err);
+            console.error(`❌ [LIST FILES] Stream error for ${prefix}:`, err);
+            console.error(`❌ [LIST FILES] Error details:`, {
+              message: err.message,
+              code: err.code,
+              statusCode: err.statusCode,
+              stack: err.stack
+            });
             reject(err);
           });
         } catch (streamError) {
-          console.error(`Failed to create stream for ${folderPath}:`, streamError);
+          console.error(`❌ [LIST FILES] Failed to create stream for ${folderPath}:`, streamError);
+          console.error(`❌ [LIST FILES] Stream error details:`, {
+            message: streamError.message,
+            code: streamError.code,
+            stack: streamError.stack
+          });
           resolve([]);
         }
       });
     };
     
-    // List both uploaded and generated files concurrently
-    const [uploadedFiles, generatedFiles] = await Promise.all([
-      listFilesFromFolder(uploadedFolder),
-      listFilesFromFolder(generatedFolder)
-    ]);
+    const possibleUploadedPrefixes = Array.from(new Set([
+      uploadedFolder,
+      'uploads/rtr/uploaded',
+      'rtr/uploaded'
+    ].filter(Boolean)));
+
+    const possibleGeneratedPrefixes = Array.from(new Set([
+      generatedFolder,
+      'uploads/rtr/generated',
+      'rtr/generated'
+    ].filter(Boolean)));
+
+    const uploadedResults = await Promise.all(
+      possibleUploadedPrefixes.map(prefix => 
+        listFilesFromFolder(prefix, 'uploaded').catch(err => {
+          console.error(`❌ [LIST FILES] Error listing uploaded prefix ${prefix}:`, err);
+          return [];
+        })
+      )
+    );
+
+    const generatedResults = await Promise.all(
+      possibleGeneratedPrefixes.map(prefix => 
+        listFilesFromFolder(prefix, 'generated').catch(err => {
+          console.error(`❌ [LIST FILES] Error listing generated prefix ${prefix}:`, err);
+          return [];
+        })
+      )
+    );
+
+    const mergeFileLists = (fileGroups) => {
+      const map = new Map();
+      fileGroups.flat().forEach(file => {
+        if (!file || !file.objectKey) return;
+        if (!map.has(file.objectKey)) {
+          map.set(file.objectKey, file);
+        }
+      });
+      return Array.from(map.values());
+    };
+
+    const uploadedFiles = mergeFileLists(uploadedResults);
+    const generatedFiles = mergeFileLists(generatedResults);
     
     res.status(200).json({ 
       success: true, 
@@ -821,7 +897,9 @@ exports.listRTRFiles = async (req, res) => {
         bucketExists: bucketExists,
         bucket: bucket,
         uploadedFolder: uploadedFolder,
-        generatedFolder: generatedFolder
+        generatedFolder: generatedFolder,
+        uploadedPrefixesTried: possibleUploadedPrefixes,
+        generatedPrefixesTried: possibleGeneratedPrefixes
       }
     });
   } catch (err) {
@@ -874,7 +952,7 @@ exports.downloadRTRExcel = async (req, res) => {
     } catch (urlError) {
       console.error('Failed to parse URL:', rtr.url, urlError);
       // Fallback: assume the URL is just the object key
-      bucket = 'uploads';
+      bucket = STORAGE_BUCKET;
       objectKey = rtr.url.replace(/^https?:\/\/[^\/]+\//, '');
     }
     
@@ -923,7 +1001,7 @@ exports.downloadRTRExcel = async (req, res) => {
 // New direct download function using object key
 exports.downloadFileByKey = async (req, res) => {
   try {
-    const { bucket = 'uploads', objectKey } = req.params;
+    const { bucket = STORAGE_BUCKET, objectKey } = req.params;
     
     if (!objectKey) {
       return res.status(400).json({ 
@@ -1752,17 +1830,25 @@ async function updateTicketWithData(ticketId, finalData, updatedBy) {
   }
 }
 
-// Function to save generated files to MinIO
+// Function to save generated files to storage
 async function saveGeneratedFile(fileBuffer, fileName, rtrId) {
-  const bucket = 'uploads';
+  const bucket = STORAGE_BUCKET;
   const folder = 'rtr/generated';
   
-  // Create a more descriptive filename
-  const baseName = fileName.replace(/\.[^/.]+$/, ''); // Remove extension
-  const ext = fileName.split('.').pop(); // Get extension
-  const timestamp = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
-  const descriptiveName = `${baseName}_processed_${timestamp}.${ext}`;
-  const objectName = `${folder}/${descriptiveName}`;
+  // Sanitize filename (same as PhotoEvidence pattern)
+  const timestamp = Date.now();
+  const ext = path.extname(fileName).toLowerCase();
+  const base = path.basename(fileName, ext);
+  const safeBase = base
+    .replace(/[^a-zA-Z0-9._-]+/g, '_')
+    .replace(/_+/g, '_')
+    .slice(0, 100);
+  const safeName = `${safeBase}_processed_${timestamp}${ext}`;
+  
+  // For S3, prepend 'uploads/' prefix since files are stored in uploads/ folder
+  const objectName = STORAGE_DRIVER === 's3' 
+    ? `uploads/${folder}/${safeName}`
+    : `${folder}/${safeName}`;
 
   // Ensure bucket exists
   const bucketExists = await getMinioClient().bucketExists(bucket).catch(() => false);
@@ -2670,56 +2756,39 @@ exports.saveStepperData = async (req, res) => {
     
     if (fileInfo && fileInfo.buffer) {
       try {
-        const bucket = 'uploads';
+        const bucket = STORAGE_BUCKET;
         const folder = 'rtr/uploaded';
         const originalName = fileInfo.originalName || 'rtr-upload.xlsx';
         
-        // Function to generate unique filename (same as uploadExcel)
-        const generateUniqueFilename = async (baseName) => {
-          let counter = 0;
-          let finalName = baseName;
-          
-          while (true) {
-            const objectName = `${folder}/${finalName}`;
-            try {
-              // Check if file exists
-              await getMinioClient().statObject(bucket, objectName);
-              // File exists, try with counter
-              counter++;
-              const nameWithoutExt = baseName.replace(/\.[^/.]+$/, ''); // Remove extension
-              const ext = baseName.split('.').pop(); // Get extension
-              finalName = `${nameWithoutExt}_${counter}.${ext}`;
-            } catch (err) {
-              if (err.code === 'NotFound') {
-                // File doesn't exist, we can use this name
-                return finalName;
-              }
-              throw err;
-            }
-          }
-        };
+        // Sanitize filename (same as PhotoEvidence pattern)
+        const timestamp = Date.now();
+        const ext = path.extname(originalName).toLowerCase();
+        const base = path.basename(originalName, ext);
+        const safeBase = base
+          .replace(/[^a-zA-Z0-9._-]+/g, '_')
+          .replace(/_+/g, '_')
+          .slice(0, 100);
+        const safeName = `${safeBase}${ext}`;
         
-        // Generate unique filename
-        const uniqueFilename = await generateUniqueFilename(originalName);
-        const objectName = `${folder}/${uniqueFilename}`;
+        // For S3, prepend 'uploads/' prefix since files are stored in uploads/ folder
+        const objectName = STORAGE_DRIVER === 's3' 
+          ? `uploads/${folder}/${timestamp}-${safeName}`
+          : `${folder}/${timestamp}-${safeName}`;
         
         console.log(`Stepper - Original filename: ${originalName}`);
+        console.log(`Stepper - Sanitized filename: ${safeName}`);
         console.log(`Stepper - Final object name: ${objectName}`);
+        console.log(`Stepper - Storage driver: ${STORAGE_DRIVER}`);
 
         // Ensure bucket exists
         const bucketExists = await getMinioClient().bucketExists(bucket).catch(() => false);
         if (!bucketExists) {
           await getMinioClient().makeBucket(bucket);
         }
-
-        // Convert base64 buffer back to Buffer
-        const fileBuffer = Buffer.from(fileInfo.buffer, 'base64');
         
-        await getMinioClient().putObject(bucket, objectName, fileBuffer);
-        
-        // Store the object key instead of constructing a URL
-        // This makes file retrieval more reliable
-        originalFileUrl = objectName; // Store just the object key
+        await getMinioClient().putObject(bucket, objectName, Buffer.from(fileInfo.buffer, 'base64'));
+        originalFileUrl = objectName;
+        console.log(`✅ Stepper file saved successfully to ${bucket}/${objectName}`);
 
         // Save metadata to RTRs table
         rtrRecord = await RTR.saveRTRFile(originalName, originalFileUrl);
@@ -2953,7 +3022,7 @@ exports.saveStepperData = async (req, res) => {
         originalFileName: fileInfo?.originalName,
         generatedFileName: generatedFileUrl ? generatedFileUrl.split('/').pop() : null,
         objectKey: generatedFileUrl,
-        downloadUrl: generatedFileUrl ? await generatePublicPresignedUrl('uploads', generatedFileUrl, 3600, req) : null,
+        downloadUrl: generatedFileUrl ? await generatePublicPresignedUrl(STORAGE_BUCKET, generatedFileUrl, 3600, req) : null,
         summary: {
           newTicketsCreated: results.summary.created,
           ticketsUpdated: results.summary.updated,
@@ -3335,12 +3404,24 @@ exports.updateTicketsWithDatabaseValues = async (req, res) => {
     const currentDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
     const generatedFileName = `${baseName}_updated_${currentDate}.xlsx`;
 
-    // 6. Save to MinIO in rtr/generated folder
-    const bucket = 'uploads';
+    // 6. Save to storage in rtr/generated folder
+    const bucket = STORAGE_BUCKET;
     const folder = 'rtr/generated';
+    
+    // Sanitize filename (same as PhotoEvidence pattern)
     const timestamp = Date.now();
-    const sanitizedName = generatedFileName.replace(/[^a-zA-Z0-9.-]/g, '_');
-    const objectName = `${folder}/${timestamp}-${sanitizedName}`;
+    const ext = path.extname(generatedFileName).toLowerCase();
+    const base = path.basename(generatedFileName, ext);
+    const safeBase = base
+      .replace(/[^a-zA-Z0-9._-]+/g, '_')
+      .replace(/_+/g, '_')
+      .slice(0, 100);
+    const safeName = `${safeBase}_updated_${timestamp}${ext}`;
+    
+    // For S3, prepend 'uploads/' prefix since files are stored in uploads/ folder
+    const objectName = STORAGE_DRIVER === 's3' 
+      ? `uploads/${folder}/${safeName}`
+      : `${folder}/${safeName}`;
 
     // Ensure bucket exists
     const bucketExists = await getMinioClient().bucketExists(bucket).catch(() => false);
