@@ -167,9 +167,12 @@ const RoutesController = {
         });
       }
 
+      const trimmedRouteCode = routeCode?.trim();
+      const routeCodeForService = trimmedRouteCode === '' ? undefined : trimmedRouteCode;
+
       const optimizedRoute = await RouteOptimizationService.optimizeAndSaveRoute(
         ticketIds,
-        routeCode || `SPOT-${Date.now()}`,
+        routeCodeForService,
         'SPOTTER',
         startDate,
         endDate,
