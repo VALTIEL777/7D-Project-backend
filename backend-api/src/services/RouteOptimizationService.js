@@ -1567,7 +1567,9 @@ class RouteOptimizationService {
                 WHERE t.deletedAt IS NULL
                 AND (
                     -- Include comment7d values with flexible matching (allows text before and after)
-                    t.comment7d ILIKE '%TK - ON PROGRESS%'
+                    t.comment7d IS NULL
+                    OR t.comment7d = ''
+                    OR t.comment7d ILIKE '%TK - ON PROGRESS%'
                     OR t.comment7d ILIKE '%TK - ON LAYOUT%'
                     OR t.comment7d ILIKE '%TK - LAYOUT%'
                     OR t.comment7d ILIKE '%TK - LAY OUT%'
@@ -1577,16 +1579,16 @@ class RouteOptimizationService {
                 )
                 AND (
                     -- Exclude tickets with hold-off and other exclusion comments
-                    t.comment7d NOT ILIKE '%TK - CANCELLED%' 
-                    AND t.comment7d NOT ILIKE '%TK - HOLD OFF%' 
-                    AND t.comment7d NOT ILIKE '%TK- ON HOLD OFF%' 
-                    AND t.comment7d NOT ILIKE '%TK - ON HOLD OFF%' 
-                    AND t.comment7d NOT ILIKE '%TK - COMPLETED%' 
-                    AND t.comment7d NOT ILIKE '%TK - COMPLETE%' 
-                    AND t.comment7d NOT ILIKE '%COMPLETED%' 
-                    AND t.comment7d NOT ILIKE '%COMPLETE%'
-                    AND t.comment7d NOT ILIKE '%TK - EXPIRED%'
-                    AND t.comment7d NOT ILIKE '%TK - NEEDS PERMIT EXTENSION%'
+                    COALESCE(t.comment7d, '') NOT ILIKE '%TK - CANCELLED%'
+                    AND COALESCE(t.comment7d, '') NOT ILIKE '%TK - HOLD OFF%'
+                    AND COALESCE(t.comment7d, '') NOT ILIKE '%TK- ON HOLD OFF%'
+                    AND COALESCE(t.comment7d, '') NOT ILIKE '%TK - ON HOLD OFF%'
+                    AND COALESCE(t.comment7d, '') NOT ILIKE '%TK - COMPLETED%'
+                    AND COALESCE(t.comment7d, '') NOT ILIKE '%TK - COMPLETE%'
+                    AND COALESCE(t.comment7d, '') NOT ILIKE '%COMPLETED%'
+                    AND COALESCE(t.comment7d, '') NOT ILIKE '%COMPLETE%'
+                    AND COALESCE(t.comment7d, '') NOT ILIKE '%TK - EXPIRED%'
+                    AND COALESCE(t.comment7d, '') NOT ILIKE '%TK - NEEDS PERMIT EXTENSION%'
                 )
                 AND EXISTS (
                     -- SPOTTING completed (has endingDate)

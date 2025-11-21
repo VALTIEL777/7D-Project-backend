@@ -77,6 +77,14 @@ const router = express.Router();
  *                 type: integer
  *                 description: The ID of the user who last updated this entry.
  *                 example: 1
+ *               ticketId:
+ *                 type: integer
+ *                 description: The ID of the ticket this equipment is associated with (optional).
+ *                 example: 123
+ *               retrievalCrewId:
+ *                 type: integer
+ *                 description: The ID of the crew that will retrieve the equipment (optional).
+ *                 example: 2
  *     responses:
  *       201:
  *         description: The used equipment record was successfully created.
@@ -135,6 +143,43 @@ router.post('/', UsedEquipmentController.createUsedEquipment);
  *         description: Server error
  */
 router.get('/:CrewId/:equipmentId', UsedEquipmentController.getUsedEquipmentById);
+
+/**
+ * @swagger
+ * /usedequipment/ticket/{ticketId}:
+ *   get:
+ *     summary: Get all used equipment records by Ticket ID
+ *     tags: [Used Equipment]
+ *     parameters:
+ *       - in: path
+ *         name: ticketId
+ *         schema:
+ *           type: integer
+ *         required: true
+ *         description: The ID of the ticket.
+ *     responses:
+ *       200:
+ *         description: List of used equipment records for the ticket.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   CrewId:
+ *                     type: integer
+ *                     example: 1
+ *                   equipmentId:
+ *                     type: integer
+ *                     example: 1
+ *                   ticketId:
+ *                     type: integer
+ *                     example: 123
+ *       500:
+ *         description: Server error
+ */
+router.get('/ticket/:ticketId', UsedEquipmentController.getUsedEquipmentByTicketId);
 
 /**
  * @swagger
@@ -220,6 +265,14 @@ router.get('/', UsedEquipmentController.getAllUsedEquipment);
  *               updatedBy:
  *                 type: integer
  *                 description: The ID of the user who last updated this entry.
+ *                 example: 2
+ *               ticketId:
+ *                 type: integer
+ *                 description: The ID of the ticket this equipment is associated with (optional).
+ *                 example: 123
+ *               retrievalCrewId:
+ *                 type: integer
+ *                 description: The ID of the crew that will retrieve the equipment (optional).
  *                 example: 2
  *     responses:
  *       200:

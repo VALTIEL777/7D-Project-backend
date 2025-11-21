@@ -3,8 +3,8 @@ const UsedEquipment = require('../../models/material-equipment/UsedEquipment');
 const UsedEquipmentController = {
   async createUsedEquipment(req, res) {
     try {
-      const { CrewId, equipmentId, startDate, endDate, hoursLent, quantity, equipmentCost, observation, createdBy, updatedBy } = req.body;
-      const newUsedEquipment = await UsedEquipment.create(CrewId, equipmentId, startDate, endDate, hoursLent, quantity, equipmentCost, observation, createdBy, updatedBy);
+      const { CrewId, equipmentId, startDate, endDate, hoursLent, quantity, equipmentCost, observation, createdBy, updatedBy, ticketId, retrievalCrewId } = req.body;
+      const newUsedEquipment = await UsedEquipment.create(CrewId, equipmentId, startDate, endDate, hoursLent, quantity, equipmentCost, observation, createdBy, updatedBy, ticketId, retrievalCrewId);
       res.status(201).json(newUsedEquipment);
     } catch (error) {
       console.error('Error creating UsedEquipment:', error);
@@ -39,8 +39,8 @@ const UsedEquipmentController = {
   async updateUsedEquipment(req, res) {
     try {
       const { CrewId, equipmentId } = req.params;
-      const { startDate, endDate, hoursLent, quantity, equipmentCost, observation, updatedBy } = req.body;
-      const updatedUsedEquipment = await UsedEquipment.update(CrewId, equipmentId, startDate, endDate, hoursLent, quantity, equipmentCost, observation, updatedBy);
+      const { startDate, endDate, hoursLent, quantity, equipmentCost, observation, updatedBy, ticketId, retrievalCrewId } = req.body;
+      const updatedUsedEquipment = await UsedEquipment.update(CrewId, equipmentId, startDate, endDate, hoursLent, quantity, equipmentCost, observation, updatedBy, ticketId, retrievalCrewId);
       if (!updatedUsedEquipment) {
         return res.status(404).json({ message: 'UsedEquipment not found' });
       }
@@ -48,6 +48,17 @@ const UsedEquipmentController = {
     } catch (error) {
       console.error('Error updating UsedEquipment:', error);
       res.status(500).json({ message: 'Error updating UsedEquipment', error: error.message });
+    }
+  },
+
+  async getUsedEquipmentByTicketId(req, res) {
+    try {
+      const { ticketId } = req.params;
+      const usedEquipment = await UsedEquipment.findByTicketId(ticketId);
+      res.status(200).json(usedEquipment);
+    } catch (error) {
+      console.error('Error fetching UsedEquipment by Ticket ID:', error);
+      res.status(500).json({ message: 'Error fetching UsedEquipment', error: error.message });
     }
   },
 

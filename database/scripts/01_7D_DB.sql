@@ -480,6 +480,8 @@ CREATE TABLE usedInventory(
 CREATE TABLE usedEquipment(
     CrewId INTEGER REFERENCES Crews(crewId),
     equipmentId INTEGER REFERENCES Equipment(equipmentId),
+    retrievalCrewId INTEGER REFERENCES Crews(crewId),
+    ticketId INTEGER REFERENCES Tickets(ticketId),
     startDate DATE,
     endDate DATE,
     hoursLent DECIMAL,
