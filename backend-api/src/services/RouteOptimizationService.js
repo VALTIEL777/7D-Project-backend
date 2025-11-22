@@ -2096,12 +2096,72 @@ class RouteOptimizationService {
 
             await RouteTickets.createBatch(routeTicketsToAdd);
 
+            console.log(`Added ${ticketsToAdd.length} tickets to route ${routeId}. Re-optimizing route to update polyline...`);
+
+            // Re-optimize the route with all tickets (existing + new) to get updated polyline
+            // Get all tickets in the route after adding new ones
+            const allRouteTickets = await RouteTickets.findByRouteId(routeId);
+            const allTicketIds = allRouteTickets.map(rt => rt.ticketid);
+            
+            // Get all tickets with addresses
+            const allTicketsWithAddresses = await this.getTicketsWithAddressesBatch(allTicketIds, {
+                autoSuggest: false,
+                minConfidence: 0.8
+            });
+
+            // Deduplicate addresses
+            const addressToTicketsMap = new Map();
+            const uniqueAddresses = [];
+            
+            for (const ticket of allTicketsWithAddresses) {
+                const address = ticket.address;
+                if (!addressToTicketsMap.has(address)) {
+                    addressToTicketsMap.set(address, []);
+                    uniqueAddresses.push(address);
+                }
+                addressToTicketsMap.get(address).push(ticket);
+            }
+
+            console.log(`Re-optimizing route ${routeId} with ${allTicketsWithAddresses.length} tickets (${uniqueAddresses.length} unique addresses)`);
+
+            // Use default addresses for re-optimization (same as reoptimizeRoute)
+            const defaultOriginAddress = '2000 W 43rd St, Chicago, IL 60609, Estados Unidos';
+            const defaultDestinationAddress = '2000 W 43rd St, Chicago, IL 60609, Estados Unidos';
+
+            // Geocode addresses before optimization
+            await this.batchGeocodeWithAddresses(uniqueAddresses);
+
+            // Optimize the route
+            const optimizedRouteResult = await this.optimizeRoute(
+                defaultOriginAddress,
+                defaultDestinationAddress,
+                uniqueAddresses
+            );
+
+            // Update route with new optimization data
+            console.log(`Updating route ${routeId} polyline after adding tickets...`);
+            const updateResult = await Routes.updateOptimization(
+                routeId,
+                optimizedRouteResult.encodedPolyline,
+                optimizedRouteResult.totalDistance,
+                optimizedRouteResult.totalDuration,
+                optimizedRouteResult.optimizedOrder,
+                updatedBy
+            );
+
+            if (!updateResult) {
+                console.error(`WARNING: Failed to update polyline for route ${routeId} after adding tickets`);
+            } else {
+                console.log(`✓ Route ${routeId} polyline updated successfully after adding tickets`);
+            }
+
             return {
                 routeId: routeId,
-                message: `Added ${ticketsToAdd.length} tickets to route`,
+                message: `Added ${ticketsToAdd.length} tickets to route and updated polyline`,
                 addedTickets: ticketsToAdd.length,
                 totalTickets: existingTicketIds.length + ticketsToAdd.length,
-                skippedTickets: ticketIds.filter(id => existingTicketIds.includes(id))
+                skippedTickets: ticketIds.filter(id => existingTicketIds.includes(id)),
+                polylineUpdated: !!updateResult
             };
 
         } catch (error) {
