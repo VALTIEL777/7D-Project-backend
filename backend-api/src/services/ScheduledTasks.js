@@ -153,82 +153,7 @@ class ScheduledTasks {
   // Check tickets for permit expiration and update comment7d
   static async checkPermitExpiration() {
     try {
-      console.log('=== Starting permit expiration check ===');
-      
       const db = require('../config/db');
-      
-      // First, let's debug what tickets exist with these statuses
-      const debugQuery = `
-        SELECT DISTINCT
-          t.ticketId,
-          t.ticketCode,
-          t.comment7d,
-          p.PermitId,
-          p.permitNumber,
-          p.expireDate,
-          p.status as permitStatus
-        FROM Tickets t
-        LEFT JOIN PermitedTickets pt ON t.ticketId = pt.ticketId AND pt.deletedAt IS NULL
-        LEFT JOIN Permits p ON pt.permitId = p.PermitId AND p.deletedAt IS NULL
-        WHERE t.deletedAt IS NULL
-          AND (
-            t.comment7d ILIKE '%TK - LAYOUT%' OR
-            t.comment7d ILIKE '%TK - LAY OUT%' OR
-            t.comment7d ILIKE '%TK - ON PROGRESS%' OR
-            t.comment7d ILIKE '%TK- LAYOUT%' OR
-            t.comment7d ILIKE '%TK- LAY OUT%' OR
-            t.comment7d ILIKE '%TK- ON PROGRESS%'
-          )
-        ORDER BY t.ticketId
-        LIMIT 10;
-      `;
-      
-      const debugResult = await db.query(debugQuery);
-      console.log(`Found ${debugResult.rows.length} tickets with layout/progress status (showing first 10):`);
-      debugResult.rows.forEach(ticket => {
-        console.log(`  - ${ticket.ticketcode || 'NULL'}: "${ticket.comment7d}" (Permit: ${ticket.permitnumber || 'None'}, Expires: ${ticket.expiredate || 'N/A'})`);
-      });
-      
-      // Also check how many tickets have permits
-      const permitCountQuery = `
-        SELECT COUNT(*) as total_with_permits
-        FROM Tickets t
-        JOIN PermitedTickets pt ON t.ticketId = pt.ticketId AND pt.deletedAt IS NULL
-        JOIN Permits p ON pt.permitId = p.PermitId AND p.deletedAt IS NULL
-        WHERE t.deletedAt IS NULL
-          AND (
-            t.comment7d ILIKE '%TK - LAYOUT%' OR
-            t.comment7d ILIKE '%TK - LAY OUT%' OR
-            t.comment7d ILIKE '%TK - ON PROGRESS%' OR
-            t.comment7d ILIKE '%TK- LAYOUT%' OR
-            t.comment7d ILIKE '%TK- LAY OUT%' OR
-            t.comment7d ILIKE '%TK- ON PROGRESS%'
-          )
-          AND p.expireDate IS NOT NULL;
-      `;
-      
-      const permitCountResult = await db.query(permitCountQuery);
-      console.log(`Tickets with permits and expiration dates: ${permitCountResult.rows[0].total_with_permits}`);
-      
-      // Check if there are ANY tickets with permits at all
-      const anyPermitsQuery = `
-        SELECT COUNT(*) as total_permits
-        FROM Permits p
-        WHERE p.deletedAt IS NULL AND p.expireDate IS NOT NULL;
-      `;
-      
-      const anyPermitsResult = await db.query(anyPermitsQuery);
-      console.log(`Total permits in database: ${anyPermitsResult.rows[0].total_permits}`);
-      
-      // Check if there are ANY PermitedTickets relationships
-      const anyPermitTicketsQuery = `
-        SELECT COUNT(*) as total_permit_tickets
-        FROM PermitedTickets pt
-        WHERE pt.deletedAt IS NULL;
-      `;
-      
-      const anyPermitTicketsResult = await db.query(anyPermitTicketsQuery);
-      console.log(`Total ticket-permit relationships: ${anyPermitTicketsResult.rows[0].total_permit_tickets}`);
       
       // Find tickets with TK - LAYOUT, TK - LAY OUT, TK - ON PROGRESS in comment7d
       const ticketsQuery = `
@@ -269,11 +194,8 @@ class ScheduledTasks {
       const tickets = ticketsResult.rows;
       
       if (tickets.length === 0) {
-        console.log('✓ No tickets found with TK - LAYOUT, TK - LAY OUT, or TK - ON PROGRESS status that have permits');
         return;
       }
-      
-      console.log(`Found ${tickets.length} tickets with layout/progress status to check`);
       
       const results = {
         totalTickets: tickets.length,
@@ -288,9 +210,6 @@ class ScheduledTasks {
         try {
           // Use SQL-calculated days_until_expire to avoid JS date parsing issues
           const daysUntilExpiration = Number(ticket.days_until_expire);
-          
-          console.log(`Checking ticket ${ticket.ticketcode} (Permit: ${ticket.permitnumber}, Expires: ${ticket.expiredate})`);
-          console.log(`  Days until expiration: ${daysUntilExpiration}`);
           
           // If permit expires in 4 days or less, update comment7d
           if (daysUntilExpiration <= 4) {
@@ -340,35 +259,27 @@ class ScheduledTasks {
                 if (updateResult.rows.length > 0) {
                   results.updatedTickets++;
                   results.updatedTicketCodes.push(ticket.ticketcode);
-                  console.log(`✓ Updated ticket ${ticket.ticketcode} - Permit expires in ${daysUntilExpiration} days`);
-                  console.log(`  New comment7d: "${updateResult.rows[0].comment7d}"`);
                 } else {
                   results.skippedTickets++;
-                  console.log(`⚠️  Could not update ticket ${ticket.ticketcode} - may have been deleted`);
                 }
               } else {
                 results.skippedTickets++;
-                console.log(`✓ Ticket ${ticket.ticketcode} - Already marked as NEEDS PERMIT EXTENSION`);
               }
             } else {
               results.skippedTickets++;
-              console.log(`⚠️  Could not find ticket ${ticket.ticketcode} - may have been deleted`);
             }
           } else {
             results.skippedTickets++;
-            console.log(`✓ Ticket ${ticket.ticketcode} - Permit expires in ${daysUntilExpiration} days (no action needed)`);
           }
           
         } catch (error) {
           results.errors.push(`Failed to process ticket ${ticket.ticketcode}: ${error.message}`);
-          console.error(`✗ Error processing ticket ${ticket.ticketcode}:`, error.message);
+          console.error(`Error processing ticket ${ticket.ticketcode}:`, error.message);
         }
       }
       
       // ROLLBACK LOGIC: Check tickets currently marked as "NEEDS PERMIT EXTENSION" 
       // and revert them back to "TK - LAYOUT" if their permits have been extended
-      console.log('\n=== Checking for tickets to rollback (permit extensions) ===');
-      
       const rollbackQuery = `
         SELECT DISTINCT
           t.ticketId,
@@ -399,11 +310,7 @@ class ScheduledTasks {
       const rollbackResult = await db.query(rollbackQuery);
       const rollbackTickets = rollbackResult.rows;
       
-      if (rollbackTickets.length === 0) {
-        console.log('✓ No tickets found with "TK - NEEDS PERMIT EXTENSION" status to check for rollback');
-      } else {
-        console.log(`Found ${rollbackTickets.length} tickets with "NEEDS PERMIT EXTENSION" status to check for rollback`);
-        
+      if (rollbackTickets.length > 0) {
         const rollbackResults = {
           totalChecked: rollbackTickets.length,
           rolledBack: 0,
@@ -417,9 +324,6 @@ class ScheduledTasks {
           try {
             // Use SQL-calculated days_until_expire to avoid JS date parsing issues
             const daysUntilExpiration = Number(ticket.days_until_expire);
-            
-            console.log(`Checking rollback for ticket ${ticket.ticketcode} (Permit: ${ticket.permitnumber}, Expires: ${ticket.expiredate})`);
-            console.log(`  Days until expiration: ${daysUntilExpiration}`);
             
             // If permit now expires in more than 4 days, rollback to TK - LAYOUT
             if (daysUntilExpiration > 4) {
@@ -437,57 +341,23 @@ class ScheduledTasks {
               if (rollbackUpdateResult.rows.length > 0) {
                 rollbackResults.rolledBack++;
                 rollbackResults.rolledBackTicketCodes.push(ticket.ticketcode);
-                console.log(`✓ Rolled back ticket ${ticket.ticketcode} to TK - LAYOUT - Permit now expires in ${daysUntilExpiration} days`);
-                console.log(`  New comment7d: "${rollbackUpdateResult.rows[0].comment7d}"`);
               } else {
                 rollbackResults.keptAsIs++;
-                console.log(`⚠️  Could not rollback ticket ${ticket.ticketcode} - may have been deleted`);
               }
             } else {
               rollbackResults.keptAsIs++;
-              console.log(`✓ Ticket ${ticket.ticketcode} - Permit still expires in ${daysUntilExpiration} days (keeping as NEEDS PERMIT EXTENSION)`);
             }
             
           } catch (error) {
             rollbackResults.errors.push(`Failed to process rollback for ticket ${ticket.ticketcode}: ${error.message}`);
-            console.error(`✗ Error processing rollback for ticket ${ticket.ticketcode}:`, error.message);
+            console.error(`Error processing rollback for ticket ${ticket.ticketcode}:`, error.message);
           }
-        }
-        
-        // Log rollback summary
-        console.log('\n=== Rollback check completed ===');
-        console.log(`✓ Total tickets checked for rollback: ${rollbackResults.totalChecked}`);
-        console.log(`✓ Tickets rolled back to TK - LAYOUT: ${rollbackResults.rolledBack}`);
-        console.log(`✓ Tickets kept as NEEDS PERMIT EXTENSION: ${rollbackResults.keptAsIs}`);
-        
-        if (rollbackResults.rolledBackTicketCodes.length > 0) {
-          console.log(`📋 Rolled back ticket codes: ${rollbackResults.rolledBackTicketCodes.join(', ')}`);
-        }
-        
-        if (rollbackResults.errors.length > 0) {
-          console.log(`⚠️  Rollback errors encountered:`);
-          rollbackResults.errors.forEach(error => console.log(`  - ${error}`));
         }
         
         // Update main results with rollback data
         results.updatedTickets += rollbackResults.rolledBack;
         results.updatedTicketCodes.push(...rollbackResults.rolledBackTicketCodes);
         results.errors.push(...rollbackResults.errors);
-      }
-      
-      // Log final summary
-      console.log('\n=== Permit expiration check completed ===');
-      console.log(`✓ Total tickets checked for expiration: ${results.totalTickets}`);
-      console.log(`✓ Total tickets updated: ${results.updatedTickets}`);
-      console.log(`✓ Tickets skipped: ${results.skippedTickets}`);
-      
-      if (results.updatedTicketCodes.length > 0) {
-        console.log(`📋 All updated ticket codes: ${results.updatedTicketCodes.join(', ')}`);
-      }
-      
-      if (results.errors.length > 0) {
-        console.log(`⚠️  Errors encountered:`);
-        results.errors.forEach(error => console.log(`  - ${error}`));
       }
       
     } catch (error) {
