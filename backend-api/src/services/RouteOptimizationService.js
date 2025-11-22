@@ -140,29 +140,50 @@ class RouteOptimizationService {
      * @returns {Promise<{latitude:number, longitude:number, placeid:string}|null>}
      */
     async getCoordinatesFromDatabase(fullAddress) {
-        const parsed = this.parseAddressComponents(fullAddress);
-        if (!parsed) return null;
+        try {
+            // Use the same parser as getExistingAddress to ensure consistency
+            const parsed = this.parseAddressForLookup(fullAddress);
+            if (!parsed) return null;
 
-        const query = `
-            SELECT latitude, longitude, placeid
-            FROM Addresses
-            WHERE addressNumber = $1
-              AND COALESCE(addressCardinal,'') = $2
-              AND addressStreet = $3
-              AND COALESCE(addressSuffix,'') = $4
-              AND deletedAt IS NULL
-            LIMIT 1
-        `;
+            const query = `
+                SELECT latitude, longitude, placeid
+                FROM Addresses
+                WHERE addressNumber = $1
+                    AND addressCardinal = $2
+                    AND addressStreet = $3
+                    AND addressSuffix = $4
+                    AND placeid IS NOT NULL
+                    AND latitude IS NOT NULL
+                    AND longitude IS NOT NULL
+                    AND deletedAt IS NULL
+                LIMIT 1
+            `;
 
-        const params = [
-            parsed.addressNumber,
-            parsed.addressCardinal,
-            parsed.addressStreet,
-            parsed.addressSuffix
-        ];
+            const params = [
+                parsed.addressNumber,
+                parsed.addressCardinal,
+                parsed.addressStreet,
+                parsed.addressSuffix
+            ];
 
-        const res = await db.query(query, params);
-        return res.rows[0] || null;
+            const res = await db.query(query, params);
+            
+            // Return null if no results or if coordinates are missing
+            if (res.rows.length === 0) {
+                return null;
+            }
+            
+            const row = res.rows[0];
+            // Double-check that coordinates exist (should be caught by SQL, but extra safety)
+            if (!row.latitude || !row.longitude) {
+                return null;
+            }
+            
+            return row;
+        } catch (error) {
+            console.warn('Database coordinate lookup failed:', error);
+            return null;
+        }
     }
 
     /**
@@ -1841,9 +1862,34 @@ class RouteOptimizationService {
      */
     async saveAddressToDatabase(address, geocodeData) {
         try {
+            // Validate geocodeData
+            if (!geocodeData) {
+                console.error('saveAddressToDatabase: geocodeData is null or undefined', { address });
+                return;
+            }
+            
+            if (geocodeData.latitude == null || geocodeData.longitude == null) {
+                console.error('saveAddressToDatabase: Missing coordinates in geocodeData', { 
+                    address, 
+                    geocodeData 
+                });
+                return;
+            }
+
+            // Parse the address
             const parsedAddress = this.parseAddressForLookup(address);
             
-            await db.query(`
+            // Validate parsed address has required components
+            if (!parsedAddress || !parsedAddress.addressNumber || !parsedAddress.addressStreet) {
+                console.error('saveAddressToDatabase: Failed to parse address or missing required components', { 
+                    address, 
+                    parsedAddress 
+                });
+                return;
+            }
+            
+            // Execute the database insert/update
+            const result = await db.query(`
                 INSERT INTO Addresses (
                     addressNumber, addressCardinal, addressStreet, addressSuffix,
                     latitude, longitude, placeid, createdBy, updatedBy
@@ -1856,19 +1902,36 @@ class RouteOptimizationService {
                     placeid = EXCLUDED.placeid,
                     updatedAt = CURRENT_TIMESTAMP,
                     updatedBy = EXCLUDED.updatedBy
+                RETURNING addressId, latitude, longitude, placeid
             `, [
                 parsedAddress.addressNumber,
-                parsedAddress.addressCardinal,
+                parsedAddress.addressCardinal || null,
                 parsedAddress.addressStreet,
-                parsedAddress.addressSuffix,
+                parsedAddress.addressSuffix || null,
                 geocodeData.latitude,
                 geocodeData.longitude,
-                geocodeData.placeId,
+                geocodeData.placeId || null,
                 1, // createdBy
                 1  // updatedBy
             ]);
+            
+            if (result.rows && result.rows.length > 0) {
+                console.log(`✓ Saved address to database: ${address} -> (${geocodeData.latitude}, ${geocodeData.longitude})`);
+            } else {
+                console.warn('saveAddressToDatabase: No rows returned from insert/update', { address });
+            }
         } catch (error) {
-            console.warn('Failed to save address to database:', error);
+            console.error('saveAddressToDatabase: Failed to save address to database', {
+                address,
+                error: error.message,
+                stack: error.stack,
+                geocodeData: geocodeData ? {
+                    latitude: geocodeData.latitude,
+                    longitude: geocodeData.longitude,
+                    placeId: geocodeData.placeId ? 'present' : 'missing'
+                } : 'missing'
+            });
+            // Don't throw - allow the process to continue, but log the error
         }
     }
 
