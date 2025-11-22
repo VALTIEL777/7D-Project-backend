@@ -60,6 +60,40 @@ const RouteDiagnosticsController = {
           JOIN TicketStatus ts ON ts.ticketId = b.ticketId AND ts.deletedAt IS NULL
           JOIN TaskStatus s ON s.taskStatusId = ts.taskStatusId AND s.deletedAt IS NULL
           GROUP BY b.ticketId
+        ),
+        crack_seal_completed AS (
+          SELECT DISTINCT tks11.ticketId
+          FROM TicketStatus tks11
+          JOIN TaskStatus ts11 ON tks11.taskStatusId = ts11.taskStatusId
+          WHERE ts11.name = 'Crack Seal'
+            AND tks11.endingdate IS NOT NULL
+            AND tks11.deletedAt IS NULL
+            AND ts11.deletedAt IS NULL
+        ),
+        incomplete_pour_by_incident AS (
+          SELECT DISTINCT i2.name AS incident_name, ARRAY_AGG(DISTINCT t2.ticketcode ORDER BY t2.ticketcode) AS offending_tickets
+          FROM Tickets t2
+          JOIN TicketStatus tks2 ON t2.ticketId = tks2.ticketId AND tks2.deletedAt IS NULL
+          JOIN TaskStatus ts2 ON ts2.taskStatusId = tks2.taskStatusId AND ts2.deletedAt IS NULL
+          JOIN IncidentsMx i2 ON i2.incidentId = t2.incidentId AND i2.deletedAt IS NULL
+          WHERE t2.deletedAt IS NULL
+            AND ts2.name = 'Pour'
+            AND tks2.endingdate IS NULL
+          GROUP BY i2.name
+        ),
+        active_routes AS (
+          SELECT DISTINCT rt.ticketId
+          FROM RouteTickets rt
+          JOIN Routes r ON r.routeId = rt.routeId
+          WHERE r.deletedAt IS NULL AND rt.deletedAt IS NULL
+        ),
+        expiring_permits AS (
+          SELECT DISTINCT pt.ticketId
+          FROM PermitedTickets pt
+          JOIN Permits p ON p.PermitId = pt.permitId
+          WHERE pt.deletedAt IS NULL AND p.deletedAt IS NULL
+            AND p.expireDate IS NOT NULL AND p.expireDate > CURRENT_DATE
+            AND (p.expireDate::date - CURRENT_DATE::date) < 4
         )
         SELECT 
           b.ticketId,
@@ -75,16 +109,7 @@ const RouteDiagnosticsController = {
           p.has_asphalt_phase,
           (p.asphalt_any_incomplete = 1) AS asphalt_incomplete,
           -- asphalt all completed if Crack Seal completed
-          EXISTS (
-            SELECT 1
-            FROM TicketStatus tks11
-            JOIN TaskStatus ts11 ON tks11.taskStatusId = ts11.taskStatusId
-            WHERE tks11.ticketId = b.ticketId
-              AND ts11.name = 'Crack Seal'
-              AND tks11.endingdate IS NOT NULL
-              AND tks11.deletedAt IS NULL
-              AND ts11.deletedAt IS NULL
-          ) AS asphalt_all_completed,
+          (csc.ticketId IS NOT NULL) AS asphalt_all_completed,
           -- comments inclusion/exclusion
           (
             b.comment7d ILIKE '%TK - ON PROGRESS%'
@@ -125,55 +150,21 @@ const RouteDiagnosticsController = {
             OR COALESCE(b.comment7d,'') ILIKE '%TK - EXPIRED%'
             OR COALESCE(b.comment7d,'') ILIKE '%TK - NEEDS PERMIT EXTENSION%'
           ) AS comment_excluded,
-          -- asphalt conflict: any POUR incomplete on same incident NAME
-          EXISTS (
-            SELECT 1
-            FROM Tickets t2
-            JOIN TicketStatus tks2 ON t2.ticketId = tks2.ticketId
-            JOIN TaskStatus ts2 ON ts2.taskStatusId = tks2.taskStatusId
-            JOIN IncidentsMx i2 ON i2.incidentId = t2.incidentId AND i2.deletedAt IS NULL
-            JOIN incident_name inx ON inx.incident_name = i2.name
-            WHERE t2.deletedAt IS NULL
-              AND ts2.name = 'Pour'
-              AND tks2.endingdate IS NULL
-              AND tks2.deletedAt IS NULL
-              AND ts2.deletedAt IS NULL
-          ) AS concrete_pour_incomplete_same_incident_name,
-          ARRAY(
-            SELECT DISTINCT t2.ticketcode
-            FROM Tickets t2
-            JOIN TicketStatus tks2 ON t2.ticketId = tks2.ticketId
-            JOIN TaskStatus ts2 ON ts2.taskStatusId = tks2.taskStatusId
-            JOIN IncidentsMx i2 ON i2.incidentId = t2.incidentId AND i2.deletedAt IS NULL
-            JOIN incident_name inx2 ON inx2.incident_name = i2.name
-            WHERE t2.deletedAt IS NULL
-              AND ts2.name = 'Pour'
-              AND tks2.endingdate IS NULL
-              AND tks2.deletedAt IS NULL
-              AND ts2.deletedAt IS NULL
-            ORDER BY t2.ticketcode
-          ) AS offending_tickets,
-          -- already assigned on any active route
-          EXISTS (
-            SELECT 1 FROM RouteTickets rt
-            JOIN Routes r ON r.routeId = rt.routeId
-            WHERE rt.ticketId = b.ticketId
-              AND r.deletedAt IS NULL
-              AND rt.deletedAt IS NULL
-          ) AS in_active_route,
-          -- permit soon expiring
-          EXISTS (
-            SELECT 1 FROM PermitedTickets pt
-            JOIN Permits p ON p.PermitId = pt.permitId
-            WHERE pt.ticketId = b.ticketId
-              AND pt.deletedAt IS NULL AND p.deletedAt IS NULL
-              AND p.expireDate IS NOT NULL AND p.expireDate > CURRENT_DATE
-              AND (p.expireDate::date - CURRENT_DATE::date) < 4
-          ) AS permit_expiring_soon
+          -- asphalt conflict: any POUR incomplete on same incident NAME (pre-computed)
+          (ipbi.offending_tickets IS NOT NULL) AS concrete_pour_incomplete_same_incident_name,
+          COALESCE(ipbi.offending_tickets, ARRAY[]::text[]) AS offending_tickets,
+          -- already assigned on any active route (pre-computed)
+          (ar.ticketId IS NOT NULL) AS in_active_route,
+          -- permit soon expiring (pre-computed)
+          (ep.ticketId IS NOT NULL) AS permit_expiring_soon
         FROM base b
         LEFT JOIN phases p ON p.ticketId = b.ticketId
         LEFT JOIN incident_name inx ON inx.ticketId = b.ticketId
         LEFT JOIN perm ON perm.ticketId = b.ticketId
+        LEFT JOIN crack_seal_completed csc ON csc.ticketId = b.ticketId
+        LEFT JOIN incomplete_pour_by_incident ipbi ON ipbi.incident_name = inx.incident_name
+        LEFT JOIN active_routes ar ON ar.ticketId = b.ticketId
+        LEFT JOIN expiring_permits ep ON ep.ticketId = b.ticketId
         ORDER BY b.ticketId ASC
       `);
 
