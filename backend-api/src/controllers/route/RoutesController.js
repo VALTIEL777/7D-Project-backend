@@ -604,29 +604,22 @@ const RoutesController = {
   // Get tickets ready for spotting routes
   async getTicketsReadyForSpotting(req, res) {
     try {
-      console.log('=== DEBUG: Starting getTicketsReadyForSpotting ===');
-      
       const tickets = await RouteOptimizationService.getSpottingTickets();
-      console.log(`=== DEBUG: Found ${tickets.length} tickets eligible for spotting routes ===`);
       
       // Get addresses for each ticket
       const ticketsWithAddresses = [];
       const ticketsWithoutAddresses = [];
       
       for (const ticket of tickets) {
-        console.log(`=== DEBUG: Processing ticket ${ticket.ticketid} (${ticket.ticketcode}) ===`);
-        
         try {
           const address = await RouteOptimizationService.getTicketAddress(ticket);
           
           if (address && address !== 'Address not found') {
-            console.log(`  + Ticket ${ticket.ticketid} (${ticket.ticketcode}): Address found - "${address}"`);
             ticketsWithAddresses.push({
               ...ticket,
               address: address
             });
           } else {
-            console.log(`  - Ticket ${ticket.ticketid} (${ticket.ticketcode}): NO ADDRESS FOUND - Using fallback`);
             ticketsWithoutAddresses.push({
               ticketId: ticket.ticketid,
               ticketCode: ticket.ticketcode,
@@ -639,7 +632,7 @@ const RoutesController = {
             });
           }
         } catch (addressError) {
-          console.error(`  - Ticket ${ticket.ticketid} (${ticket.ticketcode}): ERROR getting address - ${addressError.message}`);
+          console.error(`Error getting address for ticket ${ticket.ticketid} (${ticket.ticketcode}): ${addressError.message}`);
           ticketsWithoutAddresses.push({
             ticketId: ticket.ticketid,
             ticketCode: ticket.ticketcode,
@@ -653,18 +646,8 @@ const RoutesController = {
         }
       }
       
-      console.log(`=== DEBUG: Address retrieval summary ===`);
-      console.log(`  - Tickets with addresses: ${ticketsWithAddresses.length - ticketsWithoutAddresses.length}`);
-      console.log(`  - Tickets without addresses: ${ticketsWithoutAddresses.length}`);
-      
-      if (ticketsWithoutAddresses.length > 0) {
-        console.log(`=== DEBUG: Tickets without addresses ===`);
-        ticketsWithoutAddresses.forEach(ticket => {
-          console.log(`  - Ticket ${ticket.ticketId} (${ticket.ticketCode}): ${ticket.reason}`);
-        });
-      }
-      
-      console.log('=== DEBUG: Finished getTicketsReadyForSpotting ===');
+      // Calculate tickets with valid addresses (excluding "Address not found")
+      const ticketsWithValidAddresses = ticketsWithAddresses.filter(t => t.address && t.address !== 'Address not found');
       
       res.status(200).json({
         message: 'Tickets ready for spotting routes retrieved successfully',
