@@ -924,8 +924,6 @@ class RouteOptimizationService {
      */
     async getTicketAddress(ticket) {
         try {
-            console.log(`=== DEBUG: Getting address for ticket ${ticket.ticketid} (${ticket.ticketcode}) ===`);
-            
             // Use the same comprehensive query as TicketsController.js
             const addressQuery = await db.query(`
                 SELECT DISTINCT 
@@ -958,17 +956,13 @@ class RouteOptimizationService {
                 LIMIT 1
             `, [ticket.ticketid]);
 
-            console.log(`  - Found ${addressQuery.rows.length} address records for ticket ${ticket.ticketid}`);
-
             if (addressQuery.rows.length > 0) {
                 const addr = addressQuery.rows[0];
-                console.log(`  - Address details: ID=${addr.addressid}, Number=${addr.addressnumber}, Cardinal=${addr.addresscardinal}, Street=${addr.addressstreet}, Suffix=${addr.addressesuffix}`);
                 
                 // Use the fullAddress if available, otherwise construct it
                 let addressString;
                 if (addr.fulladdress) {
                     addressString = addr.fulladdress.trim();
-                    console.log(`  - Using fullAddress from database: "${addressString}"`);
                 } else {
                     // Fallback: construct address from individual components
                     const parts = [
@@ -979,24 +973,19 @@ class RouteOptimizationService {
                     ].filter(Boolean); // Filter out null/undefined/empty strings
 
                     addressString = parts.join(', ').replace(/,(\s*,){1,}/g, ',').replace(/,$/, '').trim();
-                    console.log(`  - Constructed address from parts: "${addressString}"`);
                 }
 
                 // Append "Chicago, Illinois" to all addresses for better geocoding accuracy
                 const fullAddress = `${addressString}, Chicago, Illinois`;
-                console.log(`  - Final address: "${fullAddress}"`);
                 
                 // If we have latitude and longitude, we can use them for more accurate geocoding
                 if (addr.latitude && addr.longitude) {
                     const geoAddress = `${fullAddress} (${addr.latitude}, ${addr.longitude})`;
-                    console.log(`  - Address with coordinates: "${geoAddress}"`);
                     return geoAddress;
                 }
 
                 return fullAddress;
             }
-            
-            console.log(`  - No address found in database for ticket ${ticket.ticketid}, using sample address`);
             
             // If no address found in database, generate a sample address for demonstration
             // This uses the ticket ID to create a deterministic but varied address
@@ -1023,9 +1012,7 @@ class RouteOptimizationService {
             return fullAddress;
             
         } catch (error) {
-            console.error(`=== DEBUG: Error getting address for ticket ${ticket.ticketid} (${ticket.ticketcode}) ===`);
-            console.error(`  - Error details: ${error.message}`);
-            console.error(`  - Error stack: ${error.stack}`);
+            console.error(`Error getting address for ticket ${ticket.ticketid} (${ticket.ticketcode}): ${error.message}`);
             return null; // Return null on error so optimization can potentially continue with other tickets
         }
     }
@@ -1058,32 +1045,6 @@ class RouteOptimizationService {
      */
     async getSpottingTickets() {
         try {
-            console.log('=== DEBUG: Starting getSpottingTickets ===');
-            
-            // First, get ALL tickets to see what we're working with
-            const allTicketsQuery = await db.query(`
-                SELECT DISTINCT 
-                    t.ticketId,
-                    t.ticketCode,
-                    t.contractNumber,
-                    t.amountToPay,
-                    t.ticketType,
-                    t.daysOutstanding,
-                    t.comment7d,
-                    t.quantity,
-                    t.createdAt,
-                    t.updatedAt,
-                    cu.name as contractUnitName,
-                    i.name as incidentName
-                FROM Tickets t
-                LEFT JOIN ContractUnits cu ON t.contractUnitId = cu.contractUnitId AND cu.deletedAt IS NULL
-                LEFT JOIN IncidentsMx i ON t.incidentId = i.incidentId AND i.deletedAt IS NULL
-                WHERE t.deletedAt IS NULL
-                ORDER BY t.ticketId ASC
-            `);
-            
-            console.log(`=== DEBUG: Total tickets in system: ${allTicketsQuery.rows.length} ===`);
-            
             // Check tickets excluded by comment7d criteria
             const excludedByCommentQuery = await db.query(`
                 SELECT DISTINCT 
@@ -1120,11 +1081,6 @@ class RouteOptimizationService {
                 ORDER BY t.ticketId ASC
             `);
             
-            console.log(`=== DEBUG: Tickets excluded by comment7d criteria: ${excludedByCommentQuery.rows.length} ===`);
-            excludedByCommentQuery.rows.forEach(ticket => {
-                console.log(`  - Ticket ${ticket.ticketid} (${ticket.ticketcode}): comment7d = "${ticket.comment7d}"`);
-            });
-            
             // Check tickets excluded by missing SPOTTING status
             const excludedByNoSpottingQuery = await db.query(`
                 SELECT DISTINCT 
@@ -1150,11 +1106,6 @@ class RouteOptimizationService {
                     )
                 ORDER BY t.ticketId ASC
             `);
-            
-            console.log(`=== DEBUG: Tickets excluded by missing SPOTTING status: ${excludedByNoSpottingQuery.rows.length} ===`);
-            excludedByNoSpottingQuery.rows.forEach(ticket => {
-                console.log(`  - Ticket ${ticket.ticketid} (${ticket.ticketcode}): comment7d = "${ticket.comment7d}" - No SPOTTING status found`);
-            });
             
             // Check tickets excluded by completed SPOTTING status
             const excludedByCompletedSpottingQuery = await db.query(`
@@ -1195,11 +1146,6 @@ class RouteOptimizationService {
                 ORDER BY t.ticketId ASC
             `);
             
-            console.log(`=== DEBUG: Tickets excluded by completed SPOTTING status: ${excludedByCompletedSpottingQuery.rows.length} ===`);
-            excludedByCompletedSpottingQuery.rows.forEach(ticket => {
-                console.log(`  - Ticket ${ticket.ticketid} (${ticket.ticketcode}): comment7d = "${ticket.comment7d}" - SPOTTING completed on ${ticket.spottingenddate}`);
-            });
-            
             // Check tickets excluded by already being in active routes
             const excludedByActiveRouteQuery = await db.query(`
                 SELECT DISTINCT 
@@ -1224,11 +1170,6 @@ class RouteOptimizationService {
                     AND rt.deletedAt IS NULL
                 ORDER BY t.ticketId ASC
             `);
-            
-            console.log(`=== DEBUG: Tickets excluded by already being in active SPOTTER routes: ${excludedByActiveRouteQuery.rows.length} ===`);
-            excludedByActiveRouteQuery.rows.forEach(ticket => {
-                console.log(`  - Ticket ${ticket.ticketid} (${ticket.ticketcode}): comment7d = "${ticket.comment7d}" - Already in route ${ticket.routeid} (${ticket.routecode})`);
-            });
             
             // Check tickets excluded by permit expiration (less than 4 days remaining)
             const excludedByPermitExpirationQuery = await db.query(`
@@ -1285,11 +1226,6 @@ class RouteOptimizationService {
                     AND (p.expireDate::date - CURRENT_DATE::date) < 4
                 ORDER BY t.ticketId ASC
             `);
-            
-            console.log(`=== DEBUG: Tickets excluded by permit expiration (< 4 days): ${excludedByPermitExpirationQuery.rows.length} ===`);
-            excludedByPermitExpirationQuery.rows.forEach(ticket => {
-                console.log(`  - Ticket ${ticket.ticketid} (${ticket.ticketcode}): comment7d = "${ticket.comment7d}" - Permit expires in ${ticket.days_until_expiry} days on ${ticket.expiredate}`);
-            });
             
             // Now get the final result with permit expiration filter
             const result = await db.query(`
@@ -1374,13 +1310,6 @@ class RouteOptimizationService {
                     )
                 ORDER BY t.ticketId ASC
             `);
-            
-            console.log(`=== DEBUG: Final tickets eligible for spotting routes: ${result.rows.length} ===`);
-            result.rows.forEach(ticket => {
-                console.log(`  + Ticket ${ticket.ticketid} (${ticket.ticketcode}): comment7d = "${ticket.comment7d}" - ELIGIBLE`);
-            });
-            
-            console.log('=== DEBUG: Finished getSpottingTickets ===');
             
             return result.rows;
         } catch (error) {
