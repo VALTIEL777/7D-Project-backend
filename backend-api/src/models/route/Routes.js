@@ -264,16 +264,65 @@ class Routes {
           
           try {
             if (row.optimizedorder) {
-              try {
-                optimizedOrder = JSON.parse(row.optimizedorder);
-              } catch (e) {
-                // Fallback: try to parse as comma-separated numbers (legacy format)
-                if (typeof row.optimizedorder === 'string' && row.optimizedorder.match(/^\s*\d+(,\s*\d+)*\s*$/)) {
-                  optimizedOrder = row.optimizedorder.split(',').map(s => parseInt(s.trim(), 10));
+              // PostgreSQL JSONB fields can be returned as objects/arrays already parsed, or as strings
+              if (Array.isArray(row.optimizedorder)) {
+                // Already an array, use it directly
+                optimizedOrder = row.optimizedorder;
+              } else if (typeof row.optimizedorder === 'object' && row.optimizedorder !== null) {
+                // It's an object (could be a PostgreSQL array type or JSONB object)
+                // PostgreSQL arrays stringify to comma-separated values like "10,18,6,13"
+                const stringValue = String(row.optimizedorder);
+                
+                // Check if it looks like a comma-separated number list
+                if (stringValue.match(/^\s*[\d,\s]+\s*$/)) {
+                  // Looks like a PostgreSQL array stringified, parse it
+                  const cleaned = stringValue.trim().replace(/^[{}]+|[{}]+$/g, '').replace(/^,+|,+$/g, '');
+                  if (cleaned.match(/^\s*\d+(\s*,\s*\d+)*\s*$/)) {
+                    optimizedOrder = cleaned.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n));
+                    console.log(`  Parsed PostgreSQL array object as comma-separated numbers: [${optimizedOrder.join(', ')}]`);
+                  } else {
+                    optimizedOrder = null;
+                  }
                 } else {
-                  console.warn(`Failed to parse optimizedOrder for route ${routeId}:`, e.message);
-                  optimizedOrder = null;
+                  // Try to convert object to array
+                  try {
+                    if (Array.isArray(row.optimizedorder)) {
+                      optimizedOrder = row.optimizedorder;
+                    } else if (row.optimizedorder.length !== undefined) {
+                      optimizedOrder = Array.from(row.optimizedorder);
+                    } else {
+                      optimizedOrder = Object.values(row.optimizedorder);
+                    }
+                  } catch (e) {
+                    console.warn(`Failed to convert optimizedOrder object for route ${routeId}:`, e.message);
+                    optimizedOrder = null;
+                  }
                 }
+              } else if (typeof row.optimizedorder === 'string') {
+                // It's a string, try to parse it
+                try {
+                  optimizedOrder = JSON.parse(row.optimizedorder);
+                } catch (e) {
+                  // Log the actual value for debugging
+                  console.warn(`Failed to parse optimizedOrder for route ${routeId}:`, e.message);
+                  console.warn(`  Raw value: "${row.optimizedorder}" (type: ${typeof row.optimizedorder}, length: ${row.optimizedorder.length})`);
+                  
+                  // Fallback: try to parse as comma-separated numbers (legacy format)
+                  // Clean up: remove leading/trailing commas and whitespace
+                  const cleaned = row.optimizedorder.trim().replace(/^,+|,+$/g, '');
+                  
+                  // Try to parse as comma-separated numbers
+                  if (cleaned.match(/^\s*\d+(\s*,\s*\d+)*\s*$/)) {
+                    optimizedOrder = cleaned.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n));
+                    console.log(`  Successfully parsed as comma-separated numbers: [${optimizedOrder.join(', ')}]`);
+                  } else {
+                    console.warn(`  Could not parse as comma-separated numbers either`);
+                    optimizedOrder = null;
+                  }
+                }
+              } else {
+                console.warn(`Unexpected optimizedOrder type for route ${routeId}: ${typeof row.optimizedorder}`);
+                optimizedOrder = null;
               }
             } else {
               optimizedOrder = null;
@@ -448,16 +497,65 @@ class Routes {
           
           try {
             if (row.optimizedorder) {
-              try {
-                optimizedOrder = JSON.parse(row.optimizedorder);
-              } catch (e) {
-                // Fallback: try to parse as comma-separated numbers (legacy format)
-                if (typeof row.optimizedorder === 'string' && row.optimizedorder.match(/^\s*\d+(,\s*\d+)*\s*$/)) {
-                  optimizedOrder = row.optimizedorder.split(',').map(s => parseInt(s.trim(), 10));
+              // PostgreSQL JSONB fields can be returned as objects/arrays already parsed, or as strings
+              if (Array.isArray(row.optimizedorder)) {
+                // Already an array, use it directly
+                optimizedOrder = row.optimizedorder;
+              } else if (typeof row.optimizedorder === 'object' && row.optimizedorder !== null) {
+                // It's an object (could be a PostgreSQL array type or JSONB object)
+                // PostgreSQL arrays stringify to comma-separated values like "10,18,6,13"
+                const stringValue = String(row.optimizedorder);
+                
+                // Check if it looks like a comma-separated number list
+                if (stringValue.match(/^\s*[\d,\s]+\s*$/)) {
+                  // Looks like a PostgreSQL array stringified, parse it
+                  const cleaned = stringValue.trim().replace(/^[{}]+|[{}]+$/g, '').replace(/^,+|,+$/g, '');
+                  if (cleaned.match(/^\s*\d+(\s*,\s*\d+)*\s*$/)) {
+                    optimizedOrder = cleaned.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n));
+                    console.log(`  Parsed PostgreSQL array object as comma-separated numbers: [${optimizedOrder.join(', ')}]`);
+                  } else {
+                    optimizedOrder = null;
+                  }
                 } else {
-                  console.warn(`Failed to parse optimizedOrder for route ${routeId}:`, e.message);
-                  optimizedOrder = null;
+                  // Try to convert object to array
+                  try {
+                    if (Array.isArray(row.optimizedorder)) {
+                      optimizedOrder = row.optimizedorder;
+                    } else if (row.optimizedorder.length !== undefined) {
+                      optimizedOrder = Array.from(row.optimizedorder);
+                    } else {
+                      optimizedOrder = Object.values(row.optimizedorder);
+                    }
+                  } catch (e) {
+                    console.warn(`Failed to convert optimizedOrder object for route ${routeId}:`, e.message);
+                    optimizedOrder = null;
+                  }
                 }
+              } else if (typeof row.optimizedorder === 'string') {
+                // It's a string, try to parse it
+                try {
+                  optimizedOrder = JSON.parse(row.optimizedorder);
+                } catch (e) {
+                  // Log the actual value for debugging
+                  console.warn(`Failed to parse optimizedOrder for route ${routeId}:`, e.message);
+                  console.warn(`  Raw value: "${row.optimizedorder}" (type: ${typeof row.optimizedorder}, length: ${row.optimizedorder.length})`);
+                  
+                  // Fallback: try to parse as comma-separated numbers (legacy format)
+                  // Clean up: remove leading/trailing commas and whitespace
+                  const cleaned = row.optimizedorder.trim().replace(/^,+|,+$/g, '');
+                  
+                  // Try to parse as comma-separated numbers
+                  if (cleaned.match(/^\s*\d+(\s*,\s*\d+)*\s*$/)) {
+                    optimizedOrder = cleaned.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n));
+                    console.log(`  Successfully parsed as comma-separated numbers: [${optimizedOrder.join(', ')}]`);
+                  } else {
+                    console.warn(`  Could not parse as comma-separated numbers either`);
+                    optimizedOrder = null;
+                  }
+                }
+              } else {
+                console.warn(`Unexpected optimizedOrder type for route ${routeId}: ${typeof row.optimizedorder}`);
+                optimizedOrder = null;
               }
             } else {
               optimizedOrder = null;
@@ -564,9 +662,37 @@ class Routes {
           let optimizationMetadata = null;
           
           try {
-            optimizedOrder = row.optimizedorder ? JSON.parse(row.optimizedorder) : null;
+            if (row.optimizedorder) {
+              try {
+                optimizedOrder = JSON.parse(row.optimizedorder);
+              } catch (e) {
+                // Log the actual value for debugging
+                console.warn(`Failed to parse optimizedOrder for route ${routeId}:`, e.message);
+                console.warn(`  Raw value: "${row.optimizedorder}" (type: ${typeof row.optimizedorder}, length: ${row.optimizedorder.length})`);
+                
+                // Fallback: try to parse as comma-separated numbers (legacy format)
+                if (typeof row.optimizedorder === 'string') {
+                  // Clean up: remove leading/trailing commas and whitespace
+                  const cleaned = row.optimizedorder.trim().replace(/^,+|,+$/g, '');
+                  
+                  // Try to parse as comma-separated numbers
+                  if (cleaned.match(/^\s*\d+(\s*,\s*\d+)*\s*$/)) {
+                    optimizedOrder = cleaned.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n));
+                    console.log(`  Successfully parsed as comma-separated numbers: [${optimizedOrder.join(', ')}]`);
+                  } else {
+                    console.warn(`  Could not parse as comma-separated numbers either`);
+                    optimizedOrder = null;
+                  }
+                } else {
+                  optimizedOrder = null;
+                }
+              }
+            } else {
+              optimizedOrder = null;
+            }
           } catch (e) {
             console.warn(`Failed to parse optimizedOrder for route ${routeId}:`, e.message);
+            optimizedOrder = null;
           }
           
           try {
