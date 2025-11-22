@@ -46,14 +46,59 @@ class Routes {
   }
 
   static async updateOptimization(routeId, encodedPolyline, totalDistance, totalDuration, optimizedOrder, updatedBy) {
-    // Convert JavaScript objects to JSON strings for PostgreSQL JSONB fields
-    const optimizedOrderJson = Array.isArray(optimizedOrder) ? JSON.stringify(optimizedOrder) : (optimizedOrder ? JSON.stringify(optimizedOrder) : null);
-    
-    const res = await db.query(
-      'UPDATE Routes SET encodedPolyline = $1, totalDistance = $2, totalDuration = $3, optimizedOrder = $4, updatedAt = CURRENT_TIMESTAMP, updatedBy = $5 WHERE routeId = $6 AND deletedAt IS NULL RETURNING *;',
-      [encodedPolyline, totalDistance, totalDuration, optimizedOrderJson, updatedBy, routeId]
-    );
-    return res.rows[0];
+    try {
+      // Validate inputs
+      if (!routeId) {
+        throw new Error('routeId is required for updateOptimization');
+      }
+
+      if (encodedPolyline === null || encodedPolyline === undefined) {
+        throw new Error('encodedPolyline is required and cannot be null/undefined');
+      }
+
+      if (typeof encodedPolyline !== 'string') {
+        throw new Error(`encodedPolyline must be a string, got ${typeof encodedPolyline}`);
+      }
+
+      if (encodedPolyline.length === 0) {
+        throw new Error('encodedPolyline cannot be empty');
+      }
+
+      // Convert JavaScript objects to JSON strings for PostgreSQL JSONB fields
+      const optimizedOrderJson = Array.isArray(optimizedOrder) ? JSON.stringify(optimizedOrder) : (optimizedOrder ? JSON.stringify(optimizedOrder) : null);
+      
+      console.log(`[updateOptimization] Updating route ${routeId}:`, {
+        polylineLength: encodedPolyline.length,
+        polylinePreview: encodedPolyline.substring(0, 50) + '...',
+        totalDistance,
+        totalDuration,
+        optimizedOrderLength: optimizedOrder ? (Array.isArray(optimizedOrder) ? optimizedOrder.length : 'not array') : null,
+        updatedBy
+      });
+
+      const res = await db.query(
+        'UPDATE Routes SET encodedPolyline = $1, totalDistance = $2, totalDuration = $3, optimizedOrder = $4, updatedAt = CURRENT_TIMESTAMP, updatedBy = $5 WHERE routeId = $6 AND deletedAt IS NULL RETURNING *;',
+        [encodedPolyline, totalDistance, totalDuration, optimizedOrderJson, updatedBy, routeId]
+      );
+
+      if (!res || !res.rows || res.rows.length === 0) {
+        console.error(`[updateOptimization] No rows updated for routeId ${routeId}. Route may not exist or be deleted.`);
+        throw new Error(`Failed to update route ${routeId}: No rows affected. Route may not exist or be soft-deleted.`);
+      }
+
+      const updatedRoute = res.rows[0];
+      console.log(`[updateOptimization] Route ${routeId} updated successfully. Updated polyline length: ${updatedRoute.encodedpolyline ? updatedRoute.encodedpolyline.length : 'N/A'}`);
+      
+      return updatedRoute;
+    } catch (error) {
+      console.error(`[updateOptimization] Error updating route ${routeId}:`, {
+        error: error.message,
+        stack: error.stack,
+        encodedPolylineType: typeof encodedPolyline,
+        encodedPolylineLength: encodedPolyline ? encodedPolyline.length : 'N/A'
+      });
+      throw error;
+    }
   }
 
   // Get route with optimized tickets
