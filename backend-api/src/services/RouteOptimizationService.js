@@ -319,6 +319,25 @@ class RouteOptimizationService {
 
             const route = osrmResponse.data.routes[0];
             console.log('OSRM route calculation successful. Total distance:', route.distance, 'meters.');
+            
+            // Validate and log the geometry/polyline
+            if (!route.geometry) {
+                console.error('OSRM route missing geometry field:', JSON.stringify(route, null, 2));
+                throw new Error('OSRM route response missing geometry field');
+            }
+            
+            if (typeof route.geometry !== 'string') {
+                console.error('OSRM route geometry is not a string. Type:', typeof route.geometry, 'Value:', route.geometry);
+                throw new Error(`OSRM route geometry must be a string, got ${typeof route.geometry}`);
+            }
+            
+            if (route.geometry.length === 0) {
+                console.error('OSRM route geometry is empty string');
+                throw new Error('OSRM route geometry is empty');
+            }
+            
+            console.log(`OSRM polyline extracted successfully. Length: ${route.geometry.length} characters`);
+            console.log(`OSRM polyline preview (first 100 chars): ${route.geometry.substring(0, 100)}...`);
 
             return {
                 encodedPolyline: route.geometry, // OSRM returns polyline-encoded geometry
@@ -345,7 +364,21 @@ class RouteOptimizationService {
             const coordinatesString = fallbackCoordinates.join(';');
             const osrmUrl = `${this.osrmBaseUrl}/route/v1/driving/${coordinatesString}?overview=full&steps=true&annotations=true&geometries=polyline`;
             const osrmResponse = await axios.get(osrmUrl);
+            
+            if (!osrmResponse.data.routes || osrmResponse.data.routes.length === 0) {
+                throw new Error('No routes found in OSRM fallback response');
+            }
+            
             const route = osrmResponse.data.routes[0];
+            
+            // Validate fallback geometry
+            if (!route.geometry || typeof route.geometry !== 'string' || route.geometry.length === 0) {
+                console.error('OSRM fallback route missing or invalid geometry:', route.geometry);
+                throw new Error('OSRM fallback route response missing valid geometry field');
+            }
+            
+            console.log(`OSRM fallback polyline extracted. Length: ${route.geometry.length} characters`);
+            
             return {
                 encodedPolyline: route.geometry,
                 optimizedOrder: fallbackOrder,
@@ -380,7 +413,21 @@ class RouteOptimizationService {
         const coordinatesString = coordinates.join(';');
         const osrmUrl = `${this.osrmBaseUrl}/route/v1/driving/${coordinatesString}?overview=full&steps=true&annotations=true&geometries=polyline`;
         const osrmResponse = await axios.get(osrmUrl);
+        
+        if (!osrmResponse.data.routes || osrmResponse.data.routes.length === 0) {
+            throw new Error('No routes found in OSRM response for fixed order route');
+        }
+        
         const route = osrmResponse.data.routes[0];
+        
+        // Validate geometry
+        if (!route.geometry || typeof route.geometry !== 'string' || route.geometry.length === 0) {
+            console.error('OSRM fixed order route missing or invalid geometry:', route.geometry);
+            throw new Error('OSRM route response missing valid geometry field');
+        }
+        
+        console.log(`OSRM fixed order polyline extracted. Length: ${route.geometry.length} characters`);
+        
         return {
             encodedPolyline: route.geometry,
             totalDistance: route.distance,
@@ -2205,6 +2252,11 @@ class RouteOptimizationService {
 
             console.log(`Reoptimizing route ${routeId}: ${validTickets.length} tickets deduplicated to ${uniqueAddresses.length} unique addresses`);
 
+            // Step: Check existing Addresses table and only geocode new addresses (save coordinates)
+            // This ensures coordinates are saved for any new addresses before optimization
+            const geocodedAddresses = await this.batchGeocodeWithAddresses(uniqueAddresses);
+            console.log(`Route ${routeId}: Geocoded ${Object.keys(geocodedAddresses).length} addresses (some may have been from cache)`);
+
             // Optimize the route with unique addresses only
             const optimizedRouteResult = await this.optimizeRoute(
                 originAddress,
@@ -2212,8 +2264,37 @@ class RouteOptimizationService {
                 uniqueAddresses
             );
 
+            // Validate and log the optimization result before updating
+            console.log(`=== Re-optimization result for route ${routeId} ===`);
+            console.log('Optimized route result:', {
+                hasEncodedPolyline: !!optimizedRouteResult.encodedPolyline,
+                polylineType: typeof optimizedRouteResult.encodedPolyline,
+                polylineLength: optimizedRouteResult.encodedPolyline ? optimizedRouteResult.encodedPolyline.length : 0,
+                totalDistance: optimizedRouteResult.totalDistance,
+                totalDuration: optimizedRouteResult.totalDuration,
+                optimizedOrderLength: optimizedRouteResult.optimizedOrder ? optimizedRouteResult.optimizedOrder.length : 0
+            });
+
+            if (!optimizedRouteResult.encodedPolyline) {
+                console.error(`ERROR: optimizedRouteResult.encodedPolyline is missing for route ${routeId}`);
+                throw new Error(`Route optimization failed: encodedPolyline is missing`);
+            }
+
+            if (typeof optimizedRouteResult.encodedPolyline !== 'string') {
+                console.error(`ERROR: optimizedRouteResult.encodedPolyline is not a string. Type: ${typeof optimizedRouteResult.encodedPolyline}`);
+                throw new Error(`Route optimization failed: encodedPolyline must be a string, got ${typeof optimizedRouteResult.encodedPolyline}`);
+            }
+
+            if (optimizedRouteResult.encodedPolyline.length === 0) {
+                console.error(`ERROR: optimizedRouteResult.encodedPolyline is empty for route ${routeId}`);
+                throw new Error(`Route optimization failed: encodedPolyline is empty`);
+            }
+
+            console.log(`Polyline preview (first 100 chars): ${optimizedRouteResult.encodedPolyline.substring(0, 100)}...`);
+
             // Update route with new optimization data
-            await Routes.updateOptimization(
+            console.log(`Updating route ${routeId} with new polyline (length: ${optimizedRouteResult.encodedPolyline.length})...`);
+            const updateResult = await Routes.updateOptimization(
                 routeId,
                 optimizedRouteResult.encodedPolyline,
                 optimizedRouteResult.totalDistance,
@@ -2221,6 +2302,13 @@ class RouteOptimizationService {
                 optimizedRouteResult.optimizedOrder,
                 updatedBy
             );
+
+            if (!updateResult) {
+                console.error(`ERROR: updateOptimization returned null/undefined for route ${routeId}`);
+                throw new Error(`Failed to update route ${routeId}: updateOptimization returned no result`);
+            }
+
+            console.log(`✓ Route ${routeId} polyline updated successfully. New polyline length: ${updateResult.encodedpolyline ? updateResult.encodedpolyline.length : 'N/A'}`);
 
             // Map optimized order back to all tickets with proper queue positions
             let optimizedOrder = optimizedRouteResult.optimizedOrder || [];
