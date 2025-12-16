@@ -23,6 +23,23 @@ class Routes {
     return res.rows;
   }
 
+  /**
+   * Find only "active" routes for optimization purposes.
+   * A route is considered active if it is not soft-deleted and either:
+   *  - has no endDate, or
+   *  - has an endDate in the future (strictly greater than CURRENT_DATE).
+   */
+  static async findAllActive() {
+    const res = await db.query(
+      `SELECT *
+       FROM Routes
+       WHERE deletedAt IS NULL
+         AND (endDate IS NULL OR endDate > CURRENT_DATE)
+       ORDER BY createdAt DESC;`
+    );
+    return res.rows;
+  }
+
   static async findByType(type) {
     const res = await db.query('SELECT * FROM Routes WHERE type = $1 AND deletedAt IS NULL ORDER BY createdAt DESC;', [type]);
     return res.rows;
