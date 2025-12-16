@@ -1107,7 +1107,7 @@ class RouteOptimizationService {
 
     /**
      * Get tickets for spotting routes
-     * Criteria: comment7d is NULL, empty, TK - PERMIT EXTENDED, TK - LAYOUT, or TK - LAY OUT, and SPOTTING status exists but has no endingDate (not completed)
+     * Criteria: comment7d is NULL, empty, TK - PERMIT EXTENDED, TK - LAYOUT (with or without space), or TK - LAY OUT, and SPOTTING status exists but has no endingDate (not completed)
      * Excludes tickets with permits expiring in less than 4 days
      * @returns {Promise<Array>} - Array of tickets eligible for spotting routes
      */
@@ -1127,6 +1127,7 @@ class RouteOptimizationService {
                             OR t.comment7d = '' 
                             OR t.comment7d ILIKE '%TK - PERMIT EXTENDED%'
                             OR t.comment7d ILIKE '%TK - LAYOUT%'
+                            OR t.comment7d ILIKE '%TK -LAYOUT%'
                             OR t.comment7d ILIKE '%TK - LAY OUT%'
                         )
                         OR (
@@ -1162,6 +1163,7 @@ class RouteOptimizationService {
                         OR t.comment7d = '' 
                         OR t.comment7d ILIKE '%TK - PERMIT EXTENDED%'
                         OR t.comment7d ILIKE '%TK - LAYOUT%'
+                        OR t.comment7d ILIKE '%TK -LAYOUT%'
                         OR t.comment7d ILIKE '%TK - LAY OUT%'
                     )
                     AND NOT EXISTS (
@@ -1191,6 +1193,7 @@ class RouteOptimizationService {
                         OR t.comment7d = '' 
                         OR t.comment7d ILIKE '%TK - PERMIT EXTENDED%'
                         OR t.comment7d ILIKE '%TK - LAYOUT%'
+                        OR t.comment7d ILIKE '%TK -LAYOUT%'
                         OR t.comment7d ILIKE '%TK - LAY OUT%'
                     )
                     AND (
@@ -1231,6 +1234,7 @@ class RouteOptimizationService {
                         OR t.comment7d = '' 
                         OR t.comment7d ILIKE '%TK - PERMIT EXTENDED%'
                         OR t.comment7d ILIKE '%TK - LAYOUT%'
+                        OR t.comment7d ILIKE '%TK -LAYOUT%'
                         OR t.comment7d ILIKE '%TK - LAY OUT%'
                     )
                     AND r.type = 'SPOTTER'
@@ -1256,6 +1260,7 @@ class RouteOptimizationService {
                         OR t.comment7d = '' 
                         OR t.comment7d ILIKE '%TK - PERMIT EXTENDED%'
                         OR t.comment7d ILIKE '%TK - LAYOUT%'
+                        OR t.comment7d ILIKE '%TK -LAYOUT%'
                         OR t.comment7d ILIKE '%TK - LAY OUT%'
                     )
                     AND (
@@ -1327,6 +1332,7 @@ class RouteOptimizationService {
                         OR t.comment7d = '' 
                         OR t.comment7d ILIKE '%TK - PERMIT EXTENDED%'
                         OR t.comment7d ILIKE '%TK - LAYOUT%'
+                        OR t.comment7d ILIKE '%TK -LAYOUT%'
                         OR t.comment7d ILIKE '%TK - LAY OUT%'
                     )
                     AND (
@@ -1426,6 +1432,7 @@ class RouteOptimizationService {
                 OR t.comment7d = '' 
                 OR t.comment7d ILIKE '%TK - PERMIT EXTENDED%'
                 OR t.comment7d ILIKE '%TK - LAYOUT%'
+                OR t.comment7d ILIKE '%TK -LAYOUT%'
                 OR t.comment7d ILIKE '%TK - LAY OUT%'
                 OR t.comment7d ILIKE '%TK - ON PROGRESS%'
                 OR t.comment7d ILIKE '%TK- ON PROGRESS%'
@@ -1569,6 +1576,7 @@ class RouteOptimizationService {
                     OR t.comment7d ILIKE '%TK - ON PROGRESS%'
                     OR t.comment7d ILIKE '%TK - ON LAYOUT%'
                     OR t.comment7d ILIKE '%TK - LAYOUT%'
+                    OR t.comment7d ILIKE '%TK -LAYOUT%'
                     OR t.comment7d ILIKE '%TK - LAY OUT%'
                     OR t.comment7d ILIKE '%TK- ON PROGRESS%'
                     OR t.comment7d ILIKE '%TK- ON LAYOUT%'

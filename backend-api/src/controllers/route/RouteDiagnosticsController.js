@@ -25,6 +25,7 @@ const RouteDiagnosticsController = {
               OR t.comment7d ILIKE '%TK - ON LAYOUT%'
               OR t.comment7d ILIKE '%TK- ON LAYOUT%'
               OR t.comment7d ILIKE '%TK - LAYOUT%'
+              OR t.comment7d ILIKE '%TK -LAYOUT%'
               OR t.comment7d ILIKE '%TK- LAYOUT%'
               OR t.comment7d ILIKE '%TK - LAY OUT%'
             )
@@ -117,6 +118,7 @@ const RouteDiagnosticsController = {
             OR b.comment7d ILIKE '%TK - ON LAYOUT%'
             OR b.comment7d ILIKE '%TK- ON LAYOUT%'
             OR b.comment7d ILIKE '%TK - LAYOUT%'
+            OR b.comment7d ILIKE '%TK -LAYOUT%'
             OR b.comment7d ILIKE '%TK- LAYOUT%'
             OR b.comment7d ILIKE '%TK - LAY OUT%'
           ) AS comment_ok_asphalt,
@@ -125,6 +127,7 @@ const RouteDiagnosticsController = {
             OR b.comment7d = ''
             OR b.comment7d ILIKE '%TK - PERMIT EXTENDED%'
             OR b.comment7d ILIKE '%TK - LAYOUT%'
+            OR b.comment7d ILIKE '%TK -LAYOUT%'
             OR b.comment7d ILIKE '%TK- LAYOUT%'
             OR b.comment7d ILIKE '%TK - LAY OUT%'
           ) AS comment_ok_spotting,
@@ -133,6 +136,7 @@ const RouteDiagnosticsController = {
             OR b.comment7d = ''
             OR b.comment7d ILIKE '%TK - PERMIT EXTENDED%'
             OR b.comment7d ILIKE '%TK - LAYOUT%'
+            OR b.comment7d ILIKE '%TK -LAYOUT%'
             OR b.comment7d ILIKE '%TK- LAYOUT%'
             OR b.comment7d ILIKE '%TK - LAY OUT%'
             OR b.comment7d ILIKE '%TK - ON PROGRESS%'
