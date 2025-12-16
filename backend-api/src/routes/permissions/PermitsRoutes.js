@@ -202,6 +202,65 @@ router.put('/:PermitId', PermitsController.updatePermit);
 
 /**
  * @swagger
+ * /permits/ticket/{ticketId}/expireDate:
+ *   patch:
+ *     summary: Update only the expiration date of a permit associated with a ticket
+ *     tags: [Permits]
+ *     parameters:
+ *       - in: path
+ *         name: ticketId
+ *         schema:
+ *           type: integer
+ *         required: true
+ *         description: The ID of the ticket associated with the permit.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - expireDate
+ *               - updatedBy
+ *             properties:
+ *               expireDate:
+ *                 type: string
+ *                 format: date
+ *                 description: The updated expiration date.
+ *                 example: 2024-12-31
+ *               updatedBy:
+ *                 type: integer
+ *                 description: The ID of the user who last updated this entry.
+ *                 example: 2
+ *     responses:
+ *       200:
+ *         description: The permit expiration date was successfully updated.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 PermitId:
+ *                   type: integer
+ *                   example: 1
+ *                 permitNumber:
+ *                   type: string
+ *                   example: 'PRMT001'
+ *                 expireDate:
+ *                   type: string
+ *                   format: date
+ *                   example: 2024-12-31
+ *       400:
+ *         description: Bad request - missing required fields
+ *       404:
+ *         description: No permit found for this ticket
+ *       500:
+ *         description: Server error
+ */
+router.patch('/ticket/:ticketId/expireDate', PermitsController.patchExpireDate);
+
+/**
+ * @swagger
  * /permits/{PermitId}:
  *   delete:
  *     summary: Delete a permit record by ID

@@ -51,6 +51,35 @@ const PermitsController = {
     }
   },
 
+  async patchExpireDate(req, res) {
+    try {
+      const { ticketId } = req.params;
+      const { expireDate, updatedBy } = req.body;
+      
+      if (!expireDate) {
+        return res.status(400).json({ message: 'expireDate is required' });
+      }
+      if (!updatedBy) {
+        return res.status(400).json({ message: 'updatedBy is required' });
+      }
+      
+      // Find the permit ID associated with the ticket
+      const permitId = await Permits.findPermitIdByTicketId(ticketId);
+      if (!permitId) {
+        return res.status(404).json({ message: 'No permit found for this ticket' });
+      }
+      
+      const updatedPermit = await Permits.updateExpireDate(permitId, expireDate, updatedBy);
+      if (!updatedPermit) {
+        return res.status(404).json({ message: 'Permit not found' });
+      }
+      res.status(200).json(updatedPermit);
+    } catch (error) {
+      console.error('Error updating Permit expireDate:', error);
+      res.status(500).json({ message: 'Error updating Permit expireDate', error: error.message });
+    }
+  },
+
   async deletePermit(req, res) {
     try {
       const { PermitId } = req.params;

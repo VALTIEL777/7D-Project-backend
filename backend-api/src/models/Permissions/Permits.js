@@ -32,6 +32,27 @@ class Permits {
     return res.rows[0];
   }
 
+  static async findPermitIdByTicketId(ticketId) {
+    const res = await db.query(
+      `SELECT p.PermitId 
+       FROM Permits p
+       JOIN PermitedTickets pt ON p.PermitId = pt.permitId
+       WHERE pt.ticketId = $1 AND pt.deletedAt IS NULL AND p.deletedAt IS NULL
+       ORDER BY p.createdAt DESC
+       LIMIT 1`,
+      [ticketId]
+    );
+    return res.rows[0] ? res.rows[0].permitid : null;
+  }
+
+  static async updateExpireDate(PermitId, expireDate, updatedBy) {
+    const res = await db.query(
+      'UPDATE Permits SET expireDate = $1, updatedAt = CURRENT_TIMESTAMP, updatedBy = $2 WHERE PermitId = $3 AND deletedAt IS NULL RETURNING *;',
+      [expireDate, updatedBy, PermitId]
+    );
+    return res.rows[0];
+  }
+
   static async delete(PermitId) {
     const res = await db.query('UPDATE Permits SET deletedAt = CURRENT_TIMESTAMP WHERE PermitId = $1 AND deletedAt IS NULL RETURNING *;', [PermitId]);
     return res.rows[0];
