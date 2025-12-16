@@ -10,7 +10,8 @@ class ScheduledTasks {
       const db = require('../config/db');
       
       // Get all active routes (non-completed)
-      const activeRoutes = await Routes.findAll();
+      // "Active" here means: not soft-deleted and (no endDate or endDate in the future)
+      const activeRoutes = await Routes.findAllActive();
       
       if (activeRoutes.length === 0) {
         console.log('✓ No active routes found for re-optimization');
