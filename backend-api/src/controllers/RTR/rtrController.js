@@ -385,16 +385,25 @@ exports.uploadExcel = async (req, res) => {
     const updatedBy = req.body.updatedBy || 1; // Default user ID
 
     // Check if "Seven-D" or "Seven-D ALL" sheet exists
+    // Be tolerant of trailing spaces / minor name variations like "Seven-D "
     let sheetName = null;
-    if (workbook.SheetNames.includes('Seven-D')) {
-      sheetName = 'Seven-D';
-    } else if (workbook.SheetNames.includes('Seven-D ALL')) {
-      sheetName = 'Seven-D ALL';
-    } else {
+    const rawSheetNames = workbook.SheetNames || [];
+    const normalizedSheetNames = rawSheetNames.map(name => (name || '').trim());
+
+    const preferredNames = ['Seven-D', 'Seven-D ALL'];
+    for (const target of preferredNames) {
+      const idx = normalizedSheetNames.findIndex(n => n === target);
+      if (idx !== -1) {
+        sheetName = rawSheetNames[idx]; // use the actual workbook name
+        break;
+      }
+    }
+
+    if (!sheetName) {
       return res.status(400).json({
         success: false,
-        error: 'Neither "Seven-D" nor "Seven-D ALL" sheet found in the Excel file',
-        availableSheets: workbook.SheetNames
+        error: 'Neither "Seven-D" nor "Seven-D ALL" sheet found in the Excel file (names are trimmed before comparison)',
+        availableSheets: rawSheetNames
       });
     }
     const sheet = workbook.Sheets[sheetName];
@@ -1948,16 +1957,25 @@ exports.uploadForStepper = async (req, res) => {
     }
     
     // Check if "Seven-D" or "Seven-D ALL" sheet exists
+    // Be tolerant of trailing spaces or minor naming variations like "Seven-D "
     let sheetName = null;
-    if (workbook.SheetNames.includes('Seven-D')) {
-      sheetName = 'Seven-D';
-    } else if (workbook.SheetNames.includes('Seven-D ALL')) {
-      sheetName = 'Seven-D ALL';
-    } else {
+    const rawSheetNames = workbook.SheetNames || [];
+    const normalizedSheetNames = rawSheetNames.map(name => (name || '').trim());
+
+    const preferredNames = ['Seven-D', 'Seven-D ALL'];
+    for (const target of preferredNames) {
+      const idx = normalizedSheetNames.findIndex(n => n === target);
+      if (idx !== -1) {
+        sheetName = rawSheetNames[idx]; // use actual workbook sheet name
+        break;
+      }
+    }
+
+    if (!sheetName) {
       return res.status(400).json({
         success: false,
-        error: 'Neither "Seven-D" nor "Seven-D ALL" sheet found in the Excel file',
-        availableSheets: workbook.SheetNames
+        error: 'Neither "Seven-D" nor "Seven-D ALL" sheet found in the Excel file (names are trimmed before comparison)',
+        availableSheets: rawSheetNames
       });
     }
     const sheet = workbook.Sheets[sheetName];
